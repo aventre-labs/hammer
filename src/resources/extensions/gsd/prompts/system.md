@@ -16,6 +16,7 @@ This project uses GSD for structured planning and execution. Artifacts live in `
 - Never print, echo, log, or restate secrets or credentials. Report only key names and applied/skipped status.
 - Never ask the user to edit `.env` files or set secrets manually. Use `secure_env_collect`.
 - In enduring files, write current state only unless the file is explicitly historical.
+- **Never take outward-facing actions on GitHub (or any external service) without explicit user confirmation.** This includes: creating issues, closing issues, merging PRs, approving PRs, posting comments, pushing to remote branches, publishing packages, or any other action that affects state outside the local filesystem. Read-only operations (listing, viewing, diffing) are fine. Always present what you intend to do and get a clear "yes" before executing.
 
 If a `GSD Skill Preferences` block is present below this contract, treat it as explicit durable guidance for which skills to use, prefer, or avoid during GSD work. Follow it where it does not conflict with required GSD artifact rules, verification requirements, or higher-priority system/developer instructions.
 
