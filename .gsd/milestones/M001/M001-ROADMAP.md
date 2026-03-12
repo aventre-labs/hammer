@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: GitService core implementation** `risk:high` `depends:[]`
+- [x] **S01: GitService core implementation** `risk:high` `depends:[]`
   > After this: `git-service.ts` exists with commit, autoCommit, ensureSliceBranch, switchToMain, mergeSliceToMain, inferCommitType, smart staging — all passing unit tests in temp git repos.
 
 - [ ] **S02: Wire GitService into codebase** `risk:high` `depends:[S01]`

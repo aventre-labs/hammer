@@ -16,3 +16,6 @@
 | D008 | M001 | arch | Pre-merge verification timing | Phase 3 (enhanced features) | Core service + bug fixes first. Current workflow hasn't been catastrophic without guards. | No |
 | D009 | M001 | arch | Doc fixes timing | Phase 1 (with bug fixes) | Pure text changes, zero risk, related to same git mechanics | No |
 | D010 | M001 | arch | Test strategy | Unit tests with temp repos | Same proven pattern as existing worktree.test.ts | No |
+| D011 | M001/S01 | arch | GitService reuses worktree.ts pure utilities | Import detectWorktreeName, getSliceBranchName, SLICE_BRANCH_RE from worktree.ts | These are pure functions with no side effects. Reimplementing would create drift. S02 facade wiring won't break these exports. | No |
+| D012 | M001/S01 | arch | RUNTIME_EXCLUSION_PATHS defined independently | Define exclusion paths in git-service.ts independently of gitignore.ts BASELINE_PATTERNS | Keeps S01 self-contained without touching gitignore.ts. BASELINE_PATTERNS is unexported. Converge later if needed. | Yes — converge in future cleanup |
+| D013 | M001/S01 | impl | COMMIT_TYPE_RULES includes plural keyword forms | Added "docs" and "tests" as explicit keywords alongside singular "doc" and "test" | Word-boundary regex `\bdoc\b` doesn't match "docs" — the trailing `s` is a word character. Plurals are common in slice titles. | No |
