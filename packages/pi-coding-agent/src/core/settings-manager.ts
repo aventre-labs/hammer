@@ -54,6 +54,11 @@ export interface AsyncSettings {
 	maxJobs?: number;   // default: 100
 }
 
+export interface TaskIsolationSettings {
+	mode?: "none" | "worktree" | "fuse-overlay"; // default: "none"
+	merge?: "patch" | "branch"; // default: "patch"
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -106,6 +111,7 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	async?: AsyncSettings;
 	bashInterceptor?: BashInterceptorSettings;
+	taskIsolation?: TaskIsolationSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -967,5 +973,13 @@ export class SettingsManager {
 
 	getAsyncMaxJobs(): number {
 		return this.settings.async?.maxJobs ?? 100;
+	}
+
+	getTaskIsolationMode(): "none" | "worktree" | "fuse-overlay" {
+		return this.settings.taskIsolation?.mode ?? "none";
+	}
+
+	getTaskIsolationMerge(): "patch" | "branch" {
+		return this.settings.taskIsolation?.merge ?? "patch";
 	}
 }
