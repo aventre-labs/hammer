@@ -312,6 +312,18 @@ function startDispatchGapWatchdog(ctx: ExtensionContext, pi: ExtensionAPI): void
         "error",
       );
       await stopAuto(ctx, pi);
+      return;
+    }
+
+    // If dispatchNextUnit returned normally but still didn't dispatch a unit
+    // (no sendMessage called → no timeout set), auto-mode is permanently
+    // stalled. Stop cleanly instead of leaving it active but idle (#537).
+    if (active && !unitTimeoutHandle && !wrapupWarningHandle) {
+      ctx.ui.notify(
+        "Auto-mode stalled — no dispatchable unit found after retry. Stopping. Run /gsd auto to restart.",
+        "warning",
+      );
+      await stopAuto(ctx, pi);
     }
   }, DISPATCH_GAP_TIMEOUT_MS);
 }
