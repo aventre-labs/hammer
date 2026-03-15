@@ -35,6 +35,11 @@ export interface GitPreferences {
   commit_type?: string;
   main_branch?: string;
   merge_strategy?: "squash" | "merge";
+  /** Controls auto-mode git isolation strategy.
+   *  - "worktree": (default) creates a milestone worktree for isolated work
+   *  - "branch": works directly in the project root (for submodule-heavy repos)
+   */
+  isolation?: "worktree" | "branch";
 }
 
 export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;

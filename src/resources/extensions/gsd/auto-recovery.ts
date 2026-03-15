@@ -333,17 +333,59 @@ export function reconcileMergeState(basePath: string, ctx: ExtensionContext): bo
       // Commit may already exist; non-fatal
     }
   } else {
-    // Still conflicted — abort and reset
-    if (hasMergeHead) {
-      runGit(basePath, ["merge", "--abort"], { allowFailure: true });
-    } else if (hasSquashMsg) {
-      try { unlinkSync(squashMsgPath); } catch { /* best-effort */ }
+    // Still conflicted — try auto-resolving .gsd/ state file conflicts (#530)
+    const conflictedFiles = unmerged.trim().split("\n").filter(Boolean);
+    const gsdConflicts = conflictedFiles.filter(f => f.startsWith(".gsd/"));
+    const codeConflicts = conflictedFiles.filter(f => !f.startsWith(".gsd/"));
+
+    if (gsdConflicts.length > 0 && codeConflicts.length === 0) {
+      // All conflicts are in .gsd/ state files — auto-resolve by accepting theirs
+      let resolved = true;
+      for (const gsdFile of gsdConflicts) {
+        try {
+          runGit(basePath, ["checkout", "--theirs", "--", gsdFile], { allowFailure: false });
+          runGit(basePath, ["add", "--", gsdFile], { allowFailure: false });
+        } catch {
+          resolved = false;
+          break;
+        }
+      }
+      if (resolved) {
+        try {
+          runGit(basePath, ["commit", "--no-edit"], { allowFailure: false });
+          ctx.ui.notify(
+            `Auto-resolved ${gsdConflicts.length} .gsd/ state file conflict(s) from prior merge.`,
+            "info",
+          );
+        } catch {
+          resolved = false;
+        }
+      }
+      if (!resolved) {
+        if (hasMergeHead) {
+          runGit(basePath, ["merge", "--abort"], { allowFailure: true });
+        } else if (hasSquashMsg) {
+          try { unlinkSync(squashMsgPath); } catch { /* best-effort */ }
+        }
+        runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
+        ctx.ui.notify(
+          "Detected leftover merge state — auto-resolve failed, cleaned up. Re-deriving state.",
+          "warning",
+        );
+      }
+    } else {
+      // Code conflicts present — abort and reset
+      if (hasMergeHead) {
+        runGit(basePath, ["merge", "--abort"], { allowFailure: true });
+      } else if (hasSquashMsg) {
+        try { unlinkSync(squashMsgPath); } catch { /* best-effort */ }
+      }
+      runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
+      ctx.ui.notify(
+        "Detected leftover merge state with unresolved conflicts — cleaned up. Re-deriving state.",
+        "warning",
+      );
     }
-    runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
-    ctx.ui.notify(
-      "Detected leftover merge state with unresolved conflicts — cleaned up. Re-deriving state.",
-      "warning",
-    );
   }
   return true;
 }

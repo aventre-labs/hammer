@@ -156,6 +156,18 @@ const unitRecoveryCount = new Map<string, number>();
 /** Persisted completed-unit keys — survives restarts. Loaded from .gsd/completed-units.json. */
 const completedKeySet = new Set<string>();
 
+/**
+ * Resolve whether auto-mode should use worktree isolation.
+ * Returns true for worktree mode (default), false for branch mode.
+ * Branch mode works directly in the project root — useful for repos
+ * with git submodules where worktrees don't work well (#531).
+ */
+function shouldUseWorktreeIsolation(): boolean {
+  const prefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  if (prefs?.isolation === "branch") return false;
+  return true; // default: worktree
+}
+
 /** Crash recovery prompt — set by startAuto, consumed by first dispatchNextUnit */
 let pendingCrashRecovery: string | null = null;
 
@@ -463,7 +475,8 @@ export async function startAuto(
 
     // ── Auto-worktree: re-enter worktree on resume if not already inside ──
     // Skip if already inside a worktree (manual /worktree) to prevent nesting.
-    if (currentMilestoneId && originalBasePath && !isInAutoWorktree(basePath) && !detectWorktreeName(basePath) && !detectWorktreeName(originalBasePath)) {
+    // Skip entirely in branch isolation mode (#531).
+    if (currentMilestoneId && shouldUseWorktreeIsolation() && originalBasePath && !isInAutoWorktree(basePath) && !detectWorktreeName(basePath) && !detectWorktreeName(originalBasePath)) {
       try {
         const existingWtPath = getAutoWorktreePath(originalBasePath, currentMilestoneId);
         if (existingWtPath) {
@@ -640,7 +653,7 @@ export async function startAuto(
     return p.endsWith(worktreesSuffix);
   };
 
-  if (currentMilestoneId && !detectWorktreeName(base) && !isUnderGsdWorktrees(base)) {
+  if (currentMilestoneId && shouldUseWorktreeIsolation() && !detectWorktreeName(base) && !isUnderGsdWorktrees(base)) {
     try {
       const existingWtPath = getAutoWorktreePath(base, currentMilestoneId);
       if (existingWtPath) {
@@ -1680,9 +1693,9 @@ async function dispatchNextUnit(
     return;
   }
 
-  // NOTE: Slice merge happens AFTER the complete-slice unit finishes,
-  // not here at dispatch time. See the merge logic at the top of
-  // dispatchNextUnit where we check if the previous unit was complete-slice.
+  // Branchless architecture: all work commits sequentially on the milestone
+  // branch — no per-slice branches or slice-level merges. Milestone merge
+  // happens when phase === "complete" (see mergeMilestoneToMain above).
 
   // Write lock AFTER newSession so we capture the session file path.
   // Pi appends entries incrementally via appendFileSync, so on crash the
