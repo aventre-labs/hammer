@@ -74,6 +74,14 @@ export function formatDiscoveryForTool(result: DiscoveryResult): string {
       }
     }
 
+    if (byType["claude-skill"]?.length) {
+      lines.push(`  Claude Skills (${byType["claude-skill"].length}):`);
+      for (const item of byType["claude-skill"]) {
+        if (item.type !== "claude-skill") continue;
+        lines.push(`    - ${item.name} (${item.source.level}) ${item.path}`);
+      }
+    }
+
     if (byType["claude-plugin"]?.length) {
       lines.push(`  Claude Plugins (${byType["claude-plugin"].length}):`);
       for (const item of byType["claude-plugin"]) {
