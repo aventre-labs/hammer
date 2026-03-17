@@ -69,5 +69,6 @@
 |------|-------------|
 | `gsd` | Start a new interactive session |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory |
+| `gsd sessions` | Interactive session picker — list all saved sessions for the current directory and choose one to resume |
 | `gsd --debug` | Enable structured JSONL diagnostic logging for troubleshooting dispatch and state issues |
 | `gsd config` | Re-run the setup wizard (LLM provider + tool keys) |
