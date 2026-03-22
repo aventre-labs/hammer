@@ -32,7 +32,7 @@ function makeTmpDir(): string {
 afterEach(() => {
   _resetPendingResolve();
   for (const d of tmpDirs) {
-    rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch { /* Windows EPERM — OS cleans up temp dirs */ }
   }
   tmpDirs.length = 0;
 });

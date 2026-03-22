@@ -29,7 +29,7 @@ function makeTmpDir(): string {
 
 afterEach(() => {
   for (const d of tmpDirs) {
-    rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch { /* Windows EPERM */ }
   }
   tmpDirs.length = 0;
 });
