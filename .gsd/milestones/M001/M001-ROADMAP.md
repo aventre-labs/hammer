@@ -64,7 +64,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Hot-path caller migration + cross-validation tests** `risk:medium` `depends:[S01,S02]`
   > After this: dispatch-guard.ts, auto-dispatch.ts (4 rules), auto-verification.ts, parallel-eligibility.ts read from DB. Cross-validation tests prove DB↔rendered parity. Sequence-aware query ordering in getMilestoneSlices/getSliceTasks.
 
-- [ ] **S05: Warm/cold callers + flag files + pre-M002 migration** `risk:medium` `depends:[S03,S04]`
+- [x] **S05: Warm/cold callers + flag files + pre-M002 migration** `risk:medium` `depends:[S03,S04]`
   > After this: doctor, visualizer, github-sync, workspace-index, dashboard-overlay, guided-flow, reactive-graph, auto-recovery use DB queries. REPLAN/ASSESSMENT/CONTINUE/CONTEXT-DRAFT/REPLAN-TRIGGER tracked in DB. migrateHierarchyToDb() populates v8 columns. gsd recover upgraded.
 
 - [ ] **S06: Parser deprecation + cleanup** `risk:low` `depends:[S05]`

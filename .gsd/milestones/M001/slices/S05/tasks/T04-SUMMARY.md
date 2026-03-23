@@ -100,6 +100,12 @@ Plan referenced `buildResumeContextListing()` at line ~1603 — actual function 
 
 None.
 
+## Diagnostics
+
+- **Final parser import audit:** `grep -rn 'import.*parseRoadmap\|import.*parsePlan\|import.*parseRoadmapSlices' src/resources/extensions/gsd/*.ts | grep -v '/tests/' | grep -v 'md-importer' | grep -v 'files.ts'` — zero results confirms all module-level parser imports eliminated.
+- **auto-prompts.ts migration:** 6 call sites migrated; each has DB-primary path with lazy async fallback. `grep -c 'isDbAvailable\|lazyParseRoadmap\|lazyParsePlan' src/resources/extensions/gsd/auto-prompts.ts` shows helpers and gates.
+- **markdown-renderer.ts:** Parser calls remain in `detectStaleRenders()` (intentional disk-vs-DB comparison) but import is lazy createRequire, not module-level.
+
 ## Files Created/Modified
 
 - `src/resources/extensions/gsd/auto-prompts.ts`

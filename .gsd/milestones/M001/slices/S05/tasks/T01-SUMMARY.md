@@ -83,6 +83,13 @@ Updated derive-state-db.test.ts Test 16 to seed replan_triggered_at DB column �
 
 None.
 
+## Diagnostics
+
+- **Replan trigger state:** `SELECT id, replan_triggered_at FROM slices WHERE milestone_id = ? AND id = ?` — non-null means triage wrote a trigger for this slice.
+- **Replan completion (loop protection):** `SELECT COUNT(*) FROM replan_history WHERE milestone_id = ? AND slice_id = ?` — count > 0 means replan already completed, deriveStateFromDb will NOT re-enter replanning phase.
+- **Schema version:** `PRAGMA user_version` — should return 10 after this task.
+- **Test suite:** `node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/flag-file-db.test.ts` — 6 test cases covering all flag-file DB migration scenarios.
+
 ## Files Created/Modified
 
 - `src/resources/extensions/gsd/gsd-db.ts`

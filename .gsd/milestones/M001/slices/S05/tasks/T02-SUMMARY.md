@@ -60,6 +60,13 @@ Discovered that parsePlan() preserves backtick formatting in verify fields (e.g.
 
 None.
 
+## Diagnostics
+
+- **Milestone planning columns after migration:** `SELECT vision, success_criteria, boundary_map_markdown, key_risks, requirement_coverage, proof_level FROM milestones WHERE id = ?` — vision/success_criteria/boundary_map_markdown populated from parsed ROADMAP; key_risks/requirement_coverage/proof_level empty (tool-only, per D004).
+- **Slice goal after migration:** `SELECT id, goal FROM slices WHERE milestone_id = ?` — goal populated from parsed PLAN file; empty when no plan file existed.
+- **Task files/verify after migration:** `SELECT id, files, verify_command FROM tasks WHERE milestone_id = ? AND slice_id = ?` — files is JSON array, verify_command is string (may include backtick formatting from parser).
+- **Test suite:** `node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/gsd-recover.test.ts` — 27 new assertions in Test a2 covering all v8 column populations.
+
 ## Files Created/Modified
 
 - `src/resources/extensions/gsd/md-importer.ts`

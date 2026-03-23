@@ -80,6 +80,12 @@ In doctor.ts, replaced `isMilestoneComplete(roadmap)` calls at end-of-function w
 
 None.
 
+## Diagnostics
+
+- **Verify migration pattern applied:** `grep -c 'isDbAvailable' src/resources/extensions/gsd/{doctor,doctor-checks,visualizer-data,workspace-index,dashboard-overlay,auto-dashboard,guided-flow}.ts` — each file should show 2+ occurrences.
+- **Verify no module-level parser imports:** `grep -n 'import.*parseRoadmap\|import.*parsePlan' src/resources/extensions/gsd/{doctor,doctor-checks,visualizer-data,workspace-index,dashboard-overlay,auto-dashboard,guided-flow}.ts` — should return no results.
+- **Fallback detection:** When DB is unavailable, each file writes to stderr before using lazy createRequire parser — grep runtime logs for "createRequire" calls as fallback indicator.
+
 ## Files Created/Modified
 
 - `src/resources/extensions/gsd/doctor.ts`
