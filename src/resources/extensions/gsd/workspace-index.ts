@@ -12,7 +12,6 @@ import {
 import { deriveState } from "./state.js";
 import { milestoneIdSort, findMilestoneIds } from "./guided-flow.js";
 import type { RiskLevel } from "./types.js";
-import { type ValidationIssue, validateCompleteBoundary, validatePlanBoundary } from "./observability-validator.js";
 import { getSliceBranchName, detectWorktreeName } from "./worktree.js";
 
 export interface WorkspaceTaskTarget {
@@ -60,7 +59,7 @@ export interface GSDWorkspaceIndex {
     phase: string;
   };
   scopes: WorkspaceScopeTarget[];
-  validationIssues: ValidationIssue[];
+  validationIssues: Array<Record<string, unknown>>;
 }
 
 // Extract milestone title from roadmap header without using parsers.
@@ -113,20 +112,12 @@ async function indexSlice(basePath: string, milestoneId: string, sliceId: string
 }
 
 export interface IndexWorkspaceOptions {
-  /**
-   * When true, run validatePlanBoundary and validateCompleteBoundary for each slice.
-   * Skipped by default — validation is expensive (content analysis) and only needed
-   * for explicit doctor/audit flows. The /gsd status dashboard and scope pickers
-   * don't need the full issue list.
-   */
   validate?: boolean;
 }
 
 export async function indexWorkspace(basePath: string, opts: IndexWorkspaceOptions = {}): Promise<GSDWorkspaceIndex> {
   const milestoneIds = findMilestoneIds(basePath);
   const milestones: WorkspaceMilestoneTarget[] = [];
-  const validationIssues: ValidationIssue[] = [];
-  const runValidation = opts.validate === true;
 
   for (const milestoneId of milestoneIds) {
     const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP") ?? undefined;
@@ -149,27 +140,13 @@ export async function indexWorkspace(basePath: string, opts: IndexWorkspaceOptio
       }
 
       if (normSlices!.length > 0) {
-        // Parallelise all per-slice I/O: indexSlice + (optional) validation calls run concurrently.
-        // Order is preserved via Promise.all on an array built from normalized slices.
         const sliceResults = await Promise.all(
           normSlices!.map(async (slice) => {
-            if (runValidation) {
-              const [indexedSlice, planIssues, completeIssues] = await Promise.all([
-                indexSlice(basePath, milestoneId, slice.id, slice.title, slice.done, { risk: slice.risk as RiskLevel, depends: slice.depends, demo: slice.demo }),
-                validatePlanBoundary(basePath, milestoneId, slice.id),
-                validateCompleteBoundary(basePath, milestoneId, slice.id),
-              ]);
-              return { indexedSlice, issues: [...planIssues, ...completeIssues] };
-            }
-            const indexedSlice = await indexSlice(basePath, milestoneId, slice.id, slice.title, slice.done, { risk: slice.risk as RiskLevel, depends: slice.depends, demo: slice.demo });
-            return { indexedSlice, issues: [] as ValidationIssue[] };
+            return indexSlice(basePath, milestoneId, slice.id, slice.title, slice.done, { risk: slice.risk as RiskLevel, depends: slice.depends, demo: slice.demo });
           }),
         );
 
-        for (const { indexedSlice, issues } of sliceResults) {
-          slices.push(indexedSlice);
-          validationIssues.push(...issues);
-        }
+        slices.push(...sliceResults);
       }
     }
 
@@ -199,7 +176,7 @@ export async function indexWorkspace(basePath: string, opts: IndexWorkspaceOptio
     }
   }
 
-  return { milestones, active, scopes, validationIssues };
+  return { milestones, active, scopes, validationIssues: [] };
 }
 
 export async function listDoctorScopeSuggestions(basePath: string): Promise<Array<{ value: string; label: string }>> {
@@ -219,8 +196,7 @@ export async function listDoctorScopeSuggestions(basePath: string): Promise<Arra
 }
 
 export async function getSuggestedNextCommands(basePath: string): Promise<string[]> {
-  // Run validation here since we surface a /gsd doctor audit hint when issues exist.
-  const index = await indexWorkspace(basePath, { validate: true });
+  const index = await indexWorkspace(basePath);
   const scope = index.active.milestoneId && index.active.sliceId
     ? `${index.active.milestoneId}/${index.active.sliceId}`
     : index.active.milestoneId;
@@ -230,7 +206,6 @@ export async function getSuggestedNextCommands(basePath: string): Promise<string
   if (index.active.phase === "executing" || index.active.phase === "summarizing") commands.add("/gsd auto");
   if (scope) commands.add(`/gsd doctor ${scope}`);
   if (scope) commands.add(`/gsd doctor fix ${scope}`);
-  if (index.validationIssues.length > 0 && scope) commands.add(`/gsd doctor audit ${scope}`);
   commands.add("/gsd status");
   return [...commands];
 }
