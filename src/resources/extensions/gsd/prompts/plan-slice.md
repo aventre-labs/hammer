@@ -77,6 +77,6 @@ Then:
 
 The slice directory and tasks/ subdirectory already exist. Do NOT mkdir. All work stays in your working directory: `{{workingDirectory}}`.
 
-**You MUST write the file `{{outputPath}}` before finishing.**
+**You MUST call `gsd_plan_slice` to persist the planning state before finishing.**
 
 When done, say: "Slice {{sliceId}} planned."

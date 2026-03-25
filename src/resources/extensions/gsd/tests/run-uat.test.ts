@@ -228,6 +228,31 @@ test('(k) run-uat prompt template', () => {
   );
 });
 
+test('(k2) run-uat prompt references gsd_summary_save, not direct write', () => {
+  const promptResult = loadPromptFromWorktree('run-uat', {
+    workingDirectory: '/tmp/test-project',
+    milestoneId: 'M001',
+    sliceId: 'S01',
+    uatPath: '.gsd/milestones/M001/slices/S01/S01-UAT.md',
+    uatResultPath: '.gsd/milestones/M001/slices/S01/S01-UAT-RESULT.md',
+    uatType: 'artifact-driven',
+    inlinedContext: '<!-- no context -->',
+  });
+
+  assert.ok(
+    promptResult.includes('gsd_summary_save'),
+    'run-uat prompt should reference gsd_summary_save tool',
+  );
+  assert.ok(
+    promptResult.includes('artifact_type: "ASSESSMENT"'),
+    'run-uat prompt should specify ASSESSMENT artifact type',
+  );
+  assert.ok(
+    !promptResult.includes('MUST write'),
+    'run-uat prompt should not instruct direct file write in footer',
+  );
+});
+
 test('(l) dispatch preconditions via resolveSliceFile', () => {
     const base = createFixtureBase();
     const uatContent = makeUatContent('artifact-driven');

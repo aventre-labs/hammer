@@ -32,6 +32,6 @@ Then:
 11. Do not run git commands — the system commits your changes and handles any merge after this unit succeeds.
 12. Update `.gsd/PROJECT.md` if it exists — refresh current state if needed.
 
-**You MUST do ALL THREE before finishing: (1) write `{{sliceSummaryPath}}`, (2) write `{{sliceUatPath}}`, (3) call `gsd_complete_slice`. The unit will not be marked complete if any of these are missing.**
+**You MUST call `gsd_complete_slice` with the slice summary and UAT content before finishing. The tool persists to both DB and disk and renders `{{sliceSummaryPath}}` and `{{sliceUatPath}}` automatically.**
 
 When done, say: "Slice {{sliceId}} complete."

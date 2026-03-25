@@ -55,7 +55,7 @@ After running all checks, compute the **overall verdict**:
 - `FAIL` — one or more checks failed
 - `PARTIAL` — some checks passed, but one or more checks were skipped, inconclusive, or still require human judgment
 
-Write `{{uatResultPath}}` with:
+Call `gsd_summary_save` with `milestone_id: {{milestoneId}}`, `slice_id: {{sliceId}}`, `artifact_type: "ASSESSMENT"`, and the full UAT result markdown as `content` — the tool computes the file path and persists to both DB and disk. The content should follow this format:
 
 ```markdown
 ---
@@ -84,6 +84,6 @@ date: <ISO 8601 timestamp>
 
 ---
 
-**You MUST write `{{uatResultPath}}` before finishing.**
+**You MUST call `gsd_summary_save` with the UAT result content before finishing.**
 
 When done, say: "UAT {{sliceId}} complete."
