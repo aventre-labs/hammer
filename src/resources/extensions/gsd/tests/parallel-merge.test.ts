@@ -168,7 +168,7 @@ test("formatMergeResults — empty results", () => {
 
 test("formatMergeResults — successful merge", () => {
   const results: MergeResult[] = [
-    { milestoneId: "M001", success: true, commitMessage: "feat(M001): Auth", pushed: true },
+    { milestoneId: "M001", success: true, commitMessage: "feat: Auth\n\nGSD-Milestone: M001\nBranch: milestone/M001", pushed: true },
   ];
   const output = formatMergeResults(results);
   assert.ok(output.includes("M001"));
@@ -178,7 +178,7 @@ test("formatMergeResults — successful merge", () => {
 
 test("formatMergeResults — successful merge without push", () => {
   const results: MergeResult[] = [
-    { milestoneId: "M001", success: true, commitMessage: "feat(M001): Auth", pushed: false },
+    { milestoneId: "M001", success: true, commitMessage: "feat: Auth\n\nGSD-Milestone: M001\nBranch: milestone/M001", pushed: false },
   ];
   const output = formatMergeResults(results);
   assert.ok(output.includes("merged successfully"));
@@ -213,7 +213,7 @@ test("formatMergeResults — generic failure without conflict files", () => {
 
 test("formatMergeResults — mixed results", () => {
   const results: MergeResult[] = [
-    { milestoneId: "M001", success: true, commitMessage: "feat(M001): OK", pushed: false },
+    { milestoneId: "M001", success: true, commitMessage: "feat: OK\n\nGSD-Milestone: M001\nBranch: milestone/M001", pushed: false },
     { milestoneId: "M002", success: false, error: "conflict", conflictFiles: ["a.ts"] },
   ];
   const output = formatMergeResults(results);
