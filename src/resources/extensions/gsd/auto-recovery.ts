@@ -195,13 +195,8 @@ export function verifyExpectedArtifact(
   // Reactive-execute: verify that each dispatched task's summary exists.
   // The unitId encodes the batch: "{mid}/{sid}/reactive+T02,T03"
   if (unitType === "reactive-execute") {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sidAndBatch = parts[1];
-    const batchPart = parts[2]; // "reactive+T02,T03"
-    if (!mid || !sidAndBatch || !batchPart) return false;
-
-    const sid = sidAndBatch;
+    const { milestone: mid, slice: sid, task: batchPart } = parseUnitId(unitId);
+    if (!mid || !sid || !batchPart) return false;
     const plusIdx = batchPart.indexOf("+");
     if (plusIdx === -1) {
       // Legacy format "reactive" without batch IDs — fall back to "any summary"
@@ -233,10 +228,7 @@ export function verifyExpectedArtifact(
   // Gate-evaluate: verify that each dispatched gate has been resolved in the DB.
   // The unitId encodes the batch: "{mid}/{sid}/gates+Q3,Q4"
   if (unitType === "gate-evaluate") {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sid = parts[1];
-    const batchPart = parts[2]; // "gates+Q3,Q4"
+    const { milestone: mid, slice: sid, task: batchPart } = parseUnitId(unitId);
     if (!mid || !sid || !batchPart) return false;
 
     const plusIdx = batchPart.indexOf("+");
@@ -286,10 +278,7 @@ export function verifyExpectedArtifact(
   // execute-task: DB status is authoritative. Fall back to heading-style plan
   // detection when the DB is unavailable (unmigrated projects).
   if (unitType === "execute-task") {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sid = parts[1];
-    const tid = parts[2];
+    const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
     if (mid && sid && tid) {
       const dbTask = getTask(mid, sid, tid);
       if (dbTask) {
@@ -319,9 +308,7 @@ export function verifyExpectedArtifact(
   // but omitted T{tid}-PLAN.md files would be marked complete, causing execute-task
   // to dispatch with a missing task plan (see issue #739).
   if (unitType === "plan-slice") {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sid = parts[1];
+    const { milestone: mid, slice: sid } = parseUnitId(unitId);
     if (mid && sid) {
       try {
         // DB primary path — get task IDs to verify task plan files exist
@@ -356,9 +343,7 @@ export function verifyExpectedArtifact(
   // complete-slice: DB status is authoritative for whether the slice is done.
   // Fall back to file-based check (roadmap [x]) when DB is unavailable.
   if (unitType === "complete-slice") {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sid = parts[1];
+    const { milestone: mid, slice: sid } = parseUnitId(unitId);
     if (mid && sid) {
       const dir = resolveSlicePath(base, mid, sid);
       if (dir) {
@@ -430,10 +415,7 @@ export function writeBlockerPlaceholder(
   // Without this, the DB status stays "pending" and the dispatch loop
   // re-derives the same task indefinitely (#2531).
   if (unitType === "execute-task" && isDbAvailable()) {
-    const parts = unitId.split("/");
-    const mid = parts[0];
-    const sid = parts[1];
-    const tid = parts[2];
+    const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
     if (mid && sid && tid) {
       try { updateTaskStatus(mid, sid, tid, "complete", new Date().toISOString()); } catch { /* non-fatal */ }
     }
@@ -558,10 +540,7 @@ export function buildLoopRemediationSteps(
   unitId: string,
   base: string,
 ): string | null {
-  const parts = unitId.split("/");
-  const mid = parts[0];
-  const sid = parts[1];
-  const tid = parts[2];
+  const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
   switch (unitType) {
     case "execute-task": {
       if (!mid || !sid || !tid) break;

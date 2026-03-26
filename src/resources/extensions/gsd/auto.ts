@@ -17,6 +17,7 @@ import type {
 } from "@gsd/pi-coding-agent";
 
 import { deriveState } from "./state.js";
+import { parseUnitId } from "./unit-id.js";
 import type { GSDState } from "./types.js";
 import { getManifestStatus } from "./files.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
@@ -1288,8 +1289,7 @@ function ensurePreconditions(
   base: string,
   state: GSDState,
 ): void {
-  const parts = unitId.split("/");
-  const mid = parts[0]!;
+  const { milestone: mid, slice: sid } = parseUnitId(unitId);
 
   const mDir = resolveMilestonePath(base, mid);
   if (!mDir) {
@@ -1297,8 +1297,7 @@ function ensurePreconditions(
     mkdirSync(join(newDir, "slices"), { recursive: true });
   }
 
-  if (parts.length >= 2) {
-    const sid = parts[1]!;
+  if (sid !== undefined) {
 
     const mDirResolved = resolveMilestonePath(base, mid);
     if (mDirResolved) {
