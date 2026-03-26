@@ -516,6 +516,35 @@ export function diagnoseExpectedArtifact(
 // ─── Merge State Reconciliation ───────────────────────────────────────────────
 
 /**
+ * Best-effort abort of a pending merge/squash and hard-reset to HEAD.
+ * Handles both real merges (MERGE_HEAD) and squash merges (SQUASH_MSG).
+ */
+function abortAndResetMerge(
+  basePath: string,
+  hasMergeHead: boolean,
+  squashMsgPath: string,
+): void {
+  if (hasMergeHead) {
+    try {
+      nativeMergeAbort(basePath);
+    } catch {
+      /* best-effort */
+    }
+  } else if (squashMsgPath) {
+    try {
+      unlinkSync(squashMsgPath);
+    } catch {
+      /* best-effort */
+    }
+  }
+  try {
+    nativeResetHard(basePath);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
  * Detect leftover merge state from a prior session and reconcile it.
  * If MERGE_HEAD or SQUASH_MSG exists, check whether conflicts are resolved.
  * If resolved: finalize the commit. If still conflicted: abort and reset.
@@ -571,24 +600,7 @@ export function reconcileMergeState(
         }
       }
       if (!resolved) {
-        if (hasMergeHead) {
-          try {
-            nativeMergeAbort(basePath);
-          } catch {
-            /* best-effort */
-          }
-        } else if (hasSquashMsg) {
-          try {
-            unlinkSync(squashMsgPath);
-          } catch {
-            /* best-effort */
-          }
-        }
-        try {
-          nativeResetHard(basePath);
-        } catch {
-          /* best-effort */
-        }
+        abortAndResetMerge(basePath, hasMergeHead, squashMsgPath);
         ctx.ui.notify(
           "Detected leftover merge state — auto-resolve failed, cleaned up. Re-deriving state.",
           "warning",
@@ -596,24 +608,7 @@ export function reconcileMergeState(
       }
     } else {
       // Code conflicts present — abort and reset
-      if (hasMergeHead) {
-        try {
-          nativeMergeAbort(basePath);
-        } catch {
-          /* best-effort */
-        }
-      } else if (hasSquashMsg) {
-        try {
-          unlinkSync(squashMsgPath);
-        } catch {
-          /* best-effort */
-        }
-      }
-      try {
-        nativeResetHard(basePath);
-      } catch {
-        /* best-effort */
-      }
+      abortAndResetMerge(basePath, hasMergeHead, squashMsgPath);
       ctx.ui.notify(
         "Detected leftover merge state with unresolved conflicts — cleaned up. Re-deriving state.",
         "warning",
