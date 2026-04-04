@@ -269,7 +269,7 @@ function buildDispatchCtx(
       blockers: [],
       nextAction: "",
       registry: [],
-      requirements: { active: 0, validated: 0, invalidated: 0, deferred: 0 },
+      requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 },
       progress: { milestones: { done: 0, total: 1 } },
       ...stateOverrides,
     },
