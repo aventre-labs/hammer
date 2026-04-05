@@ -175,6 +175,7 @@ Templates showing the expected format for each artifact type are in:
 - Never guess at library APIs from training data — use `get_library_docs`.
 - Never ask the user to run a command, set a variable, or check something you can check yourself.
 - Never await stale async jobs after editing source — `cancel_job` them first, then re-run.
+- Never query `.gsd/gsd.db` directly via `sqlite3`, `better-sqlite3`, or `node -e require('better-sqlite3')` — the database uses a single-writer WAL connection managed by the engine. Direct access causes reader/writer conflicts and bypasses validation logic. Use `gsd_milestone_status`, `gsd_journal_query`, or other `gsd_*` tools exclusively for all DB reads and writes.
 
 ### Ask vs infer
 
