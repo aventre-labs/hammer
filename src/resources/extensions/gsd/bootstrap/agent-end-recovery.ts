@@ -95,8 +95,17 @@ export async function handleAgentEnd(
     return;
   }
   if (lastMsg && "stopReason" in lastMsg && lastMsg.stopReason === "error") {
-    const errorDetail = "errorMessage" in lastMsg && lastMsg.errorMessage ? `: ${lastMsg.errorMessage}` : "";
-    const errorMsg = ("errorMessage" in lastMsg && lastMsg.errorMessage) ? String(lastMsg.errorMessage) : "";
+    // #3588: errorMessage can be useless (e.g. "success") while the real error
+    // is in the assistant message text content. Fall back to content when
+    // errorMessage looks uninformative.
+    const rawErrorMsg = ("errorMessage" in lastMsg && lastMsg.errorMessage) ? String(lastMsg.errorMessage) : "";
+    const isUseless = !rawErrorMsg || /^(success|ok|true|error|unknown)$/i.test(rawErrorMsg.trim());
+    let errorMsg = rawErrorMsg;
+    if (isUseless && "content" in lastMsg && Array.isArray(lastMsg.content)) {
+      const textBlock = lastMsg.content.find((b: any) => b.type === "text" && b.text);
+      if (textBlock) errorMsg = (textBlock as any).text.slice(0, 300);
+    }
+    const errorDetail = errorMsg ? `: ${errorMsg}` : "";
     const explicitRetryAfterMs = ("retryAfterMs" in lastMsg && typeof lastMsg.retryAfterMs === "number") ? lastMsg.retryAfterMs : undefined;
 
     // ── 1. Classify ──────────────────────────────────────────────────────
