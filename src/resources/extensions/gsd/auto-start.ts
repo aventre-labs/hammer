@@ -44,6 +44,9 @@ import {
   nativeInit,
   nativeAddAll,
   nativeCommit,
+  nativeGetCurrentBranch,
+  nativeDetectMainBranch,
+  nativeCheckoutBranch,
 } from "./native-git-bridge.js";
 import { GitServiceImpl } from "./git-service.js";
 import {
@@ -526,6 +529,22 @@ export async function bootstrapAutoSession(
         captureIntegrationBranch(base, s.currentMilestoneId);
       }
       setActiveMilestoneId(base, s.currentMilestoneId);
+    }
+
+    // Guard against stale milestone branch when isolation:none (#3613).
+    // A prior session with isolation:branch/worktree may have left HEAD on
+    // milestone/<MID>. Auto-checkout back to the integration branch.
+    if (getIsolationMode() === "none" && nativeIsRepo(base)) {
+      try {
+        const currentBranch = nativeGetCurrentBranch(base);
+        if (currentBranch.startsWith("milestone/")) {
+          const integrationBranch = nativeDetectMainBranch(base);
+          nativeCheckoutBranch(base, integrationBranch);
+          logWarning("autoStart", `Returned to "${integrationBranch}" — HEAD was on stale milestone branch "${currentBranch}" (isolation: none does not use milestone branches).`);
+        }
+      } catch {
+        // Non-fatal — log and continue; user may need to manually checkout
+      }
     }
 
     // ── Auto-worktree setup ──
