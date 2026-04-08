@@ -1,10 +1,10 @@
 /**
  * Regression test for #3764: TUI input clears and jumps up after PR #3744.
  *
- * PR #3744 used this.cursorRow (content end) as the movement baseline in
- * computeLineDiff, but it should be the post-render cursor position
- * (finalCursorRow). This test verifies that after IME cursor repositioning,
- * the next render computes correct movement deltas — no spurious jumps.
+ * PR #3744 introduced contentCursorRow which diverged from the actual terminal
+ * cursor position, causing computeLineDiff to compute wrong movement deltas.
+ * The fix reverts to using hardwareCursorRow (actual cursor position) as the
+ * baseline for all cursor movement calculations.
  */
 
 import { describe, it } from "node:test";
@@ -59,7 +59,7 @@ class DynamicLinesComponent implements Component {
   invalidate(): void {}
 }
 
-describe("TUI contentCursorRow tracking (#3764)", () => {
+describe("TUI cursor tracking regression (#3764)", () => {
   it("does not produce spurious cursor jumps when content changes after IME positioning", () => {
     const terminal = new MockTTYTerminal();
     const tui = new TUI(terminal, false);
@@ -72,18 +72,11 @@ describe("TUI contentCursorRow tracking (#3764)", () => {
     tui.addChild(component);
     (tui as any).doRender();
 
-    // After first render, hardwareCursorRow is at IME position (row 1),
-    // but contentCursorRow should be at finalCursorRow (row 2, end of content).
-    // Verify contentCursorRow is set correctly.
-    assert.strictEqual(
-      (tui as any).contentCursorRow,
-      2,
-      "contentCursorRow should be at content end (row 2) after first render",
-    );
+    // After first render, hardwareCursorRow is at IME position (row 1)
     assert.strictEqual(
       (tui as any).hardwareCursorRow,
       1,
-      "hardwareCursorRow should be at IME cursor position (row 1) after positionHardwareCursor",
+      "hardwareCursorRow should be at IME cursor position (row 1)",
     );
 
     // Simulate typing — content changes on the same line
@@ -96,14 +89,10 @@ describe("TUI contentCursorRow tracking (#3764)", () => {
 
     (tui as any).doRender();
 
-    // The differential render should update line 1 (the changed input line).
-    // With the bug from PR #3744, computeLineDiff would use this.cursorRow (2)
-    // instead of contentCursorRow (2), which happened to be the same — but the
-    // critical test is that the buffer does NOT contain large cursor jumps.
     assert.ok(terminal.writtenData.length >= 1, "typing should trigger a render");
 
     const buffer = terminal.writtenData[0];
-    // Should not contain \x1b[2A or \x1b[3A etc. (large upward jumps)
+    // Should not contain large upward jumps (3+ rows)
     const largeUpJump = buffer.match(/\x1b\[([3-9]|\d{2,})A/);
     assert.strictEqual(
       largeUpJump,
@@ -112,7 +101,7 @@ describe("TUI contentCursorRow tracking (#3764)", () => {
     );
   });
 
-  it("contentCursorRow persists correctly across renders with shrinking content", () => {
+  it("hardwareCursorRow tracks actual terminal position through IME and shrink", () => {
     const terminal = new MockTTYTerminal();
     const tui = new TUI(terminal, false);
     const component = new DynamicLinesComponent([
@@ -126,10 +115,11 @@ describe("TUI contentCursorRow tracking (#3764)", () => {
     tui.addChild(component);
     (tui as any).doRender();
 
+    // After IME positioning, hardwareCursorRow is at CURSOR_MARKER line (row 1)
     assert.strictEqual(
-      (tui as any).contentCursorRow,
-      4,
-      "contentCursorRow should be 4 after rendering 5 lines",
+      (tui as any).hardwareCursorRow,
+      1,
+      "hardwareCursorRow should be at IME position (row 1) after first render",
     );
 
     // Shrink content
@@ -142,10 +132,11 @@ describe("TUI contentCursorRow tracking (#3764)", () => {
 
     (tui as any).doRender();
 
+    // After shrink, hardwareCursorRow should be at IME position again
     assert.strictEqual(
-      (tui as any).contentCursorRow,
-      2,
-      "contentCursorRow should update to 2 after shrinking to 3 lines",
+      (tui as any).hardwareCursorRow,
+      1,
+      "hardwareCursorRow should be at IME position after shrink render",
     );
   });
 });
