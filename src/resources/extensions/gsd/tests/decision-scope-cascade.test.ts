@@ -118,6 +118,80 @@ describe("deriveSliceScope: keyword extraction", () => {
       "handles mixed case and punctuation",
     );
   });
+
+  test("filters unit IDs (S01, M001, T03)", () => {
+    // "S01: Infrastructure" → undefined (S01 is a unit ID, infrastructure is generic)
+    assert.strictEqual(
+      deriveSliceScope("S01: Infrastructure"),
+      undefined,
+      "skips S01 ID and returns undefined for generic 'Infrastructure'",
+    );
+
+    // "M001 Setup" → undefined (M001 is a unit ID, setup is generic)
+    assert.strictEqual(
+      deriveSliceScope("M001 Setup"),
+      undefined,
+      "skips M001 ID and returns undefined for generic 'Setup'",
+    );
+
+    // "T03: Database Migration" → "database" (skips T03, returns meaningful word)
+    assert.strictEqual(
+      deriveSliceScope("T03: Database Migration"),
+      "database",
+      "skips T03 ID and returns 'database'",
+    );
+
+    // "S02 Auth Flow" → "auth" (skips S02, returns meaningful word)
+    assert.strictEqual(
+      deriveSliceScope("S02 Auth Flow"),
+      "auth",
+      "skips S02 ID and returns 'auth'",
+    );
+  });
+
+  test("filters process/activity words", () => {
+    // "Integration Testing + Hardening" → undefined (all generic/process words)
+    assert.strictEqual(
+      deriveSliceScope("Integration Testing + Hardening"),
+      undefined,
+      "returns undefined for 'Integration Testing + Hardening'",
+    );
+
+    // "Validation & Verification" → undefined (both are process words)
+    assert.strictEqual(
+      deriveSliceScope("Validation & Verification"),
+      undefined,
+      "returns undefined for 'Validation & Verification'",
+    );
+
+    // "Performance Optimization" → "performance" (optimization is generic, performance is domain)
+    assert.strictEqual(
+      deriveSliceScope("Performance Optimization"),
+      "performance",
+      "extracts 'performance' before generic 'optimization'",
+    );
+
+    // "Security Enhancement" → "security" (enhancement is generic, security is domain)
+    assert.strictEqual(
+      deriveSliceScope("Security Enhancement"),
+      "security",
+      "extracts 'security' before generic 'enhancement'",
+    );
+
+    // "WebSocket Delivery Pipeline" → "websocket"
+    assert.strictEqual(
+      deriveSliceScope("WebSocket Delivery Pipeline"),
+      "websocket",
+      "extracts 'websocket' from delivery pipeline title",
+    );
+
+    // "Prisma Schema + Migration" → "prisma"
+    assert.strictEqual(
+      deriveSliceScope("Prisma Schema + Migration"),
+      "prisma",
+      "extracts 'prisma' from schema migration title",
+    );
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
