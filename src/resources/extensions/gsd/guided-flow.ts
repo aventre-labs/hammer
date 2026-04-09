@@ -41,6 +41,10 @@ import { parkMilestone, discardMilestone } from "./milestone-actions.js";
 import { selectAndApplyModel } from "./auto-model-selection.js";
 import { DISCUSS_TOOLS_ALLOWLIST } from "./constants.js";
 import {
+  getWorkflowTransportSupportError,
+  getRequiredWorkflowToolsForGuidedUnit,
+} from "./workflow-mcp.js";
+import {
   runPreparation,
   formatCodebaseBrief,
   formatPriorContextBrief,
@@ -317,6 +321,26 @@ async function dispatchWorkflow(
         model: `${result.appliedModel.provider}/${result.appliedModel.id}`,
         routing: result.routing,
       });
+    }
+
+    const compatibilityError = getWorkflowTransportSupportError(
+      result.appliedModel?.provider ?? ctx.model?.provider,
+      getRequiredWorkflowToolsForGuidedUnit(unitType),
+      {
+        projectRoot: process.cwd(),
+        surface: "guided flow",
+        unitType,
+        authMode: result.appliedModel?.provider
+          ? ctx.modelRegistry.getProviderAuthMode(result.appliedModel.provider)
+          : ctx.model?.provider
+            ? ctx.modelRegistry.getProviderAuthMode(ctx.model.provider)
+            : undefined,
+        baseUrl: result.appliedModel?.baseUrl ?? ctx.model?.baseUrl,
+      },
+    );
+    if (compatibilityError) {
+      ctx.ui.notify(compatibilityError, "error");
+      return;
     }
   }
 

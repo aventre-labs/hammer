@@ -41,6 +41,10 @@ import { isDbAvailable, getMilestoneSlices } from "../gsd-db.js";
 import { resetEvidence } from "../safety/evidence-collector.js";
 import { createCheckpoint, cleanupCheckpoint, rollbackToCheckpoint } from "../safety/git-checkpoint.js";
 import { resolveSafetyHarnessConfig } from "../safety/safety-harness.js";
+import {
+  getWorkflowTransportSupportError,
+  getRequiredWorkflowToolsForAutoUnit,
+} from "../workflow-mcp.js";
 
 // ─── generateMilestoneReport ──────────────────────────────────────────────────
 
@@ -1215,6 +1219,27 @@ export async function runUnitPhase(
   s.currentDispatchedModelId = s.currentUnitModel
     ? `${(s.currentUnitModel as any).provider ?? ""}/${(s.currentUnitModel as any).id ?? ""}`
     : null;
+
+  const compatibilityError = getWorkflowTransportSupportError(
+    s.currentUnitModel?.provider ?? ctx.model?.provider,
+    getRequiredWorkflowToolsForAutoUnit(unitType),
+    {
+      projectRoot: s.basePath,
+      surface: "auto-mode",
+      unitType,
+      authMode: s.currentUnitModel?.provider
+        ? ctx.modelRegistry.getProviderAuthMode(s.currentUnitModel.provider)
+        : ctx.model?.provider
+          ? ctx.modelRegistry.getProviderAuthMode(ctx.model.provider)
+          : undefined,
+      baseUrl: (s.currentUnitModel as any)?.baseUrl ?? ctx.model?.baseUrl,
+    },
+  );
+  if (compatibilityError) {
+    ctx.ui.notify(compatibilityError, "error");
+    await deps.stopAuto(ctx, pi, compatibilityError);
+    return { action: "break", reason: "workflow-capability" };
+  }
 
   // Progress widget + preconditions — deferred to after model selection so the
   // widget's first render tick shows the correct model (#2899).
