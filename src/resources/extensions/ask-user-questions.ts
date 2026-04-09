@@ -254,7 +254,7 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 
 				const raceResult = await raceRemoteAndLocal(
 					() => tryRemoteQuestions(params.questions, raceSignal),
-					() => showInterviewRound(params.questions, {}, ctx as any),
+					() => showInterviewRound(params.questions, { signal: raceSignal }, ctx as any),
 					raceController,
 					params.questions,
 				);
