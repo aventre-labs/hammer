@@ -7,8 +7,9 @@ import {
 	getClaudeLookupCommand,
 	makeStreamExhaustedErrorMessage,
 	parseClaudeLookupOutput,
+	sanitizeClaudeCodeStreamingEvent,
 } from "../stream-adapter.ts";
-import type { Context, Message } from "@gsd/pi-ai";
+import type { AssistantMessage, Context, Message } from "@gsd/pi-ai";
 
 // ---------------------------------------------------------------------------
 // Existing tests — exhausted stream fallback (#2575)
@@ -158,6 +159,61 @@ describe("stream-adapter — final content filtering (#3861)", () => {
 		);
 
 		assert.deepEqual(finalContent, [{ type: "text", text: "User-facing answer" }]);
+	});
+});
+
+describe("stream-adapter — streaming content filtering follow-up (#3867)", () => {
+	function makePartial(content: AssistantMessage["content"]): AssistantMessage {
+		return {
+			role: "assistant",
+			content,
+			api: "anthropic-messages",
+			provider: "claude-code",
+			model: "claude-sonnet-4-20250514",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		};
+	}
+
+	test("sanitizeClaudeCodeStreamingEvent strips tool calls from streamed partials and remaps contentIndex", () => {
+		const event = sanitizeClaudeCodeStreamingEvent({
+			type: "text_delta",
+			contentIndex: 2,
+			delta: "Done.",
+			partial: makePartial([
+				{ type: "toolCall", id: "tc_1", name: "ToolSearch", arguments: {} },
+				{ type: "thinking", thinking: "Planning next step" },
+				{ type: "text", text: "Done." },
+			] as any),
+		});
+
+		assert.ok(event, "text events should still be forwarded");
+		assert.equal(event!.type, "text_delta");
+		assert.equal((event! as any).contentIndex, 1);
+		assert.deepEqual((event! as any).partial.content, [
+			{ type: "thinking", thinking: "Planning next step" },
+			{ type: "text", text: "Done." },
+		]);
+	});
+
+	test("sanitizeClaudeCodeStreamingEvent suppresses internal tool streaming events entirely", () => {
+		const event = sanitizeClaudeCodeStreamingEvent({
+			type: "toolcall_start",
+			contentIndex: 0,
+			partial: makePartial([
+				{ type: "toolCall", id: "tc_1", name: "Bash", arguments: {} },
+			] as any),
+		});
+
+		assert.equal(event, null);
 	});
 });
 

@@ -154,16 +154,73 @@ export function makeStreamExhaustedErrorMessage(model: string, lastTextContent: 
 
 /**
  * Claude Code executes its own internal tool loop inside the SDK call. The
- * final assistant message should therefore contain only user-facing content
- * (text/thinking), not replayable toolCall blocks that GSD would render again.
+ * streamed and final assistant messages should therefore contain only
+ * user-facing content (text/thinking), not replayable tool blocks that GSD
+ * would render again.
  */
+function isUserFacingClaudeCodeBlock(block: AssistantMessage["content"][number]): boolean {
+	return block.type === "text" || block.type === "thinking";
+}
+
+function filterUserFacingClaudeCodeContent(
+	blocks: AssistantMessage["content"],
+): AssistantMessage["content"] {
+	return blocks.filter(isUserFacingClaudeCodeBlock);
+}
+
+function remapClaudeCodeContentIndex(
+	blocks: AssistantMessage["content"],
+	contentIndex: number,
+): number {
+	let visibleCount = 0;
+	for (let i = 0; i <= contentIndex && i < blocks.length; i++) {
+		if (isUserFacingClaudeCodeBlock(blocks[i]!)) visibleCount++;
+	}
+	return Math.max(0, visibleCount - 1);
+}
+
+function sanitizeClaudeCodePartial(
+	partial: AssistantMessage,
+): AssistantMessage {
+	return {
+		...partial,
+		content: filterUserFacingClaudeCodeContent(partial.content),
+	};
+}
+
+export function sanitizeClaudeCodeStreamingEvent(
+	event: AssistantMessageEvent,
+): AssistantMessageEvent | null {
+	switch (event.type) {
+		case "toolcall_start":
+		case "toolcall_delta":
+		case "toolcall_end":
+		case "server_tool_use":
+		case "web_search_result":
+			return null;
+		case "text_start":
+		case "text_delta":
+		case "text_end":
+		case "thinking_start":
+		case "thinking_delta":
+		case "thinking_end":
+			return {
+				...event,
+				contentIndex: remapClaudeCodeContentIndex(event.partial.content, event.contentIndex),
+				partial: sanitizeClaudeCodePartial(event.partial),
+			};
+		default:
+			return event;
+	}
+}
+
 export function buildFinalClaudeCodeContent(
 	blocks: AssistantMessage["content"],
 	lastThinkingContent: string,
 	lastTextContent: string,
 	resultText?: string,
 ): AssistantMessage["content"] {
-	const finalContent = blocks.filter((block) => block.type === "text" || block.type === "thinking");
+	const finalContent = filterUserFacingClaudeCodeContent(blocks);
 	if (finalContent.length > 0) return finalContent;
 
 	if (lastThinkingContent) {
@@ -305,16 +362,10 @@ async function pumpSdkMessages(
 					if (!builder) break;
 
 					const assistantEvent = builder.handleEvent(event);
-					if (assistantEvent) {
-						// Skip toolcall events — the agent loop's externalToolExecution
-						// path emits tool_execution_start/end events after streamSimple
-						// returns. Streaming toolcall events would render tool calls
-						// out of order in the TUI's accumulated message content.
-						const t = assistantEvent.type;
-						if (t !== "toolcall_start" && t !== "toolcall_delta" && t !== "toolcall_end") {
-							stream.push(assistantEvent);
-						}
-					}
+					const sanitizedEvent = assistantEvent
+						? sanitizeClaudeCodeStreamingEvent(assistantEvent)
+						: null;
+					if (sanitizedEvent) stream.push(sanitizedEvent);
 					break;
 				}
 
