@@ -7,10 +7,13 @@
 
 import { SessionManager } from './session-manager.js';
 import { createMcpServer } from './server.js';
+import { loadStoredCredentialEnvKeys } from './tool-credentials.js';
 
 const MCP_PKG = '@modelcontextprotocol/sdk';
 
 async function main(): Promise<void> {
+  loadStoredCredentialEnvKeys();
+
   const sessionManager = new SessionManager();
 
   // Create the configured MCP server with session, interactive, read-only,
