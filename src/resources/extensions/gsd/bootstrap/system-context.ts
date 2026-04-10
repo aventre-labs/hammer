@@ -19,6 +19,7 @@ import { deriveState } from "../state.js";
 import { formatOverridesSection, formatShortcut, loadActiveOverrides, loadFile, parseContinue, parseSummary } from "../files.js";
 import { toPosixPath } from "../../shared/mod.js";
 import { markCmuxPromptShown, shouldPromptToEnableCmux } from "../../cmux/index.js";
+import { autoEnableCmuxPreferences } from "../commands-cmux.js";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
@@ -76,13 +77,16 @@ export async function buildBeforeAgentStartResult(
     shortcutDashboard: formatShortcut("Ctrl+Alt+G"),
     shortcutShell: formatShortcut("Ctrl+Alt+B"),
   });
-  const loadedPreferences = loadEffectiveGSDPreferences();
+  let loadedPreferences = loadEffectiveGSDPreferences();
   if (shouldPromptToEnableCmux(loadedPreferences?.preferences)) {
     markCmuxPromptShown();
-    ctx.ui.notify(
-      "cmux detected. Run /gsd cmux on to enable sidebar metadata, notifications, and visual subagent splits for this project.",
-      "info",
-    );
+    if (autoEnableCmuxPreferences()) {
+      loadedPreferences = loadEffectiveGSDPreferences();
+      ctx.ui.notify(
+        "cmux detected — auto-enabled. Run /gsd cmux off to disable.",
+        "info",
+      );
+    }
   }
 
   let preferenceBlock = "";
