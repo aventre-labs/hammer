@@ -80,6 +80,66 @@ GSD detects your local Claude Code installation and uses it as the authenticated
 
 > **Note:** GSD does not support browser-based OAuth sign-in for Anthropic. Use an API key or the Claude Code CLI instead.
 
+**Option C — Use your Claude Pro/Max plan with GSD inside Claude Code:**
+
+If you already have a Claude Pro or Max subscription and want to use GSD's planning, execution, and milestone orchestration directly from Claude Code — without switching to a separate terminal — you can connect GSD as an MCP server. This gives Claude Code access to GSD's full workflow toolset via the [Model Context Protocol](https://modelcontextprotocol.io), so you get GSD's structured project management powered by your existing Claude plan.
+
+**Automatic setup (recommended):**
+
+When GSD detects a Claude Code model during startup, it automatically writes a `.mcp.json` file in your project root with the GSD workflow MCP server configured. No manual steps needed — just start GSD once with Claude Code as the provider and the config is created for you.
+
+You can also trigger this manually from inside a GSD session:
+
+```bash
+/gsd mcp init
+```
+
+This writes (or updates) the `gsd-workflow` entry in your project's `.mcp.json`. Claude Code discovers this file automatically on its next session start.
+
+**Manual setup:**
+
+If you prefer to configure it yourself, add GSD to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "gsd": {
+      "command": "npx",
+      "args": ["gsd-mcp-server"],
+      "env": {
+        "GSD_CLI_PATH": "/path/to/gsd"
+      }
+    }
+  }
+}
+```
+
+Or if `gsd-mcp-server` is installed globally:
+
+```json
+{
+  "mcpServers": {
+    "gsd": {
+      "command": "gsd-mcp-server"
+    }
+  }
+}
+```
+
+You can also add this to `~/.claude/settings.json` under `mcpServers` to make GSD available across all projects.
+
+**What's exposed:**
+
+The MCP server provides GSD's full workflow tool surface — milestone planning, task completion, slice management, roadmap reassessment, journal queries, and more. Session management tools (`gsd_execute`, `gsd_status`, `gsd_result`, `gsd_cancel`) let Claude Code start and monitor GSD auto-mode sessions. See [Commands → MCP Server Mode](./commands.md#mcp-server-mode) for the full tool list.
+
+**Verify the connection:**
+
+From inside a GSD session, check that the MCP server is reachable:
+
+```bash
+/gsd mcp status
+```
+
 ### OpenAI
 
 ```bash
