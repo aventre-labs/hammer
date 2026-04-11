@@ -2,7 +2,7 @@
  * MCP Server — registers GSD orchestration, project-state, and workflow tools.
  *
  * Session tools (6): gsd_execute, gsd_status, gsd_result, gsd_cancel, gsd_query, gsd_resolve_blocker
- * Interactive tools (1): ask_user_questions via MCP form elicitation
+ * Interactive tools (2): ask_user_questions, secure_env_collect via MCP form elicitation
  * Read-only tools (6): gsd_progress, gsd_roadmap, gsd_history, gsd_doctor, gsd_captures, gsd_knowledge
  * Workflow tools (29): headless-safe planning, metadata persistence, replanning, completion, validation, reassessment, gate result, status, and journal tools
  *
@@ -22,6 +22,7 @@ import { readCaptures } from './readers/captures.js';
 import { readKnowledge } from './readers/knowledge.js';
 import { runDoctorLite } from './readers/doctor-lite.js';
 import { registerWorkflowTools } from './workflow-tools.js';
+import { applySecrets, checkExistingEnvKeys, detectDestination } from './env-writer.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -112,11 +113,26 @@ async function fileExists(path: string): Promise<boolean> {
 // MCP Server type — minimal interface for the dynamically-imported McpServer
 // ---------------------------------------------------------------------------
 
+interface ElicitResult {
+  action: 'accept' | 'decline' | 'cancel';
+  content?: Record<string, string | number | boolean | string[]>;
+}
+
+interface ElicitRequestFormParams {
+  mode?: 'form';
+  message: string;
+  requestedSchema: {
+    type: 'object';
+    properties: Record<string, Record<string, unknown>>;
+    required?: string[];
+  };
+}
+
 interface McpServerInstance {
   tool(name: string, description: string, params: Record<string, unknown>, handler: (args: Record<string, unknown>) => Promise<unknown>): unknown;
   server: {
     elicitInput(
-      params: AskUserQuestionsElicitRequest,
+      params: AskUserQuestionsElicitRequest | ElicitRequestFormParams,
       options?: unknown,
     ): Promise<AskUserQuestionsElicitResult>;
   };
@@ -282,7 +298,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
 
   const server: McpServerInstance = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, elicitation: {} } },
   );
 
   // -----------------------------------------------------------------------
@@ -466,6 +482,124 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
         }
 
         return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // secure_env_collect — collect secrets via MCP form elicitation
+  // -----------------------------------------------------------------------
+  server.tool(
+    'secure_env_collect',
+    'Collect environment variables securely via form input. Values are written directly to .env (or Vercel/Convex) and NEVER appear in tool output — only key names and applied/skipped status are returned. Use this instead of asking users to manually edit .env files or paste secrets into chat.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      keys: z.array(z.object({
+        key: z.string().describe('Env var name, e.g. OPENAI_API_KEY'),
+        hint: z.string().optional().describe('Format hint shown to user, e.g. "starts with sk-"'),
+        guidance: z.array(z.string()).optional().describe('Step-by-step instructions for obtaining this key'),
+      })).min(1).describe('Environment variables to collect'),
+      destination: z.enum(['dotenv', 'vercel', 'convex']).optional().describe('Where to write secrets. Auto-detected from project files if omitted.'),
+      envFilePath: z.string().optional().describe('Path to .env file (dotenv only). Defaults to .env in projectDir.'),
+      environment: z.enum(['development', 'preview', 'production']).optional().describe('Target environment (vercel/convex only)'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, keys, destination, envFilePath, environment } = args as {
+        projectDir: string;
+        keys: Array<{ key: string; hint?: string; guidance?: string[] }>;
+        destination?: 'dotenv' | 'vercel' | 'convex';
+        envFilePath?: string;
+        environment?: 'development' | 'preview' | 'production';
+      };
+
+      try {
+        const resolvedProjectDir = resolve(projectDir);
+        const resolvedEnvPath = resolve(resolvedProjectDir, envFilePath ?? '.env');
+
+        // (1) Check which keys already exist
+        const allKeyNames = keys.map((k) => k.key);
+        const existingKeys = await checkExistingEnvKeys(allKeyNames, resolvedEnvPath);
+        const existingSet = new Set(existingKeys);
+        const pendingKeys = keys.filter((k) => !existingSet.has(k.key));
+
+        // If all keys already exist, return immediately
+        if (pendingKeys.length === 0) {
+          const lines = existingKeys.map((k) => `• ${k}: already set`);
+          return textContent(`All ${existingKeys.length} key(s) already set.\n${lines.join('\n')}`);
+        }
+
+        // (2) Build elicitation form — one string field per pending key
+        const properties: Record<string, Record<string, unknown>> = {};
+        const required: string[] = [];
+
+        for (const item of pendingKeys) {
+          const descParts: string[] = [];
+          if (item.hint) descParts.push(`Format: ${item.hint}`);
+          if (item.guidance && item.guidance.length > 0) {
+            descParts.push('How to get this:');
+            item.guidance.forEach((step, i) => descParts.push(`${i + 1}. ${step}`));
+          }
+          descParts.push('Leave empty to skip.');
+
+          properties[item.key] = {
+            type: 'string',
+            title: item.key,
+            description: descParts.join('\n'),
+          };
+          // Don't mark as required — empty string = skip
+        }
+
+        // (3) Elicit input from the MCP client
+        const elicitation = await server.server.elicitInput({
+          message: `Enter values for ${pendingKeys.length} environment variable(s). Values are written directly to the project and never shown to the AI.`,
+          requestedSchema: {
+            type: 'object',
+            properties,
+            required,
+          },
+        });
+
+        if (elicitation.action !== 'accept' || !elicitation.content) {
+          return textContent('secure_env_collect was cancelled by user.');
+        }
+
+        // (4) Separate provided vs skipped from form response
+        const provided: Array<{ key: string; value: string }> = [];
+        const skipped: string[] = [];
+
+        for (const item of pendingKeys) {
+          const raw = elicitation.content[item.key];
+          const value = typeof raw === 'string' ? raw.trim() : '';
+          if (value.length > 0) {
+            provided.push({ key: item.key, value });
+          } else {
+            skipped.push(item.key);
+          }
+        }
+
+        // (5) Auto-detect destination if not specified
+        const resolvedDestination = destination ?? detectDestination(resolvedProjectDir);
+
+        // (6) Write secrets to destination
+        const { applied, errors } = await applySecrets(provided, resolvedDestination, {
+          envFilePath: resolvedEnvPath,
+          environment,
+        });
+
+        // (7) Build result — NEVER include secret values
+        const lines: string[] = [
+          `destination: ${resolvedDestination}${!destination ? ' (auto-detected)' : ''}${environment ? ` (${environment})` : ''}`,
+        ];
+        for (const k of applied) lines.push(`✓ ${k}: applied`);
+        for (const k of skipped) lines.push(`• ${k}: skipped`);
+        for (const k of existingKeys) lines.push(`• ${k}: already set`);
+        for (const e of errors) lines.push(`✗ ${e}`);
+
+        return errors.length > 0 && applied.length === 0
+          ? errorContent(lines.join('\n'))
+          : textContent(lines.join('\n'));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
