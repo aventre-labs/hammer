@@ -125,9 +125,8 @@ import {
 } from "./metrics.js";
 import { setLogBasePath, logWarning, logError } from "./workflow-logger.js";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
-import { createRequire } from "node:module";
 import { atomicWriteSync } from "./atomic-write.js";
 import {
   autoCommitCurrentBranch,
@@ -1334,13 +1333,17 @@ export async function startAuto(
     restoreHookState(s.basePath);
     // Re-sync managed resources on resume so long-lived auto sessions pick up
     // bundled extension updates before resume-time verification/state logic runs.
+    // GSD_PKG_ROOT is set by loader.ts and points to the gsd-pi package root.
+    // The relative import ("../../../resource-loader.js") only works from the source
+    // tree; deployed extensions live at ~/.gsd/agent/extensions/gsd/ where the
+    // relative path resolves to ~/.gsd/agent/resource-loader.js which doesn't exist.
+    // Using GSD_PKG_ROOT constructs a correct absolute path in both contexts (#3949).
     const agentDir = process.env.GSD_CODING_AGENT_DIR || join(process.env.GSD_HOME || homedir(), ".gsd", "agent");
-    // Resolve resource-loader from the gsd-pi package root — the relative
-    // "../../../resource-loader.js" path only works from the source tree but
-    // breaks when extensions are deployed to ~/.gsd/agent/extensions/gsd/.
-    const _req = createRequire(import.meta.url);
-    const pkgRoot = dirname(_req.resolve("gsd-pi/package.json"));
-    const { initResources } = await import(join(pkgRoot, "dist", "resource-loader.js"));
+    const pkgRoot = process.env.GSD_PKG_ROOT;
+    const resourceLoaderPath = pkgRoot
+      ? join(pkgRoot, "dist", "resource-loader.js")
+      : new URL("../../../resource-loader.js", import.meta.url).href;
+    const { initResources } = await import(resourceLoaderPath);
     initResources(agentDir);
     // Open the project DB before rebuild/derive so resume uses DB-backed
     // state instead of falling back to stale markdown parsing (#2940).
