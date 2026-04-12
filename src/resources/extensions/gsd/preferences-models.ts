@@ -406,3 +406,18 @@ export function resolveSearchProviderFromPreferences(): GSDPreferences["search_p
   const prefs = loadEffectiveGSDPreferences();
   return prefs?.preferences.search_provider;
 }
+
+/**
+ * Resolve provider IDs excluded from model selection/routing.
+ * Returns a normalized, de-duplicated list.
+ */
+export function resolveDisabledModelProvidersFromPreferences(): string[] {
+  const prefs = loadEffectiveGSDPreferences();
+  const raw = prefs?.preferences.disabled_model_providers;
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(
+    raw
+      .map((provider) => provider.trim())
+      .filter((provider) => provider.length > 0),
+  ));
+}

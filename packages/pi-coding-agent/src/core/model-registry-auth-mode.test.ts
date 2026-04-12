@@ -5,14 +5,17 @@ import { getApiProvider } from "@gsd/pi-ai";
 import type { AuthStorage } from "./auth-storage.js";
 import { ModelRegistry } from "./model-registry.js";
 
-function createRegistry(hasAuthFn?: (provider: string) => boolean): ModelRegistry {
+function createRegistry(
+	hasAuthFn?: (provider: string) => boolean,
+	getApiKeyFn?: (provider: string) => Promise<string | undefined>,
+): ModelRegistry {
 	const authStorage = {
 		setFallbackResolver: () => {},
 		onCredentialChange: () => {},
 		getOAuthProviders: () => [],
 		get: () => undefined,
 		hasAuth: hasAuthFn ?? (() => false),
-		getApiKey: async () => undefined,
+		getApiKey: async (provider: string) => getApiKeyFn ? getApiKeyFn(provider) : undefined,
 	} as unknown as AuthStorage;
 
 	return new ModelRegistry(authStorage, undefined);
@@ -287,6 +290,12 @@ describe("ModelRegistry authMode — isProviderRequestReady", () => {
 		const registry = createRegistry(() => true);
 		assert.equal(registry.isProviderRequestReady("anthropic"), true);
 	});
+
+	it("returns false for denylisted providers even when auth exists", () => {
+		const registry = createRegistry(() => true);
+		registry.setDisabledModelProviders(["anthropic"]);
+		assert.equal(registry.isProviderRequestReady("anthropic"), false);
+	});
 });
 
 // ─── isReady callback ─────────────────────────────────────────────────────────
@@ -389,6 +398,17 @@ describe("ModelRegistry authMode — getAvailable", () => {
 		const available = registry.getAvailable();
 		assert.equal(available.length, 0);
 	});
+
+	it("excludes denylisted providers from available models", () => {
+		const registry = createRegistry(() => true);
+		registry.setDisabledModelProviders(["google-gemini-cli"]);
+		const available = registry.getAvailable();
+		assert.equal(
+			available.some((m) => m.provider === "google-gemini-cli"),
+			false,
+			"google-gemini-cli models must be hidden when provider is denylisted",
+		);
+	});
 });
 
 // ─── getApiKey ────────────────────────────────────────────────────────────────
@@ -424,6 +444,16 @@ describe("ModelRegistry authMode — getApiKey", () => {
 		const registry = createRegistry();
 		const key = await registry.getApiKeyForProvider("anthropic");
 		assert.equal(key, undefined);
+	});
+
+	it("still resolves provider keys for denylisted providers", async () => {
+		const registry = createRegistry(
+			() => true,
+			async (provider: string) => provider === "google-gemini-cli" ? "ya29.test-token" : undefined,
+		);
+		registry.setDisabledModelProviders(["google-gemini-cli"]);
+		const key = await registry.getApiKeyForProvider("google-gemini-cli");
+		assert.equal(key, "ya29.test-token");
 	});
 });
 

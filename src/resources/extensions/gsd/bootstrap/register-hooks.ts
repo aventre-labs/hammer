@@ -35,6 +35,15 @@ async function syncServiceTierStatus(ctx: ExtensionContext): Promise<void> {
   ctx.ui.setStatus("gsd-fast", formatServiceTierFooterStatus(getEffectiveServiceTier(), ctx.model?.id));
 }
 
+async function applyDisabledModelProviderPolicy(ctx: ExtensionContext): Promise<void> {
+  try {
+    const { resolveDisabledModelProvidersFromPreferences } = await import("../preferences.js");
+    ctx.modelRegistry.setDisabledModelProviders(resolveDisabledModelProvidersFromPreferences());
+  } catch {
+    // Non-fatal: keep default provider visibility if preferences cannot be loaded.
+  }
+}
+
 export function registerHooks(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     initNotificationStore(process.cwd());
@@ -45,6 +54,7 @@ export function registerHooks(pi: ExtensionAPI): void {
     resetToolCallLoopGuard();
     resetAskUserQuestionsCache();
     await syncServiceTierStatus(ctx);
+    await applyDisabledModelProviderPolicy(ctx);
 
     // Apply show_token_cost preference (#1515)
     try {
@@ -85,6 +95,7 @@ export function registerHooks(pi: ExtensionAPI): void {
     resetAskUserQuestionsCache();
     clearDiscussionFlowState();
     await syncServiceTierStatus(ctx);
+    await applyDisabledModelProviderPolicy(ctx);
     loadToolApiKeys();
   });
 

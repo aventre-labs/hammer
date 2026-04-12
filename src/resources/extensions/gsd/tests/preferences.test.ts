@@ -151,6 +151,19 @@ test("mixed valid/invalid/unknown keys handled correctly", () => {
   assert.equal(preferences.budget_ceiling, undefined);
 });
 
+test("disabled_model_providers validates and normalizes string arrays", () => {
+  const { preferences, errors } = validatePreferences({
+    disabled_model_providers: ["google-gemini-cli", "  google-gemini-cli  ", "openai-codex", "   "],
+  });
+  assert.equal(errors.length, 0);
+  assert.deepEqual(preferences.disabled_model_providers, ["google-gemini-cli", "openai-codex"]);
+});
+
+test("disabled_model_providers rejects non-array values", () => {
+  const { errors } = validatePreferences({ disabled_model_providers: "google-gemini-cli" as any });
+  assert.ok(errors.some((e) => e.includes("disabled_model_providers must be an array of strings")));
+});
+
 // ── Wizard fields ────────────────────────────────────────────────────────────
 
 test("budget fields validate correctly", () => {

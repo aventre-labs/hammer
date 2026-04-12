@@ -191,6 +191,8 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `hooks`: boolean — enable routing hooks. Default: `true`.
   - `capability_routing`: boolean — enable capability-profile scoring for model selection within a tier. Requires `enabled: true`. Default: `false`.
 
+- `disabled_model_providers`: string[] — provider IDs to hide from model selection and routing (for example `["google-gemini-cli"]`). This only affects model availability (`/model`, auto-model selection, routing); it does not disable tool auth flows like `google_search`.
+
 - `context_management`: configures context hygiene for auto-mode sessions. Keys:
   - `observation_masking`: boolean — mask old tool results to reduce context bloat. Default: `true`.
   - `observation_mask_turns`: number — keep this many recent turns verbatim (1-50). Default: `8`.

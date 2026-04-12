@@ -81,6 +81,7 @@ export {
   resolveInlineLevel,
   resolveContextSelection,
   resolveSearchProviderFromPreferences,
+  resolveDisabledModelProvidersFromPreferences,
 } from "./preferences-models.js";
 
 // ─── Path Constants & Getters ───────────────────────────────────────────────

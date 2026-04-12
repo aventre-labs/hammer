@@ -39,6 +39,7 @@ dynamic_routing:
   budget_pressure:
   cross_provider:
   hooks:
+disabled_model_providers: []
 auto_visualize:
 auto_report:
 parallel:
