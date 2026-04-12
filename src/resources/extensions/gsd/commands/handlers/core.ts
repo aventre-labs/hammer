@@ -305,10 +305,13 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
   // /gsd model is an explicit per-session pin for GSD dispatches.
   // This is captured at auto bootstrap so it survives internal session
   // switches during /gsd auto and /gsd next runs.
-  setSessionModelOverride(ctx.sessionManager.getSessionId(), {
-    provider: targetModel.provider,
-    id: targetModel.id,
-  });
+  const sessionId = ctx.sessionManager?.getSessionId?.();
+  if (sessionId) {
+    setSessionModelOverride(sessionId, {
+      provider: targetModel.provider,
+      id: targetModel.id,
+    });
+  }
 
   ctx.ui.notify(`Model: ${targetModel.provider}/${targetModel.id}`, "info");
 }
