@@ -384,6 +384,116 @@ describe("workflow MCP tools", () => {
     }
   });
 
+  it("gsd_requirement_save opens the DB before inline requirement writes", async () => {
+    const base = makeTmpBase();
+    try {
+      const server = makeMockServer();
+      registerWorkflowTools(server as any);
+      const requirementTool = server.tools.find((t) => t.name === "gsd_requirement_save");
+      assert.ok(requirementTool, "requirement tool should be registered");
+
+      closeDatabase();
+
+      const result = await requirementTool!.handler({
+        projectDir: base,
+        class: "operability",
+        description: "Inline MCP requirement save regression",
+        why: "Reproduce missing ensureDbOpen in workflow-tools",
+        source: "user",
+        status: "active",
+        primary_owner: "M010/S10",
+        validation: "n/a",
+      });
+
+      assert.match((result as any).content[0].text as string, /Saved requirement R\d+/);
+      assert.ok(existsSync(join(base, ".gsd", "REQUIREMENTS.md")), "REQUIREMENTS.md should be written to disk");
+      const row = _getAdapter()!
+        .prepare("SELECT id, class, description FROM requirements WHERE description = ?")
+        .get("Inline MCP requirement save regression") as Record<string, unknown> | undefined;
+      assert.ok(row, "requirement should be written to the database");
+      assert.equal(row["class"], "operability");
+    } finally {
+      cleanup(base);
+    }
+  });
+
+  it("gsd_plan_task reopens the DB before inline task planning writes", async () => {
+    const base = makeTmpBase();
+    try {
+      const server = makeMockServer();
+      registerWorkflowTools(server as any);
+      const milestoneTool = server.tools.find((t) => t.name === "gsd_plan_milestone");
+      const sliceTool = server.tools.find((t) => t.name === "gsd_plan_slice");
+      const taskTool = server.tools.find((t) => t.name === "gsd_plan_task");
+      assert.ok(milestoneTool, "milestone planning tool should be registered");
+      assert.ok(sliceTool, "slice planning tool should be registered");
+      assert.ok(taskTool, "task planning tool should be registered");
+
+      await milestoneTool!.handler({
+        projectDir: base,
+        milestoneId: "M010",
+        title: "Inline task planning DB reopen",
+        vision: "Seed a slice, close the DB, then plan another task inline.",
+        slices: [
+          {
+            sliceId: "S10",
+            title: "Inline task planning",
+            risk: "medium",
+            depends: [],
+            demo: "Inline gsd_plan_task reopens the DB after it was closed.",
+            goal: "Preserve MCP task planning after the DB adapter is closed.",
+            successCriteria: "The second task plan persists after a closed DB is reopened.",
+            proofLevel: "integration",
+            integrationClosure: "The inline MCP handler reopens the DB before planning.",
+            observabilityImpact: "workflow-tools MCP tests cover the inline reopen path.",
+          },
+        ],
+      });
+      await sliceTool!.handler({
+        projectDir: base,
+        milestoneId: "M010",
+        sliceId: "S10",
+        goal: "Create the initial slice plan before closing the DB.",
+        tasks: [
+          {
+            taskId: "T10",
+            title: "Seed existing task",
+            description: "Create the initial task plan before closing the DB.",
+            estimate: "5m",
+            files: ["packages/mcp-server/src/workflow-tools.ts"],
+            verify: "node --test",
+            inputs: ["M010-ROADMAP.md"],
+            expectedOutput: ["T10-PLAN.md"],
+          },
+        ],
+      });
+
+      closeDatabase();
+
+      const result = await taskTool!.handler({
+        projectDir: base,
+        milestoneId: "M010",
+        sliceId: "S10",
+        taskId: "T11",
+        title: "Reopen and plan",
+        description: "Exercise the inline plan-task path after the DB was closed.",
+        estimate: "5m",
+        files: ["packages/mcp-server/src/workflow-tools.ts"],
+        verify: "node --test",
+        inputs: ["M010-ROADMAP.md", "S10-PLAN.md"],
+        expectedOutput: ["T11-PLAN.md"],
+      });
+
+      assert.match((result as any).content[0].text as string, /Planned task T11/);
+      assert.ok(
+        existsSync(join(base, ".gsd", "milestones", "M010", "slices", "S10", "tasks", "T11-PLAN.md")),
+        "T11 plan should be written after reopening the DB",
+      );
+    } finally {
+      cleanup(base);
+    }
+  });
+
   it("gsd_replan_slice and gsd_slice_replan work end-to-end", async () => {
     const base = makeTmpBase();
     try {
