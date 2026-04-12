@@ -57,7 +57,15 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 	}
 
 	const models = await discoverModels();
-	if (models.length === 0) return true; // Running but no models pulled
+	if (models.length === 0) {
+		// No local models means there's nothing usable to register in GSD.
+		// Keep the footer/status clean instead of advertising Ollama availability.
+		if (providerRegistered) {
+			pi.unregisterProvider("ollama");
+			providerRegistered = false;
+		}
+		return false;
+	}
 
 	const baseUrl = client.getOllamaHost();
 
@@ -115,9 +123,11 @@ export default function ollama(pi: ExtensionAPI) {
 		} else {
 			probeAndRegister(pi)
 				.then((found) => {
-					if (found) ctx.ui.setStatus("ollama", "Ollama");
+					ctx.ui.setStatus("ollama", found ? "Ollama" : undefined);
 				})
-				.catch(() => {});
+				.catch(() => {
+					ctx.ui.setStatus("ollama", undefined);
+				});
 		}
 	});
 
