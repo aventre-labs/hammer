@@ -518,22 +518,83 @@ export function createClaudeCodeElicitationHandler(
 	};
 }
 
+/**
+ * Aborted by the caller's AbortSignal — distinct from exhaustion. GSD's
+ * agent loop keys off `stopReason === "aborted"` to treat this as a clean
+ * user cancel instead of a retry-eligible provider failure.
+ */
+export function makeAbortedMessage(model: string, lastTextContent: string): AssistantMessage {
+	const message: AssistantMessage = {
+		role: "assistant",
+		content: lastTextContent
+			? [{ type: "text", text: lastTextContent }]
+			: [{ type: "text", text: "Claude Code stream aborted by caller" }],
+		api: "anthropic-messages",
+		provider: "claude-code",
+		model,
+		usage: { ...ZERO_USAGE },
+		stopReason: "aborted",
+		timestamp: Date.now(),
+	};
+	return message;
+}
+
 // ---------------------------------------------------------------------------
 // SDK options builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve the Claude Code permission mode for the current run.
+ *
+ * - Auto-mode / headless runs bypass permissions so tool calls don't block
+ *   on prompts the user isn't watching.
+ * - Interactive runs default to `acceptEdits` so file/bash writes still
+ *   land quickly but the SDK retains a permission gate.
+ * - `GSD_CLAUDE_CODE_PERMISSION_MODE` forces a specific mode when set.
+ *
+ * Cross-extension coupling is kept minimal by dynamically importing
+ * `isAutoActive` and falling back to the bypass default if the import
+ * fails (e.g. in unit tests that load stream-adapter in isolation).
+ */
+export async function resolveClaudePermissionMode(
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<"bypassPermissions" | "acceptEdits" | "default" | "plan"> {
+	const override = env.GSD_CLAUDE_CODE_PERMISSION_MODE?.trim();
+	if (override === "bypassPermissions" || override === "acceptEdits" || override === "default" || override === "plan") {
+		return override;
+	}
+
+	try {
+		const autoMod = (await import("../gsd/auto.js")) as { isAutoActive?: () => boolean };
+		if (typeof autoMod.isAutoActive === "function" && autoMod.isAutoActive()) {
+			return "bypassPermissions";
+		}
+		return "acceptEdits";
+	} catch {
+		// auto.ts unavailable (tests, non-GSD contexts) — stay permissive.
+		return "bypassPermissions";
+	}
+}
 
 /**
  * Build the options object passed to the Claude Agent SDK's `query()` call.
  *
  * Extracted for testability — callers can verify session persistence,
  * beta flags, and other configuration without mocking the full SDK.
+ *
+ * `permissionMode` / `allowDangerouslySkipPermissions` are resolved through
+ * {@link resolveClaudePermissionMode} so interactive runs don't silently
+ * bypass the SDK's permission gate. Callers that want the old always-bypass
+ * behaviour pass `permissionMode: "bypassPermissions"` explicitly.
  */
 export function buildSdkOptions(
 	modelId: string,
 	prompt: string,
+	overrides?: { permissionMode?: "bypassPermissions" | "acceptEdits" | "default" | "plan" },
 	extraOptions: Record<string, unknown> = {},
 ): Record<string, unknown> {
 	const mcpServers = buildWorkflowMcpServers();
+	const permissionMode = overrides?.permissionMode ?? "bypassPermissions";
 	const disallowedTools = ["AskUserQuestion"];
 	return {
 		pathToClaudeCodeExecutable: getClaudePath(),
@@ -541,8 +602,8 @@ export function buildSdkOptions(
 		includePartialMessages: true,
 		persistSession: true,
 		cwd: process.cwd(),
-		permissionMode: "bypassPermissions",
-		allowDangerouslySkipPermissions: true,
+		permissionMode,
+		allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
 		settingSources: ["project"],
 		systemPrompt: { type: "preset", preset: "claude_code" },
 		disallowedTools,
@@ -656,6 +717,29 @@ function attachExternalResultsToToolBlocks(
 	}
 }
 
+/**
+ * Merge tool-call blocks from the active partial-message builder into the
+ * running list of intermediate tool calls, preserving order and de-duping
+ * by tool-call id. Exposed for testing the F3 fix (final-turn tool calls
+ * dropped when `result` arrives without a preceding synthetic `user`).
+ */
+export function mergePendingToolCalls(
+	intermediate: AssistantMessage["content"],
+	pending: AssistantMessage["content"],
+): AssistantMessage["content"] {
+	const alreadyIncluded = new Set<string>();
+	for (const block of intermediate) {
+		if (block.type === "toolCall") alreadyIncluded.add(block.id);
+	}
+	for (const block of pending) {
+		if (block.type !== "toolCall") continue;
+		if (alreadyIncluded.has(block.id)) continue;
+		alreadyIncluded.add(block.id);
+		intermediate.push(block);
+	}
+	return intermediate;
+}
+
 // ---------------------------------------------------------------------------
 // streamSimple implementation
 // ---------------------------------------------------------------------------
@@ -712,9 +796,11 @@ async function pumpSdkMessages(
 		}
 
 		const prompt = buildPromptFromContext(context);
+		const permissionMode = await resolveClaudePermissionMode();
 		const sdkOpts = buildSdkOptions(
 			modelId,
 			prompt,
+			{ permissionMode },
 			typeof (options as ClaudeCodeStreamOptions | undefined)?.extensionUIContext === "object"
 				? {
 						onElicitation: createClaudeCodeElicitationHandler(
@@ -746,7 +832,17 @@ async function pumpSdkMessages(
 		stream.push({ type: "start", partial: initialPartial });
 
 		for await (const msg of queryResult as AsyncIterable<SDKMessage>) {
-			if (options?.signal?.aborted) break;
+			if (options?.signal?.aborted) {
+				// User-initiated cancel — emit an aborted error so the agent
+				// loop classifies this as a deliberate stop, not a transient
+				// provider failure that should be retried.
+				stream.push({
+					type: "error",
+					reason: "aborted",
+					error: makeAbortedMessage(modelId, lastTextContent),
+				});
+				return;
+			}
 
 			switch (msg.type) {
 				// -- Init --
@@ -856,6 +952,16 @@ async function pumpSdkMessages(
 					// agent loop's externalToolExecution path emits tool_execution
 					// events for proper TUI rendering, followed by the text response.
 					const finalContent: AssistantMessage["content"] = [];
+
+					// If the final turn ended without a synthetic user message
+					// (e.g. stop_reason: "tool_use" followed directly by result,
+					// or a turn with text but no tool execution), the `builder`
+					// still holds toolCall blocks that were never pushed into
+					// `intermediateToolBlocks`. Fold them in here so they aren't
+					// dropped from the final AssistantMessage.
+					if (builder) {
+						mergePendingToolCalls(intermediateToolBlocks, builder.message.content);
+					}
 
 					// Add tool calls from intermediate turns first (renders above text)
 					attachExternalResultsToToolBlocks(intermediateToolBlocks, toolResultsById);

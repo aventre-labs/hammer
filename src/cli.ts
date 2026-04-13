@@ -554,6 +554,17 @@ if (isPrintMode) {
   if (mode === 'mcp') {
     printStartupTimings()
     const { startMcpServer } = await import('./mcp-server.js')
+
+    // Activate every registered tool before starting the MCP transport.
+    // `session.agent.state.tools` is the *active* subset, not the full
+    // registry — if we expose only the active set, extension-registered
+    // tools (gsd workflow, browser-tools, mac-tools, search-the-web, …)
+    // are invisible to MCP clients. Flipping the active set to every
+    // known tool name makes `state.tools` mirror the full registry for
+    // this MCP session, which is what an external client expects.
+    const allToolNames = session.getAllTools().map((t) => t.name)
+    session.setActiveToolsByName(allToolNames)
+
     await startMcpServer({
       tools: session.agent.state.tools ?? [],
       version: process.env.GSD_VERSION || '0.0.0',

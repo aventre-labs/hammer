@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import {
 	makeStreamExhaustedErrorMessage,
 	getResultErrorMessage,
+	makeAbortedMessage,
+	mergePendingToolCalls,
+	resolveClaudePermissionMode,
 	buildPromptFromContext,
 	buildSdkOptions,
 	createClaudeCodeElicitationHandler,
@@ -16,7 +19,7 @@ import {
 	parseClaudeLookupOutput,
 	roundResultToElicitationContent,
 } from "../stream-adapter.ts";
-import type { Context, Message } from "@gsd/pi-ai";
+import type { AssistantMessage, Context, Message } from "@gsd/pi-ai";
 import type { SDKUserMessage } from "../sdk-types.ts";
 
 // ---------------------------------------------------------------------------
@@ -414,7 +417,7 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			delete process.env.GSD_WORKFLOW_MCP_ARGS;
 			delete process.env.GSD_WORKFLOW_MCP_ENV;
 			delete process.env.GSD_WORKFLOW_MCP_CWD;
-			const options = buildSdkOptions("claude-sonnet-4-20250514", "test", { onElicitation });
+			const options = buildSdkOptions("claude-sonnet-4-20250514", "test", undefined, { onElicitation });
 			assert.equal(options.onElicitation, onElicitation);
 		} finally {
 			process.env.GSD_WORKFLOW_MCP_COMMAND = prev.GSD_WORKFLOW_MCP_COMMAND;
@@ -677,6 +680,134 @@ describe("stream-adapter — MCP elicitation bridge", () => {
 		});
 		assert.equal(inputCalls.length, 1);
 		assert.equal(inputCalls[0]?.opts?.secure, true, "secure_env_collect fields should request secure input");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// F2 — abort vs stream-exhausted classification
+// ---------------------------------------------------------------------------
+
+describe("stream-adapter — abort classification (F2)", () => {
+	test("makeAbortedMessage sets stopReason to 'aborted', not 'error'", () => {
+		const message = makeAbortedMessage("claude-sonnet-4-6", "");
+		assert.equal(message.stopReason, "aborted");
+		assert.equal(message.errorMessage, undefined);
+	});
+
+	test("makeAbortedMessage preserves last-seen text content", () => {
+		const message = makeAbortedMessage("claude-sonnet-4-6", "partial mid-stream text");
+		assert.deepEqual(message.content, [{ type: "text", text: "partial mid-stream text" }]);
+	});
+
+	test("aborted message is distinguishable from stream-exhausted error", () => {
+		const aborted = makeAbortedMessage("claude-sonnet-4-6", "");
+		const exhausted = makeStreamExhaustedErrorMessage("claude-sonnet-4-6", "");
+		assert.notEqual(aborted.stopReason, exhausted.stopReason);
+		assert.equal(exhausted.errorMessage, "stream_exhausted_without_result");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// F3 — final-turn tool calls not dropped
+// ---------------------------------------------------------------------------
+
+describe("stream-adapter — final-turn tool-call merge (F3)", () => {
+	function toolCall(id: string, name = "bash"): AssistantMessage["content"][number] {
+		return { type: "toolCall", id, name, arguments: {} };
+	}
+
+	test("mergePendingToolCalls appends tool calls not already in intermediate", () => {
+		const intermediate: AssistantMessage["content"] = [toolCall("tool-1")];
+		const pending: AssistantMessage["content"] = [
+			toolCall("tool-2"),
+			{ type: "text", text: "trailing text" },
+		];
+		const merged = mergePendingToolCalls(intermediate, pending);
+		assert.equal(merged.length, 2);
+		assert.equal((merged[0] as any).id, "tool-1");
+		assert.equal((merged[1] as any).id, "tool-2");
+	});
+
+	test("mergePendingToolCalls is idempotent across duplicate ids", () => {
+		const intermediate: AssistantMessage["content"] = [toolCall("tool-1")];
+		const pending: AssistantMessage["content"] = [toolCall("tool-1"), toolCall("tool-2")];
+		const merged = mergePendingToolCalls(intermediate, pending);
+		assert.equal(merged.length, 2);
+		assert.deepEqual(
+			merged.map((b) => (b as any).id),
+			["tool-1", "tool-2"],
+		);
+	});
+
+	test("mergePendingToolCalls ignores non-toolCall blocks from pending", () => {
+		const intermediate: AssistantMessage["content"] = [];
+		const pending: AssistantMessage["content"] = [
+			{ type: "text", text: "hello" },
+			{ type: "thinking", thinking: "pondering" },
+			toolCall("tool-1"),
+		];
+		const merged = mergePendingToolCalls(intermediate, pending);
+		assert.equal(merged.length, 1);
+		assert.equal((merged[0] as any).id, "tool-1");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// F10 — permission mode is configurable
+// ---------------------------------------------------------------------------
+
+describe("stream-adapter — permission mode (F10)", () => {
+	// Earlier tests in this file set GSD_WORKFLOW_MCP_* env vars and restore
+	// them by reassigning from `prev.*`. When `prev.*` was undefined, node
+	// coerces the assignment to the literal string "undefined", which then
+	// fails JSON.parse inside buildWorkflowMcpServers. Clear the relevant
+	// slots before each permission-mode test so buildSdkOptions doesn't throw.
+	function clearWorkflowMcpEnv(): void {
+		for (const key of [
+			"GSD_WORKFLOW_MCP_COMMAND",
+			"GSD_WORKFLOW_MCP_NAME",
+			"GSD_WORKFLOW_MCP_ARGS",
+			"GSD_WORKFLOW_MCP_ENV",
+			"GSD_WORKFLOW_MCP_CWD",
+		]) {
+			if (process.env[key] === undefined || process.env[key] === "undefined") {
+				delete process.env[key];
+			}
+		}
+	}
+
+	test("buildSdkOptions defaults to bypassPermissions for backwards compatibility", () => {
+		clearWorkflowMcpEnv();
+		const opts = buildSdkOptions("claude-sonnet-4-6", "test");
+		assert.equal(opts.permissionMode, "bypassPermissions");
+		assert.equal(opts.allowDangerouslySkipPermissions, true);
+	});
+
+	test("buildSdkOptions respects explicit acceptEdits override", () => {
+		clearWorkflowMcpEnv();
+		const opts = buildSdkOptions("claude-sonnet-4-6", "test", { permissionMode: "acceptEdits" });
+		assert.equal(opts.permissionMode, "acceptEdits");
+		assert.equal(
+			opts.allowDangerouslySkipPermissions,
+			false,
+			"allowDangerouslySkipPermissions must be false for non-bypass modes",
+		);
+	});
+
+	test("resolveClaudePermissionMode honours the GSD_CLAUDE_CODE_PERMISSION_MODE env override", async () => {
+		const env = { GSD_CLAUDE_CODE_PERMISSION_MODE: "acceptEdits" } as NodeJS.ProcessEnv;
+		const mode = await resolveClaudePermissionMode(env);
+		assert.equal(mode, "acceptEdits");
+	});
+
+	test("resolveClaudePermissionMode rejects unknown override values (fallback path)", async () => {
+		const env = { GSD_CLAUDE_CODE_PERMISSION_MODE: "nonsense" } as NodeJS.ProcessEnv;
+		const mode = await resolveClaudePermissionMode(env);
+		// Unknown override falls back to auto-detect → either bypass or acceptEdits
+		assert.ok(
+			mode === "bypassPermissions" || mode === "acceptEdits",
+			`expected bypass or acceptEdits, got ${mode}`,
+		);
 	});
 });
 
