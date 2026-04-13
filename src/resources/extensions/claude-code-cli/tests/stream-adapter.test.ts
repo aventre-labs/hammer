@@ -167,6 +167,98 @@ describe("stream-adapter — full context prompt (#2859)", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Bug #4102 — transcript fabrication regression tests
+// ---------------------------------------------------------------------------
+
+describe("stream-adapter — no transcript fabrication (#4102)", () => {
+	test("buildPromptFromContext never emits forbidden [User]/[Assistant] bracket headers", () => {
+		const context: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [
+				{ role: "user", content: "First" } as Message,
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Second" }],
+					api: "anthropic-messages",
+					provider: "claude-code",
+					model: "claude-sonnet-4-20250514",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					stopReason: "stop",
+					timestamp: Date.now(),
+				} as Message,
+				{ role: "user", content: "Third" } as Message,
+			],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(!prompt.includes("[User]"), "prompt must not include literal [User] bracket header");
+		assert.ok(!prompt.includes("[Assistant]"), "prompt must not include literal [Assistant] bracket header");
+		assert.ok(!prompt.includes("[System]"), "prompt must not include literal [System] bracket header");
+	});
+
+	test("buildPromptFromContext wraps history in XML-tag structure", () => {
+		const context: Context = {
+			systemPrompt: "You are helpful.",
+			messages: [
+				{ role: "user", content: "Hello" } as Message,
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Hi there" }],
+					api: "anthropic-messages",
+					provider: "claude-code",
+					model: "claude-sonnet-4-20250514",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					stopReason: "stop",
+					timestamp: Date.now(),
+				} as Message,
+			],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(prompt.includes("<conversation_history>"), "prompt must wrap history in <conversation_history>");
+		assert.ok(prompt.includes("</conversation_history>"), "prompt must close <conversation_history>");
+		assert.ok(prompt.includes("<user_message>\nHello\n</user_message>"), "user turn must use <user_message> tags");
+		assert.ok(prompt.includes("<assistant_message>\nHi there\n</assistant_message>"), "assistant turn must use <assistant_message> tags");
+		assert.ok(prompt.includes("<prior_system_context>\nYou are helpful.\n</prior_system_context>"), "system prompt must use <prior_system_context> tags");
+	});
+
+	test("buildPromptFromContext includes a do-not-echo-tags directive as primary instruction", () => {
+		const context: Context = {
+			messages: [{ role: "user", content: "Anything" } as Message],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(
+			prompt.startsWith("Respond only to the final user message"),
+			"primary directive must lead the prompt",
+		);
+		assert.ok(prompt.includes("Do not emit <user_message>"), "directive must forbid emitting user_message tag");
+		assert.ok(prompt.includes("<assistant_message>"), "directive must mention assistant_message tag");
+	});
+
+	test("buildPromptFromContext omits <conversation_history> when there are no messages but a system prompt", () => {
+		const context: Context = {
+			systemPrompt: "Seed",
+			messages: [],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(prompt.includes("<prior_system_context>"), "system prompt must still render");
+		assert.ok(!prompt.includes("<conversation_history>"), "no history wrapper when messages are empty");
+	});
+
+	test("buildPromptFromContext still returns empty string when context is entirely empty", () => {
+		const context: Context = { messages: [] };
+		const prompt = buildPromptFromContext(context);
+		assert.equal(prompt, "", "empty context must not emit a bare directive");
+	});
+});
+
 describe("stream-adapter — Claude Code external tool results", () => {
 	test("extractToolResultsFromSdkUserMessage maps tool_result content to tool payloads", () => {
 		const message: SDKUserMessage = {

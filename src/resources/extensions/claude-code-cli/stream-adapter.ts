@@ -187,20 +187,36 @@ function extractMessageText(msg: { role: string; content: unknown }): string {
  * call effectively stateless. This version serialises the complete
  * conversation history (system prompt + all user/assistant turns) so
  * Claude Code has full context for multi-turn continuity.
+ *
+ * History is wrapped in XML-tag structure rather than `[User]`/`[Assistant]`
+ * bracket headers. Bracket headers read to the model as an in-context
+ * demonstration of how turns are delimited, causing it to fabricate fake
+ * user turns in its own output. XML tags read as document structure and
+ * don't get mirrored in free text.
  */
 export function buildPromptFromContext(context: Context): string {
-	const parts: string[] = [];
+	const hasContent = Boolean(context.systemPrompt) || context.messages.some((m) => extractMessageText(m));
+	if (!hasContent) return "";
+
+	const parts: string[] = [
+		"Respond only to the final user message below. " +
+			"Do not emit <user_message>, <assistant_message>, or <prior_system_context> tags in your response.",
+	];
 
 	if (context.systemPrompt) {
-		parts.push(`[System]\n${context.systemPrompt}`);
+		parts.push(`<prior_system_context>\n${context.systemPrompt}\n</prior_system_context>`);
 	}
 
+	const turns: string[] = [];
 	for (const msg of context.messages) {
 		const text = extractMessageText(msg);
 		if (!text) continue;
-
-		const label = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
-		parts.push(`[${label}]\n${text}`);
+		const tag =
+			msg.role === "user" ? "user_message" : msg.role === "assistant" ? "assistant_message" : "system_message";
+		turns.push(`<${tag}>\n${text}\n</${tag}>`);
+	}
+	if (turns.length > 0) {
+		parts.push(`<conversation_history>\n${turns.join("\n")}\n</conversation_history>`);
 	}
 
 	return parts.join("\n\n");
