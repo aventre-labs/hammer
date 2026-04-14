@@ -20,7 +20,7 @@ import { migratePiCredentials } from './pi-migration.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
-import { printSubcommandHelp } from './help-text.js'
+import { printHelp, printSubcommandHelp } from './help-text.js'
 import { applySecurityOverrides } from './security-overrides.js'
 import { validateConfiguredModel } from './startup-model-validation.js'
 import {
@@ -126,6 +126,20 @@ async function reapplyValidatedModelOnFallback(
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
+// `gsd [subcommand] --help` / `-h` — print help before any subcommand runs.
+// loader.ts only catches --help/-h as the *first* arg; here we handle the
+// case where it appears later (e.g. `gsd update --help`, `gsd --foo --help`).
+// Prefer subcommand-specific help when the first positional is a known
+// subcommand, otherwise fall back to general help.
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  const helpSubcommand = cliFlags.messages[0]
+  const version = process.env.GSD_VERSION || '0.0.0'
+  if (!helpSubcommand || !printSubcommandHelp(helpSubcommand, version)) {
+    printHelp(version)
+  }
+  process.exit(0)
+}
+
 // RTK bootstrap — runs once per process, memoized via a module-level promise
 // so concurrent callers await the same initialization.
 let rtkBootstrapPromise: Promise<void> | undefined
@@ -165,14 +179,6 @@ exitIfManagedResourcesAreNewer(agentDir)
 const hasSubcommand = cliFlags.messages.length > 0
 if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels && !cliFlags.web) {
   printNonTtyErrorAndExit(undefined, false)
-}
-
-// `gsd <subcommand> --help` — show subcommand-specific help
-const subcommand = cliFlags.messages[0]
-if (subcommand && process.argv.includes('--help')) {
-  if (printSubcommandHelp(subcommand, process.env.GSD_VERSION || '0.0.0')) {
-    process.exit(0)
-  }
 }
 
 const packageCommand = await runPackageCommand({
