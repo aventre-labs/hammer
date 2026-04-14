@@ -153,7 +153,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 
 - `context_pause_threshold`: number (0-100) — context window usage percentage at which auto-mode should pause to suggest checkpointing. Set to `0` to disable. Default: `0` (disabled).
 
-- `token_profile`: `"budget"`, `"balanced"`, or `"quality"` — coordinates model selection, phase skipping, and context compression. `budget` skips research/reassessment and uses cheaper models; `balanced` (default) skips research/reassessment to reduce token burn; `quality` prefers higher-quality models. See token-optimization docs.
+- `token_profile`: `"budget"`, `"balanced"`, `"quality"`, or `"burn-max"` — coordinates model selection, phase skipping, and context compression. `budget` skips research/reassessment and uses cheaper models; `balanced` (default) skips research/reassessment to reduce token burn; `quality` prefers higher-quality models; `burn-max` keeps full-context defaults, disables downgrade routing, and keeps phase skips off.
 
 - `phases`: fine-grained control over which phases run. Usually set by `token_profile`, but can be overridden. Keys:
   - `skip_research`: boolean — skip milestone-level research. Default: `false`.
@@ -190,6 +190,17 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `cross_provider`: boolean — allow routing across different providers. Default: `true`.
   - `hooks`: boolean — enable routing hooks. Default: `true`.
   - `capability_routing`: boolean — enable capability-profile scoring for model selection within a tier. Requires `enabled: true`. Default: `false`.
+
+- `uok`: Unified Orchestration Kernel controls (all flags default to `false` during migration). Keys:
+  - `enabled`: boolean — enable kernel wrappers and contract observers.
+  - `gates.enabled`: boolean — route checks through the unified gate runner and persist `gate_runs`.
+  - `model_policy.enabled`: boolean — enforce policy filtering before model capability scoring.
+  - `execution_graph.enabled`: boolean — enable DAG scheduler facade/adapters for execution.
+  - `gitops.enabled`: boolean — persist turn-level git transaction records.
+  - `gitops.turn_action`: `"commit"` | `"snapshot"` | `"status-only"` — turn transaction mode.
+  - `gitops.turn_push`: boolean — whether turn transactions should include push intent metadata.
+  - `audit_unified.enabled`: boolean — dual-write unified audit envelope events.
+  - `plan_v2.enabled`: boolean — enable bounded clarify/research/draft/compile planning flow.
 
 - `context_management`: configures context hygiene for auto-mode sessions. Keys:
   - `observation_masking`: boolean — mask old tool results to reduce context bloat. Default: `true`.

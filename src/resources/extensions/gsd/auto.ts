@@ -202,6 +202,7 @@ import {
 import { bootstrapAutoSession, openProjectDbIfPresent, type BootstrapDeps } from "./auto-start.js";
 import { initHealthWidget } from "./health-widget.js";
 import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
+import { runAutoLoopWithUok } from "./uok/kernel.js";
 // Slice-level parallelism (#2340)
 import { getEligibleSlices } from "./slice-parallel-eligibility.js";
 import { startSliceParallel } from "./slice-parallel-orchestrator.js";
@@ -1513,7 +1514,13 @@ export async function startAuto(
     logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
 
     captureProjectRootEnv(s.originalBasePath || s.basePath);
-    await autoLoop(ctx, pi, s, buildLoopDeps());
+    await runAutoLoopWithUok({
+      ctx,
+      pi,
+      s,
+      deps: buildLoopDeps(),
+      runLegacyLoop: autoLoop,
+    });
     cleanupAfterLoopExit(ctx);
     return;
   }
@@ -1548,7 +1555,13 @@ export async function startAuto(
   logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, requestedStepMode ? "Step-mode started." : "Auto-mode started.", "progress");
 
   // Dispatch the first unit
-  await autoLoop(ctx, pi, s, buildLoopDeps());
+  await runAutoLoopWithUok({
+    ctx,
+    pi,
+    s,
+    deps: buildLoopDeps(),
+    runLegacyLoop: autoLoop,
+  });
   cleanupAfterLoopExit(ctx);
 }
 

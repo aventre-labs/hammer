@@ -33,6 +33,8 @@ import { runPostExecutionChecks, type PostExecutionResult } from "./post-executi
 import type { AutoSession } from "./auto/session.js";
 import type { VerificationResult as VerificationGateResult } from "./types.js";
 import { join } from "node:path";
+import { resolveUokFlags } from "./uok/flags.js";
+import { UokGateRunner } from "./uok/gate-runner.js";
 
 export interface VerificationContext {
   s: AutoSession;
@@ -158,6 +160,7 @@ export async function runPostUnitVerification(
   try {
     const effectivePrefs = loadEffectiveGSDPreferences();
     const prefs = effectivePrefs?.preferences;
+    const uokFlags = resolveUokFlags(prefs);
 
     // Read task plan verify field
     const { milestone: mid, slice: sid, task: tid } = parseUnitId(s.currentUnit.id);
@@ -194,6 +197,37 @@ export async function runPostUnitVerification(
       for (const w of auditWarnings) {
         process.stderr.write(`  [${w.severity}] ${w.name}: ${w.title}\n`);
       }
+    }
+
+    if (uokFlags.gates) {
+      const gateRunner = new UokGateRunner();
+      gateRunner.register({
+        id: "verification-gate",
+        type: "verification",
+        execute: async () => ({
+          outcome: result.passed ? "pass" : "fail",
+          failureClass: result.runtimeErrors?.some((e) => e.blocking)
+            ? "execution"
+            : "verification",
+          rationale: result.passed
+            ? "verification checks passed"
+            : "verification checks failed",
+          findings: result.passed
+            ? ""
+            : formatFailureContext(result),
+        }),
+      });
+
+      await gateRunner.run("verification-gate", {
+        basePath: s.basePath,
+        traceId: `verification:${s.currentUnit.id}`,
+        turnId: s.currentUnit.id,
+        milestoneId: mid ?? undefined,
+        sliceId: sid ?? undefined,
+        taskId: tid ?? undefined,
+        unitType: s.currentUnit.type,
+        unitId: s.currentUnit.id,
+      });
     }
 
     // Auto-fix retry preferences

@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -443,6 +443,70 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       )
     `);
 
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS gate_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        gate_id TEXT NOT NULL,
+        gate_type TEXT NOT NULL DEFAULT '',
+        unit_type TEXT DEFAULT NULL,
+        unit_id TEXT DEFAULT NULL,
+        milestone_id TEXT DEFAULT NULL,
+        slice_id TEXT DEFAULT NULL,
+        task_id TEXT DEFAULT NULL,
+        outcome TEXT NOT NULL DEFAULT 'pass',
+        failure_class TEXT NOT NULL DEFAULT 'none',
+        rationale TEXT NOT NULL DEFAULT '',
+        findings TEXT NOT NULL DEFAULT '',
+        attempt INTEGER NOT NULL DEFAULT 1,
+        max_attempts INTEGER NOT NULL DEFAULT 1,
+        retryable INTEGER NOT NULL DEFAULT 0,
+        evaluated_at TEXT NOT NULL DEFAULT ''
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS turn_git_transactions (
+        trace_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        unit_type TEXT DEFAULT NULL,
+        unit_id TEXT DEFAULT NULL,
+        stage TEXT NOT NULL DEFAULT 'turn-start',
+        action TEXT NOT NULL DEFAULT 'status-only',
+        push INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'ok',
+        error TEXT DEFAULT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (trace_id, turn_id, stage)
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_events (
+        event_id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        turn_id TEXT DEFAULT NULL,
+        caused_by TEXT DEFAULT NULL,
+        category TEXT NOT NULL,
+        type TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        payload_json TEXT NOT NULL DEFAULT '{}'
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_turn_index (
+        trace_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        first_ts TEXT NOT NULL,
+        last_ts TEXT NOT NULL,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (trace_id, turn_id)
+      )
+    `);
+
     db.exec("CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone ON replan_history(milestone_id, created_at)");
 
@@ -456,6 +520,11 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
 
     // v14 index — slice dependency lookups
     db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_turn ON gate_runs(trace_id, turn_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_lookup ON gate_runs(milestone_id, slice_id, task_id, gate_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_turn_git_tx_turn ON turn_git_transactions(trace_id, turn_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_trace ON audit_events(trace_id, ts)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_turn ON audit_events(trace_id, turn_id, ts)");
 
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
@@ -806,6 +875,78 @@ function migrateSchema(db: DbAdapter): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 14,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 15) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS gate_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trace_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          gate_id TEXT NOT NULL,
+          gate_type TEXT NOT NULL DEFAULT '',
+          unit_type TEXT DEFAULT NULL,
+          unit_id TEXT DEFAULT NULL,
+          milestone_id TEXT DEFAULT NULL,
+          slice_id TEXT DEFAULT NULL,
+          task_id TEXT DEFAULT NULL,
+          outcome TEXT NOT NULL DEFAULT 'pass',
+          failure_class TEXT NOT NULL DEFAULT 'none',
+          rationale TEXT NOT NULL DEFAULT '',
+          findings TEXT NOT NULL DEFAULT '',
+          attempt INTEGER NOT NULL DEFAULT 1,
+          max_attempts INTEGER NOT NULL DEFAULT 1,
+          retryable INTEGER NOT NULL DEFAULT 0,
+          evaluated_at TEXT NOT NULL DEFAULT ''
+        )
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS turn_git_transactions (
+          trace_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          unit_type TEXT DEFAULT NULL,
+          unit_id TEXT DEFAULT NULL,
+          stage TEXT NOT NULL DEFAULT 'turn-start',
+          action TEXT NOT NULL DEFAULT 'status-only',
+          push INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'ok',
+          error TEXT DEFAULT NULL,
+          metadata_json TEXT NOT NULL DEFAULT '{}',
+          updated_at TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (trace_id, turn_id, stage)
+        )
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_events (
+          event_id TEXT PRIMARY KEY,
+          trace_id TEXT NOT NULL,
+          turn_id TEXT DEFAULT NULL,
+          caused_by TEXT DEFAULT NULL,
+          category TEXT NOT NULL,
+          type TEXT NOT NULL,
+          ts TEXT NOT NULL,
+          payload_json TEXT NOT NULL DEFAULT '{}'
+        )
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_turn_index (
+          trace_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          first_ts TEXT NOT NULL,
+          last_ts TEXT NOT NULL,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (trace_id, turn_id)
+        )
+      `);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_turn ON gate_runs(trace_id, turn_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_lookup ON gate_runs(milestone_id, slice_id, task_id, gate_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_turn_git_tx_turn ON turn_git_transactions(trace_id, turn_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_trace ON audit_events(trace_id, ts)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_turn ON audit_events(trace_id, turn_id, ts)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 15,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -2288,6 +2429,9 @@ export function deleteMilestone(milestoneId: string): void {
       `DELETE FROM quality_gates WHERE milestone_id = :mid`,
     ).run({ ":mid": milestoneId });
     currentDb!.prepare(
+      `DELETE FROM gate_runs WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
       `DELETE FROM tasks WHERE milestone_id = :mid`,
     ).run({ ":mid": milestoneId });
     currentDb!.prepare(
@@ -2420,6 +2564,30 @@ export function saveGateResult(g: {
     ":findings": g.findings,
     ":evaluated_at": new Date().toISOString(),
   });
+
+  const outcome =
+    g.verdict === "pass"
+      ? "pass"
+      : g.verdict === "omitted"
+        ? "manual-attention"
+        : "fail";
+  insertGateRun({
+    traceId: `quality-gate:${g.milestoneId}:${g.sliceId}`,
+    turnId: `gate:${g.gateId}:${g.taskId ?? "slice"}`,
+    gateId: g.gateId,
+    gateType: "quality-gate",
+    milestoneId: g.milestoneId,
+    sliceId: g.sliceId,
+    taskId: g.taskId ?? undefined,
+    outcome,
+    failureClass: outcome === "fail" ? "verification" : outcome === "manual-attention" ? "manual-attention" : "none",
+    rationale: g.rationale,
+    findings: g.findings,
+    attempt: 1,
+    maxAttempts: 1,
+    retryable: false,
+    evaluatedAt: new Date().toISOString(),
+  });
 }
 
 export function getPendingGates(milestoneId: string, sliceId: string, scope?: GateScope): GateRow[] {
@@ -2511,6 +2679,156 @@ export function getPendingGateCountForTurn(
   turn: OwnerTurn,
 ): number {
   return getPendingGatesForTurn(milestoneId, sliceId, turn).length;
+}
+
+export function insertGateRun(entry: {
+  traceId: string;
+  turnId: string;
+  gateId: string;
+  gateType: string;
+  unitType?: string;
+  unitId?: string;
+  milestoneId?: string;
+  sliceId?: string;
+  taskId?: string;
+  outcome: "pass" | "fail" | "retry" | "manual-attention";
+  failureClass: "none" | "policy" | "input" | "execution" | "artifact" | "verification" | "closeout" | "git" | "timeout" | "manual-attention" | "unknown";
+  rationale?: string;
+  findings?: string;
+  attempt: number;
+  maxAttempts: number;
+  retryable: boolean;
+  evaluatedAt: string;
+}): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    `INSERT INTO gate_runs (
+      trace_id, turn_id, gate_id, gate_type, unit_type, unit_id, milestone_id, slice_id, task_id,
+      outcome, failure_class, rationale, findings, attempt, max_attempts, retryable, evaluated_at
+    ) VALUES (
+      :trace_id, :turn_id, :gate_id, :gate_type, :unit_type, :unit_id, :milestone_id, :slice_id, :task_id,
+      :outcome, :failure_class, :rationale, :findings, :attempt, :max_attempts, :retryable, :evaluated_at
+    )`,
+  ).run({
+    ":trace_id": entry.traceId,
+    ":turn_id": entry.turnId,
+    ":gate_id": entry.gateId,
+    ":gate_type": entry.gateType,
+    ":unit_type": entry.unitType ?? null,
+    ":unit_id": entry.unitId ?? null,
+    ":milestone_id": entry.milestoneId ?? null,
+    ":slice_id": entry.sliceId ?? null,
+    ":task_id": entry.taskId ?? null,
+    ":outcome": entry.outcome,
+    ":failure_class": entry.failureClass,
+    ":rationale": entry.rationale ?? "",
+    ":findings": entry.findings ?? "",
+    ":attempt": entry.attempt,
+    ":max_attempts": entry.maxAttempts,
+    ":retryable": entry.retryable ? 1 : 0,
+    ":evaluated_at": entry.evaluatedAt,
+  });
+}
+
+export function upsertTurnGitTransaction(entry: {
+  traceId: string;
+  turnId: string;
+  unitType?: string;
+  unitId?: string;
+  stage: string;
+  action: "commit" | "snapshot" | "status-only";
+  push: boolean;
+  status: "ok" | "failed";
+  error?: string;
+  metadata?: Record<string, unknown>;
+  updatedAt: string;
+}): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    `INSERT OR REPLACE INTO turn_git_transactions (
+      trace_id, turn_id, unit_type, unit_id, stage, action, push, status, error, metadata_json, updated_at
+    ) VALUES (
+      :trace_id, :turn_id, :unit_type, :unit_id, :stage, :action, :push, :status, :error, :metadata_json, :updated_at
+    )`,
+  ).run({
+    ":trace_id": entry.traceId,
+    ":turn_id": entry.turnId,
+    ":unit_type": entry.unitType ?? null,
+    ":unit_id": entry.unitId ?? null,
+    ":stage": entry.stage,
+    ":action": entry.action,
+    ":push": entry.push ? 1 : 0,
+    ":status": entry.status,
+    ":error": entry.error ?? null,
+    ":metadata_json": JSON.stringify(entry.metadata ?? {}),
+    ":updated_at": entry.updatedAt,
+  });
+}
+
+export function insertAuditEvent(entry: {
+  eventId: string;
+  traceId: string;
+  turnId?: string;
+  causedBy?: string;
+  category: string;
+  type: string;
+  ts: string;
+  payload: Record<string, unknown>;
+}): void {
+  if (!currentDb) return;
+  transaction(() => {
+    currentDb!.prepare(
+      `INSERT OR IGNORE INTO audit_events (
+        event_id, trace_id, turn_id, caused_by, category, type, ts, payload_json
+      ) VALUES (
+        :event_id, :trace_id, :turn_id, :caused_by, :category, :type, :ts, :payload_json
+      )`,
+    ).run({
+      ":event_id": entry.eventId,
+      ":trace_id": entry.traceId,
+      ":turn_id": entry.turnId ?? null,
+      ":caused_by": entry.causedBy ?? null,
+      ":category": entry.category,
+      ":type": entry.type,
+      ":ts": entry.ts,
+      ":payload_json": JSON.stringify(entry.payload ?? {}),
+    });
+
+    if (entry.turnId) {
+      const row = currentDb!.prepare(
+        `SELECT event_count, first_ts, last_ts
+         FROM audit_turn_index
+         WHERE trace_id = :trace_id AND turn_id = :turn_id`,
+      ).get({
+        ":trace_id": entry.traceId,
+        ":turn_id": entry.turnId,
+      });
+      if (row) {
+        currentDb!.prepare(
+          `UPDATE audit_turn_index
+           SET first_ts = CASE WHEN :ts < first_ts THEN :ts ELSE first_ts END,
+               last_ts = CASE WHEN :ts > last_ts THEN :ts ELSE last_ts END,
+               event_count = event_count + 1
+           WHERE trace_id = :trace_id AND turn_id = :turn_id`,
+        ).run({
+          ":trace_id": entry.traceId,
+          ":turn_id": entry.turnId,
+          ":ts": entry.ts,
+        });
+      } else {
+        currentDb!.prepare(
+          `INSERT INTO audit_turn_index (trace_id, turn_id, first_ts, last_ts, event_count)
+           VALUES (:trace_id, :turn_id, :first_ts, :last_ts, :event_count)`,
+        ).run({
+          ":trace_id": entry.traceId,
+          ":turn_id": entry.turnId,
+          ":first_ts": entry.ts,
+          ":last_ts": entry.ts,
+          ":event_count": 1,
+        });
+      }
+    }
+  });
 }
 
 // ─── Single-writer bypass wrappers ───────────────────────────────────────

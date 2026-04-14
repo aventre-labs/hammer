@@ -128,6 +128,39 @@ export async function autoLoop(
     const flowId = randomUUID();
     let seqCounter = 0;
     const nextSeq = () => ++seqCounter;
+    const turnId = randomUUID();
+    const turnStartedAt = new Date().toISOString();
+    let observedUnitType: string | undefined;
+    let observedUnitId: string | undefined;
+    let turnFinished = false;
+    const finishTurn = (
+      status: "completed" | "failed" | "paused" | "stopped" | "skipped" | "retry",
+      failureClass: "none" | "unknown" | "manual-attention" | "timeout" | "execution" = "none",
+      error?: string,
+    ): void => {
+      if (turnFinished) return;
+      turnFinished = true;
+      deps.uokObserver?.onTurnResult({
+        traceId: flowId,
+        turnId,
+        iteration,
+        unitType: observedUnitType,
+        unitId: observedUnitId,
+        status,
+        failureClass,
+        phaseResults: [],
+        error,
+        startedAt: turnStartedAt,
+        finishedAt: new Date().toISOString(),
+      });
+    };
+    deps.uokObserver?.onTurnStart({
+      traceId: flowId,
+      turnId,
+      iteration,
+      basePath: s.basePath,
+      startedAt: turnStartedAt,
+    });
 
     if (iteration > MAX_LOOP_ITERATIONS) {
       debugLog("autoLoop", {
@@ -140,6 +173,7 @@ export async function autoLoop(
         pi,
         `Safety: loop exceeded ${MAX_LOOP_ITERATIONS} iterations — possible runaway`,
       );
+      finishTurn("stopped", "manual-attention", "max-iterations");
       break;
     }
 
@@ -157,12 +191,14 @@ export async function autoLoop(
           `Stopping gracefully to prevent OOM kill after ${iteration} iterations. ` +
           `Resume with /gsd auto to continue from where you left off.`,
         );
+        finishTurn("stopped", "timeout", "memory-pressure");
         break;
       }
     }
 
     if (!s.cmdCtx) {
       debugLog("autoLoop", { phase: "exit", reason: "no-cmdCtx" });
+      finishTurn("stopped", "manual-attention", "missing-command-context");
       break;
     }
 
@@ -256,27 +292,53 @@ export async function autoLoop(
           isRetry: false,
           previousTier: undefined,
         };
+        observedUnitType = iterData.unitType;
+        observedUnitId = iterData.unitId;
 
         // ── Progress widget (mirrors dev path in runDispatch) ──
         deps.updateProgressWidget(ctx, iterData.unitType, iterData.unitId, iterData.state);
 
         // ── Guards (shared with dev path) ──
         const guardsResult = await runGuards(ic, s.currentMilestoneId ?? "workflow");
-        if (guardsResult.action === "break") break;
+        deps.uokObserver?.onPhaseResult("guard", guardsResult.action, {
+          unitType: iterData.unitType,
+          unitId: iterData.unitId,
+        });
+        if (guardsResult.action === "break") {
+          finishTurn("stopped", "manual-attention", "guard-break");
+          break;
+        }
 
         // ── Unit execution (shared with dev path) ──
         const unitPhaseResult = await runUnitPhase(ic, iterData, loopState);
-        if (unitPhaseResult.action === "break") break;
+        deps.uokObserver?.onPhaseResult("unit", unitPhaseResult.action, {
+          unitType: iterData.unitType,
+          unitId: iterData.unitId,
+        });
+        if (unitPhaseResult.action === "break") {
+          finishTurn("stopped", "execution", "unit-break");
+          break;
+        }
 
         // ── Verify first, then reconcile (only mark complete on pass) ──
         debugLog("autoLoop", { phase: "custom-engine-verify", iteration, unitId: iterData.unitId });
         const verifyResult = await policy.verify(iterData.unitType, iterData.unitId, { basePath: s.basePath });
         if (verifyResult === "pause") {
           await deps.pauseAuto(ctx, pi);
+          deps.uokObserver?.onPhaseResult("custom-engine", "pause", {
+            unitType: iterData.unitType,
+            unitId: iterData.unitId,
+          });
+          finishTurn("paused", "manual-attention", "custom-engine-verify-pause");
           break;
         }
         if (verifyResult === "retry") {
           debugLog("autoLoop", { phase: "custom-engine-verify-retry", iteration, unitId: iterData.unitId });
+          deps.uokObserver?.onPhaseResult("custom-engine", "retry", {
+            unitType: iterData.unitType,
+            unitId: iterData.unitId,
+          });
+          finishTurn("retry");
           continue;
         }
 
@@ -299,36 +361,77 @@ export async function autoLoop(
 
         if (reconcileResult.outcome === "milestone-complete") {
           await deps.stopAuto(ctx, pi, "Workflow complete");
+          deps.uokObserver?.onPhaseResult("custom-engine", "milestone-complete", {
+            unitType: iterData.unitType,
+            unitId: iterData.unitId,
+          });
+          finishTurn("completed");
           break;
         }
         if (reconcileResult.outcome === "pause") {
           await deps.pauseAuto(ctx, pi);
+          deps.uokObserver?.onPhaseResult("custom-engine", "pause", {
+            unitType: iterData.unitType,
+            unitId: iterData.unitId,
+          });
+          finishTurn("paused", "manual-attention");
           break;
         }
         if (reconcileResult.outcome === "stop") {
           await deps.stopAuto(ctx, pi, reconcileResult.reason ?? "Engine stopped");
+          deps.uokObserver?.onPhaseResult("custom-engine", "stop", {
+            unitType: iterData.unitType,
+            unitId: iterData.unitId,
+            reason: reconcileResult.reason,
+          });
+          finishTurn("stopped", "manual-attention", reconcileResult.reason);
           break;
         }
+        deps.uokObserver?.onPhaseResult("custom-engine", "continue", {
+          unitType: iterData.unitType,
+          unitId: iterData.unitId,
+        });
+        finishTurn("completed");
         continue;
       }
 
       if (!sidecarItem) {
         // ── Phase 1: Pre-dispatch ─────────────────────────────────────────
         const preDispatchResult = await runPreDispatch(ic, loopState);
-        if (preDispatchResult.action === "break") break;
-        if (preDispatchResult.action === "continue") continue;
+        deps.uokObserver?.onPhaseResult("pre-dispatch", preDispatchResult.action);
+        if (preDispatchResult.action === "break") {
+          finishTurn("stopped", "manual-attention", "pre-dispatch-break");
+          break;
+        }
+        if (preDispatchResult.action === "continue") {
+          finishTurn("skipped");
+          continue;
+        }
 
         const preData = preDispatchResult.data;
 
         // ── Phase 2: Guards ───────────────────────────────────────────────
         const guardsResult = await runGuards(ic, preData.mid);
-        if (guardsResult.action === "break") break;
+        deps.uokObserver?.onPhaseResult("guard", guardsResult.action);
+        if (guardsResult.action === "break") {
+          finishTurn("stopped", "manual-attention", "guard-break");
+          break;
+        }
 
         // ── Phase 3: Dispatch ─────────────────────────────────────────────
         const dispatchResult = await runDispatch(ic, preData, loopState);
-        if (dispatchResult.action === "break") break;
-        if (dispatchResult.action === "continue") continue;
+        deps.uokObserver?.onPhaseResult("dispatch", dispatchResult.action);
+        if (dispatchResult.action === "break") {
+          finishTurn("stopped", "manual-attention", "dispatch-break");
+          break;
+        }
+        if (dispatchResult.action === "continue") {
+          finishTurn("skipped");
+          continue;
+        }
         iterData = dispatchResult.data;
+        observedUnitType = iterData.unitType;
+        observedUnitId = iterData.unitId;
       } else {
         // ── Sidecar path: use values from the sidecar item directly ──
         const sidecarState = await deps.deriveState(s.basePath);
@@ -343,22 +446,47 @@ export async function autoLoop(
           midTitle: sidecarState.activeMilestone?.title,
           isRetry: false, previousTier: undefined,
         };
+        observedUnitType = iterData.unitType;
+        observedUnitId = iterData.unitId;
+        deps.uokObserver?.onPhaseResult("dispatch", "sidecar", {
+          unitType: iterData.unitType,
+          unitId: iterData.unitId,
+          sidecarKind: sidecarItem.kind,
+        });
       }
 
       const unitPhaseResult = await runUnitPhase(ic, iterData, loopState, sidecarItem);
-      if (unitPhaseResult.action === "break") break;
+      deps.uokObserver?.onPhaseResult("unit", unitPhaseResult.action, {
+        unitType: iterData.unitType,
+        unitId: iterData.unitId,
+      });
+      if (unitPhaseResult.action === "break") {
+        finishTurn("stopped", "execution", "unit-break");
+        break;
+      }
 
       // ── Phase 5: Finalize ───────────────────────────────────────────────
 
       const finalizeResult = await runFinalize(ic, iterData, loopState, sidecarItem);
-      if (finalizeResult.action === "break") break;
-      if (finalizeResult.action === "continue") continue;
+      deps.uokObserver?.onPhaseResult("finalize", finalizeResult.action, {
+        unitType: iterData.unitType,
+        unitId: iterData.unitId,
+      });
+      if (finalizeResult.action === "break") {
+        finishTurn("stopped", "closeout", "finalize-break");
+        break;
+      }
+      if (finalizeResult.action === "continue") {
+        finishTurn("retry");
+        continue;
+      }
 
       consecutiveErrors = 0; // Iteration completed successfully
       consecutiveCooldowns = 0;
       recentErrorMessages.length = 0;
       deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
       debugLog("autoLoop", { phase: "iteration-complete", iteration });
+      finishTurn("completed");
     } catch (loopErr) {
       // ── Blanket catch: absorb unexpected exceptions, apply graduated recovery ──
       const msg = loopErr instanceof Error ? loopErr.message : String(loopErr);
@@ -388,6 +516,7 @@ export async function autoLoop(
           pi,
           `Infrastructure error (${infraCode}): not recoverable by retry`,
         );
+        finishTurn("failed", "execution", msg);
         break;
       }
 
@@ -429,6 +558,7 @@ export async function autoLoop(
           "warning",
         );
         await new Promise(resolve => setTimeout(resolve, waitMs));
+        finishTurn("retry", "timeout", msg);
         continue; // Retry iteration without incrementing consecutiveErrors
       }
 
@@ -455,6 +585,7 @@ export async function autoLoop(
           pi,
           `${consecutiveErrors} consecutive iteration failures`,
         );
+        finishTurn("failed", "execution", msg);
         break;
       } else if (consecutiveErrors === 2) {
         // 2nd consecutive: try invalidating caches + re-deriving state
@@ -467,6 +598,7 @@ export async function autoLoop(
         // 1st error: log and retry — transient failures happen
         ctx.ui.notify(`Iteration error: ${msg}. Retrying.`, "warning");
       }
+      finishTurn("retry", "execution", msg);
     }
   }
 

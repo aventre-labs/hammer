@@ -21,6 +21,7 @@ import type { WorktreeResolver } from "../worktree-resolver.js";
 import type { CmuxLogLevel } from "../../cmux/index.js";
 import type { JournalEntry } from "../journal.js";
 import type { MergeReconcileResult } from "../auto-recovery.js";
+import type { UokTurnObserver } from "../uok/contracts.js";
 
 /**
  * Dependencies injected by the caller (auto.ts startAuto) so autoLoop
@@ -274,4 +275,7 @@ export interface LoopDeps {
 
   // Journal
   emitJournalEvent: (entry: JournalEntry) => void;
+
+  // UOK (optional, flag-gated)
+  uokObserver?: UokTurnObserver;
 }

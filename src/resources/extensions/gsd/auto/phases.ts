@@ -47,6 +47,7 @@ import { withTimeout, FINALIZE_PRE_TIMEOUT_MS, FINALIZE_POST_TIMEOUT_MS } from "
 import { getEligibleSlices } from "../slice-parallel-eligibility.js";
 import { startSliceParallel } from "../slice-parallel-orchestrator.js";
 import { isDbAvailable, getMilestoneSlices } from "../gsd-db.js";
+import { ensurePlanV2Graph } from "../uok/plan-v2.js";
 import { resetEvidence } from "../safety/evidence-collector.js";
 import { createCheckpoint, cleanupCheckpoint, rollbackToCheckpoint } from "../safety/git-checkpoint.js";
 import { resolveSafetyHarnessConfig } from "../safety/safety-harness.js";
@@ -252,6 +253,15 @@ export async function runPreDispatch(
 
   // Derive state
   let state = await deps.deriveState(s.basePath);
+  if (prefs?.uok?.plan_v2?.enabled) {
+    const compiled = ensurePlanV2Graph(s.basePath, state);
+    if (!compiled.ok) {
+      const reason = compiled.reason ?? "Plan v2 compilation failed";
+      ctx.ui.notify(`Plan gate failed-closed: ${reason}`, "error");
+      await deps.pauseAuto(ctx, pi);
+      return { action: "break", reason: "plan-v2-gate-failed" };
+    }
+  }
   deps.syncCmuxSidebar(prefs, state);
   let mid = state.activeMilestone?.id;
   let midTitle = state.activeMilestone?.title;
