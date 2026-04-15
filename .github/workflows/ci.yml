@@ -8,7 +8,6 @@ on:
       - '.github/workflows/ai-triage.yml'
       - '.github/workflows/build-native.yml'
       - '.github/workflows/cleanup-dev-versions.yml'
-      - '.github/workflows/pipeline.yml'
       - 'LICENSE'
   pull_request:
     branches: [main]
@@ -16,7 +15,6 @@ on:
       - '.github/workflows/ai-triage.yml'
       - '.github/workflows/build-native.yml'
       - '.github/workflows/cleanup-dev-versions.yml'
-      - '.github/workflows/pipeline.yml'
       - 'LICENSE'
 
 concurrency:
