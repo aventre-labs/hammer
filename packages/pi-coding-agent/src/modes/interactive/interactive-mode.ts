@@ -2117,6 +2117,7 @@ export class InteractiveMode {
 	}
 
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+		const timestampFormat = this.settingsManager.getTimestampFormat();
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -2174,12 +2175,12 @@ export class InteractiveMode {
 								skillBlock.userMessage,
 								this.getMarkdownThemeWithSettings(),
 								message.timestamp,
-								this.settingsManager.getTimestampFormat(),
+								timestampFormat,
 							);
 							this.chatContainer.addChild(userComponent);
 						}
 					} else {
-						const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings(), message.timestamp, this.settingsManager.getTimestampFormat());
+						const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings(), message.timestamp, timestampFormat);
 						this.chatContainer.addChild(userComponent);
 					}
 					if (options?.populateHistory) {
@@ -2193,7 +2194,7 @@ export class InteractiveMode {
 					message,
 					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
-					this.settingsManager.getTimestampFormat(),
+					timestampFormat,
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
@@ -2231,6 +2232,7 @@ export class InteractiveMode {
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.pendingTools.clear();
+		const timestampFormat = this.settingsManager.getTimestampFormat();
 
 		if (options.updateFooter) {
 			this.footer.invalidate();
@@ -2255,7 +2257,7 @@ export class InteractiveMode {
 							message,
 							this.hideThinkingBlock,
 							this.getMarkdownThemeWithSettings(),
-							this.settingsManager.getTimestampFormat(),
+							timestampFormat,
 							{ startIndex: segment.startIndex, endIndex: segment.endIndex },
 						);
 						this.chatContainer.addChild(assistantComponent);

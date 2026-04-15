@@ -95,6 +95,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	}
 
 	host.footer.invalidate();
+	const timestampFormat = host.settingsManager.getTimestampFormat();
 
 	// Reset content index tracker and pinned state when a new assistant message starts
 	if (event.type === "message_start" && event.message.role === "assistant") {
@@ -344,29 +345,35 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					type DesiredSegment =
 						| { kind: "text-run"; startIndex: number; endIndex: number; contentType: "text" | "thinking" }
 						| { kind: "tool"; contentIndex: number; toolId: string };
-					const desired: DesiredSegment[] = [];
-					let runStart = -1;
-					let runEnd = -1;
-					let runType: "text" | "thinking" | undefined;
-					const closeRun = () => {
-						if (runStart !== -1 && runType) {
-							desired.push({ kind: "text-run", startIndex: runStart, endIndex: runEnd, contentType: runType });
-							runStart = -1;
-							runEnd = -1;
-							runType = undefined;
+				const desired: DesiredSegment[] = [];
+				let runStart = -1;
+				let runEnd = -1;
+				let runType: "text" | "thinking" | undefined;
+				const closeRun = () => {
+					if (runStart !== -1 && runType) {
+						desired.push({ kind: "text-run", startIndex: runStart, endIndex: runEnd, contentType: runType });
+						runStart = -1;
+						runEnd = -1;
+						runType = undefined;
 						}
 					};
-					for (let i = 0; i < blocks.length; i++) {
-						const b = blocks[i];
-						const blockType = b.type === "text" || b.type === "thinking" ? b.type : undefined;
-						const isTextLike = blockType === "text" || blockType === "thinking";
-						const isTool = b.type === "toolCall" || b.type === "serverToolUse";
-						// For Claude Code MCP turns, prune only pre-tool prose, never thinking.
-						const shouldSkipProse = shouldDropPreToolProse && firstToolIdx >= 0 && i < firstToolIdx && blockType === "text";
-						if (shouldSkipProse) {
-							closeRun();
-							continue;
-						}
+				for (let i = 0; i < blocks.length; i++) {
+					const b = blocks[i];
+					const blockType = b.type === "text" || b.type === "thinking" ? b.type : undefined;
+					const isTextLike = blockType === "text" || blockType === "thinking";
+					const isTool = b.type === "toolCall" || b.type === "serverToolUse";
+					// For Claude Code MCP turns, prune only pre-tool prose, never thinking.
+					const textValue = blockType === "text" && typeof b?.text === "string" ? b.text : "";
+					const isLikelyQuestion = blockType === "text" && typeof textValue === "string" && /\?\s*$/.test(textValue.trim());
+					const shouldSkipProse = shouldDropPreToolProse
+						&& firstToolIdx >= 0
+						&& i < firstToolIdx
+						&& blockType === "text"
+						&& !isLikelyQuestion;
+					if (shouldSkipProse) {
+						closeRun();
+						continue;
+					}
 						if (isTextLike) {
 							if (runStart === -1) {
 								runStart = i;
@@ -462,7 +469,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 									undefined,
 									host.hideThinkingBlock,
 									host.getMarkdownThemeWithSettings(),
-									host.settingsManager.getTimestampFormat(),
+									timestampFormat,
 									{ startIndex: seg.startIndex, endIndex: seg.endIndex },
 								);
 								host.chatContainer.addChild(comp);
@@ -684,7 +691,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 								undefined,
 								host.hideThinkingBlock,
 								host.getMarkdownThemeWithSettings(),
-								host.settingsManager.getTimestampFormat(),
+								timestampFormat,
 								{ startIndex: seg.startIndex, endIndex: seg.endIndex },
 							);
 							comp.updateContent(host.streamingMessage);
@@ -704,9 +711,9 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 						host.streamingComponent = new AssistantMessageComponent(
 							undefined,
 							host.hideThinkingBlock,
-						host.getMarkdownThemeWithSettings(),
-						host.settingsManager.getTimestampFormat(),
-					);
+							host.getMarkdownThemeWithSettings(),
+							timestampFormat,
+						);
 					host.chatContainer.addChild(host.streamingComponent);
 				}
 				if (host.streamingComponent) {
