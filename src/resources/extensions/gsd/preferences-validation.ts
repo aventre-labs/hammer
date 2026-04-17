@@ -560,6 +560,10 @@ export function validatePreferences(preferences: GSDPreferences): {
         if (typeof dr.capability_routing === "boolean") validDr.capability_routing = dr.capability_routing;
         else errors.push("dynamic_routing.capability_routing must be a boolean");
       }
+      if (dr.allow_flat_rate_providers !== undefined) {
+        if (typeof dr.allow_flat_rate_providers === "boolean") validDr.allow_flat_rate_providers = dr.allow_flat_rate_providers;
+        else errors.push("dynamic_routing.allow_flat_rate_providers must be a boolean");
+      }
       if (dr.tier_models !== undefined) {
         if (typeof dr.tier_models === "object" && dr.tier_models !== null) {
           const tm = dr.tier_models as Record<string, unknown>;

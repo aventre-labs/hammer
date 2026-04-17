@@ -42,7 +42,15 @@ export function resolvePreferredModelConfig(
   if (!routingConfig.enabled || !routingConfig.tier_models) return undefined;
 
   // Don't synthesize a routing config for flat-rate providers (#3453).
-  if (autoModeStartModel && isFlatRateProvider(autoModeStartModel.provider, autoModeStartModel.flatRateCtx)) return undefined;
+  // Users can opt into routing for flat-rate subscriptions (e.g. claude-code)
+  // via dynamic_routing.allow_flat_rate_providers (#4386).
+  if (
+    !routingConfig.allow_flat_rate_providers &&
+    autoModeStartModel &&
+    isFlatRateProvider(autoModeStartModel.provider, autoModeStartModel.flatRateCtx)
+  ) {
+    return undefined;
+  }
 
   const ceilingModel = routingConfig.tier_models.heavy
     ?? (autoModeStartModel ? `${autoModeStartModel.provider}/${autoModeStartModel.id}` : undefined);
@@ -152,7 +160,10 @@ export async function selectAndApplyModel(
     // model provides no cost benefit — it only degrades quality.
     // Fail-closed: if primary model can't be resolved, fall back to
     // provider-level signals rather than allowing unwanted downgrades.
-    if (routingConfig.enabled) {
+    // Opt-in: dynamic_routing.allow_flat_rate_providers skips the bypass so
+    // claude-code subscribers can still get intelligent per-task selection
+    // across their subscription (#4386).
+    if (routingConfig.enabled && !routingConfig.allow_flat_rate_providers) {
       const primaryModel = resolveModelId(modelConfig.primary, routingEligibleModels, ctx.model?.provider);
       if (primaryModel) {
         const primaryFlatRateCtx = buildFlatRateContext(primaryModel.provider, ctx, prefs);

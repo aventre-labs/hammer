@@ -23,6 +23,14 @@ export interface DynamicRoutingConfig {
   budget_pressure?: boolean;       // default: true
   cross_provider?: boolean;        // default: true
   hooks?: boolean;                 // default: true
+  /**
+   * Opt into dynamic routing for flat-rate providers (e.g. claude-code,
+   * GitHub Copilot). Default false preserves the #3453 bypass that skips
+   * routing when the subscription makes per-request cost identical.
+   * Enable only when you want per-task model selection across a flat-rate
+   * subscription (e.g. haiku for research, opus for architecture). (#4386)
+   */
+  allow_flat_rate_providers?: boolean;
 }
 
 export interface RoutingDecision {

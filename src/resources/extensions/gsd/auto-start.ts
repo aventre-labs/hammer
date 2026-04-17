@@ -837,10 +837,11 @@ export async function bootstrapAutoSession(
     const bannerPrefs = loadEffectiveGSDPreferences()?.preferences;
     const effectiveProvider = s.autoModeStartModel?.provider ?? ctx.model?.provider;
     const effectivelyEnabled = routingConfig.enabled
-      && !(effectiveProvider && isFlatRateProvider(
-        effectiveProvider,
-        buildFlatRateContext(effectiveProvider, ctx, bannerPrefs),
-      ));
+      && (routingConfig.allow_flat_rate_providers
+        || !(effectiveProvider && isFlatRateProvider(
+          effectiveProvider,
+          buildFlatRateContext(effectiveProvider, ctx, bannerPrefs),
+        )));
 
     // The actual ceiling may come from tier_models.heavy, not the start model.
     const effectiveCeiling = (routingConfig.enabled && routingConfig.tier_models?.heavy)
