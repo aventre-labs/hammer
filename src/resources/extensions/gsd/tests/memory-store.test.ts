@@ -325,7 +325,7 @@ test('memory-store: schema includes memories table', () => {
 
   // Verify schema version is 15 (UOK gate/git/audit projection tables included)
   const version = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assert.deepStrictEqual(version?.['v'], 15, 'schema version should be 15');
+  assert.deepStrictEqual(version?.['v'], 16, 'schema version should be 16');
 
   closeDatabase();
 });

@@ -11,6 +11,7 @@ export type Phase =
   | "discussing"
   | "researching"
   | "planning"
+  | "refining"
   | "evaluating-gates"
   | "executing"
   | "verifying"
@@ -350,6 +351,8 @@ export interface PhaseSkipPreferences {
   reassess_after_slice?: boolean;
   /** When true, auto-mode pauses before each slice for discussion (#789). */
   require_slice_discussion?: boolean;
+  /** ADR-011: when true, plan S01 in full and S02+ as sketches refined just-in-time. */
+  progressive_planning?: boolean;
 }
 
 export interface NotificationPreferences {

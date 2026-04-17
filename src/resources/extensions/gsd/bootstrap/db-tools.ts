@@ -449,10 +449,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
         depends: Type.Array(Type.String(), { description: "Slice dependency IDs" }),
         demo: Type.String({ description: "Roadmap demo text / After this" }),
         goal: Type.String({ description: "Slice goal" }),
-        successCriteria: Type.String({ description: "Slice success criteria block" }),
-        proofLevel: Type.String({ description: "Slice proof level" }),
-        integrationClosure: Type.String({ description: "Slice integration closure" }),
-        observabilityImpact: Type.String({ description: "Slice observability impact" }),
+        // ADR-011: heavy planning fields are optional for sketch slices; required for full slices.
+        successCriteria: Type.Optional(Type.String({ description: "Slice success criteria block (required for full slices; omit for sketches)" })),
+        proofLevel: Type.Optional(Type.String({ description: "Slice proof level (required for full slices; omit for sketches)" })),
+        integrationClosure: Type.Optional(Type.String({ description: "Slice integration closure (required for full slices; omit for sketches)" })),
+        observabilityImpact: Type.Optional(Type.String({ description: "Slice observability impact (required for full slices; omit for sketches)" })),
+        // ADR-011 sketch-then-refine fields.
+        isSketch: Type.Optional(Type.Boolean({ description: "ADR-011: true marks this slice as a sketch awaiting refine-slice expansion" })),
+        sketchScope: Type.Optional(Type.String({ description: "ADR-011: 2–3 sentence scope boundary, required when isSketch=true" })),
       }), { description: "Planned slices for the milestone" }),
       // ── Enrichment metadata (optional — defaults to empty) ────────────
       status: Type.Optional(Type.String({ description: "Milestone status (defaults to active)" })),

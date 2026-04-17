@@ -44,6 +44,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { debugCount, debugTime } from './debug-logger.js';
 import { logWarning, logError } from './workflow-logger.js';
 import { extractVerdict } from './verdict-parser.js';
+import { loadEffectiveGSDPreferences } from './preferences.js';
 
 import {
   isDbAvailable,
@@ -60,6 +61,7 @@ import {
   updateSliceStatus,
   updateTaskStatus,
   getPendingGateCountForTurn,
+  autoHealSketchFlags,
   type MilestoneRow,
   type SliceRow,
   type TaskRow,
@@ -849,7 +851,15 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     return handleAllSlicesDone(basePath, activeMilestone, registry, requirements, milestoneProgress, sliceProgress);
   }
 
-  const activeSliceContext = resolveSliceDependencies(activeMilestoneSlices);
+  // ADR-011 auto-heal: if a slice has a PLAN on disk but is still flagged is_sketch=1
+  // (e.g. a crash between plan-slice write and the sketch flip), reconcile before
+  // running phase derivation so the flag doesn't misroute state.
+  autoHealSketchFlags(activeMilestone.id, (sid) =>
+    !!resolveSliceFile(basePath, activeMilestone.id, sid, "PLAN"),
+  );
+  // Re-read slices after auto-heal so downstream reads see fresh is_sketch values.
+  const healedSlices = getMilestoneSlices(activeMilestone.id);
+  const activeSliceContext = resolveSliceDependencies(healedSlices);
   if (!activeSliceContext.activeSlice) {
     // If locked slice wasn't found, it returns null but logs warning, we need to return 'blocked'
     if (process.env.GSD_SLICE_LOCK) {
@@ -869,10 +879,24 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       progress: { milestones: milestoneProgress, slices: sliceProgress },
     };
   }
-  const { activeSlice } = activeSliceContext;
+  const { activeSlice, activeSliceRow } = activeSliceContext;
 
   const planFile = resolveSliceFile(basePath, activeMilestone.id, activeSlice.id, "PLAN");
   if (!planFile) {
+    // ADR-011: sketch slices with progressive_planning enabled enter the
+    // `refining` phase — a refine-slice unit expands the sketch into a full plan
+    // before execution. When the flag is off, sketches are indistinguishable
+    // from a missing plan and fall through to the normal `planning` phase.
+    const progressive = loadEffectiveGSDPreferences()?.preferences?.phases?.progressive_planning === true;
+    if (progressive && activeSliceRow?.is_sketch === 1) {
+      return {
+        activeMilestone, activeSlice, activeTask: null,
+        phase: 'refining', recentDecisions: [], blockers: [],
+        nextAction: `Refine sketch slice ${activeSlice.id} (${activeSlice.title}) using prior slice context.`,
+        registry, requirements,
+        progress: { milestones: milestoneProgress, slices: sliceProgress },
+      };
+    }
     return {
       activeMilestone, activeSlice, activeTask: null,
       phase: 'planning', recentDecisions: [], blockers: [],

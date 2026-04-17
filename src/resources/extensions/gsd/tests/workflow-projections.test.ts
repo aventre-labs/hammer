@@ -28,6 +28,8 @@ function makeSlice(overrides: Partial<SliceRow> = {}): SliceRow {
     completed_at: null,
     sequence: 1,
     replan_triggered_at: null,
+    is_sketch: 0,
+    sketch_scope: '',
     ...overrides,
   };
 }

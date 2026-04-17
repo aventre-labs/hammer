@@ -117,6 +117,8 @@ export function snapshotState(): StateManifest {
     observability_impact: (r["observability_impact"] as string) ?? "",
     sequence: toNumeric(r["sequence"], 0) as number,
     replan_triggered_at: (r["replan_triggered_at"] as string) ?? null,
+    is_sketch: toNumeric(r["is_sketch"], 0) as number,
+    sketch_scope: (r["sketch_scope"] as string) ?? "",
   }));
 
   const rawTasks = db.prepare("SELECT * FROM tasks ORDER BY milestone_id, slice_id, sequence, id").all() as Record<string, unknown>[];

@@ -46,6 +46,8 @@ function makeSliceRow(overrides?: Partial<SliceRow>): SliceRow {
     observability_impact: '',
     sequence: 4,
     replan_triggered_at: null,
+    is_sketch: 0,
+    sketch_scope: '',
     ...overrides,
   };
 }

@@ -109,9 +109,9 @@ console.log('\n=== complete-task: schema v5 migration ===');
 
   const adapter = _getAdapter()!;
 
-  // Verify schema version is current (v15 with UOK projection tables)
+  // Verify schema version is current (v16 with ADR-011 sketch columns)
   const versionRow = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assertEq(versionRow?.['v'], 15, 'schema version should be 15');
+  assertEq(versionRow?.['v'], 16, 'schema version should be 16');
 
   // Verify all 4 new tables exist
   const tables = adapter.prepare(

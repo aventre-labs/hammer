@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -334,6 +334,8 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         observability_impact TEXT NOT NULL DEFAULT '',
         sequence INTEGER DEFAULT 0, -- Ordering hint: tools may set this to control execution order
         replan_triggered_at TEXT DEFAULT NULL,
+        is_sketch INTEGER NOT NULL DEFAULT 0, -- ADR-011: 1 = slice is a sketch awaiting refinement
+        sketch_scope TEXT NOT NULL DEFAULT '', -- ADR-011: 2-3 sentence rough scope from plan-milestone
         PRIMARY KEY (milestone_id, id),
         FOREIGN KEY (milestone_id) REFERENCES milestones(id)
       )
@@ -951,6 +953,16 @@ function migrateSchema(db: DbAdapter): void {
       });
     }
 
+    if (currentVersion < 16) {
+      // ADR-011: sketch-then-refine progressive planning
+      ensureColumn(db, "slices", "is_sketch", `ALTER TABLE slices ADD COLUMN is_sketch INTEGER NOT NULL DEFAULT 0`);
+      ensureColumn(db, "slices", "sketch_scope", `ALTER TABLE slices ADD COLUMN sketch_scope TEXT NOT NULL DEFAULT ''`);
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 16,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -1455,16 +1467,20 @@ export function insertSlice(s: {
   depends?: string[];
   demo?: string;
   sequence?: number;
+  isSketch?: boolean;
+  sketchScope?: string;
   planning?: Partial<SlicePlanningRecord>;
 }): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
     `INSERT INTO slices (
       milestone_id, id, title, status, risk, depends, demo, created_at,
-      goal, success_criteria, proof_level, integration_closure, observability_impact, sequence
+      goal, success_criteria, proof_level, integration_closure, observability_impact, sequence,
+      is_sketch, sketch_scope
     ) VALUES (
       :milestone_id, :id, :title, :status, :risk, :depends, :demo, :created_at,
-      :goal, :success_criteria, :proof_level, :integration_closure, :observability_impact, :sequence
+      :goal, :success_criteria, :proof_level, :integration_closure, :observability_impact, :sequence,
+      :is_sketch, :sketch_scope
     )
     ON CONFLICT (milestone_id, id) DO UPDATE SET
       title = CASE WHEN :raw_title IS NOT NULL THEN excluded.title ELSE slices.title END,
@@ -1477,7 +1493,9 @@ export function insertSlice(s: {
       proof_level = CASE WHEN :raw_proof_level IS NOT NULL THEN excluded.proof_level ELSE slices.proof_level END,
       integration_closure = CASE WHEN :raw_integration_closure IS NOT NULL THEN excluded.integration_closure ELSE slices.integration_closure END,
       observability_impact = CASE WHEN :raw_observability_impact IS NOT NULL THEN excluded.observability_impact ELSE slices.observability_impact END,
-      sequence = CASE WHEN :raw_sequence IS NOT NULL THEN excluded.sequence ELSE slices.sequence END`,
+      sequence = CASE WHEN :raw_sequence IS NOT NULL THEN excluded.sequence ELSE slices.sequence END,
+      is_sketch = CASE WHEN :raw_is_sketch IS NOT NULL THEN excluded.is_sketch ELSE slices.is_sketch END,
+      sketch_scope = CASE WHEN :raw_sketch_scope IS NOT NULL THEN excluded.sketch_scope ELSE slices.sketch_scope END`,
   ).run({
     ":milestone_id": s.milestoneId,
     ":id": s.id,
@@ -1493,6 +1511,8 @@ export function insertSlice(s: {
     ":integration_closure": s.planning?.integrationClosure ?? "",
     ":observability_impact": s.planning?.observabilityImpact ?? "",
     ":sequence": s.sequence ?? 0,
+    ":is_sketch": s.isSketch ? 1 : 0,
+    ":sketch_scope": s.sketchScope ?? "",
     // Raw sentinel params: NULL when caller omitted the field, used in ON CONFLICT guards
     ":raw_title": s.title ?? null,
     ":raw_risk": s.risk ?? null,
@@ -1503,7 +1523,50 @@ export function insertSlice(s: {
     ":raw_integration_closure": s.planning?.integrationClosure ?? null,
     ":raw_observability_impact": s.planning?.observabilityImpact ?? null,
     ":raw_sequence": s.sequence ?? null,
+    ":raw_is_sketch": s.isSketch === undefined ? null : (s.isSketch ? 1 : 0),
+    // NOTE: use !== undefined (not ??) so an explicit empty string "" is treated
+    // as a present value and correctly clears the existing sketch_scope on
+    // CONFLICT. ?? would incorrectly preserve the stale value.
+    ":raw_sketch_scope": s.sketchScope !== undefined ? s.sketchScope : null,
   });
+}
+
+// ADR-011: sketch-then-refine helpers
+export function setSliceSketchFlag(milestoneId: string, sliceId: string, isSketch: boolean): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE slices SET is_sketch = :is_sketch WHERE milestone_id = :mid AND id = :sid`,
+  ).run({ ":is_sketch": isSketch ? 1 : 0, ":mid": milestoneId, ":sid": sliceId });
+}
+
+/**
+ * ADR-011 auto-heal: reconcile stale is_sketch=1 rows whose PLAN already exists.
+ *
+ * Callers pass a predicate that resolves whether a plan file exists for a slice.
+ * The predicate MUST use the canonical path resolver (`resolveSliceFile`, etc.)
+ * to keep path logic in one place — do not hand-roll the path inside the callback.
+ *
+ * Recovers from two scenarios:
+ *   1. Crash between `gsd_plan_slice` write and the sketch flag flip.
+ *   2. Flag-OFF downgrade path: when `progressive_planning` is off, the dispatch
+ *      rule routes sketch slices to plan-slice, which writes PLAN.md but leaves
+ *      `is_sketch=1` — the next state derivation auto-heals it to 0 here.
+ *
+ * Not aggressive in practice: PLAN.md is only written via the DB-backed
+ * `gsd_plan_slice` tool (which also inserts tasks), so a "stale PLAN.md with
+ * is_sketch=1" is extremely unlikely to indicate anything other than the two
+ * recovery scenarios above.
+ */
+export function autoHealSketchFlags(milestoneId: string, hasPlanFile: (sliceId: string) => boolean): void {
+  if (!currentDb) return;
+  const rows = currentDb.prepare(
+    `SELECT id FROM slices WHERE milestone_id = :mid AND is_sketch = 1`,
+  ).all({ ":mid": milestoneId }) as Array<{ id: string }>;
+  for (const row of rows) {
+    if (hasPlanFile(row.id)) {
+      setSliceSketchFlag(milestoneId, row.id, false);
+    }
+  }
 }
 
 export function upsertSlicePlanning(milestoneId: string, sliceId: string, planning: Partial<SlicePlanningRecord>): void {
@@ -1679,6 +1742,8 @@ export interface SliceRow {
   observability_impact: string;
   sequence: number;
   replan_triggered_at: string | null;
+  is_sketch: number;
+  sketch_scope: string;
 }
 
 function rowToSlice(row: Record<string, unknown>): SliceRow {
@@ -1701,6 +1766,8 @@ function rowToSlice(row: Record<string, unknown>): SliceRow {
     observability_impact: (row["observability_impact"] as string) ?? "",
     sequence: (row["sequence"] as number) ?? 0,
     replan_triggered_at: (row["replan_triggered_at"] as string) ?? null,
+    is_sketch: (row["is_sketch"] as number) ?? 0,
+    sketch_scope: (row["sketch_scope"] as string) ?? "",
   };
 }
 
