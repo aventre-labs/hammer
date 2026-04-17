@@ -952,9 +952,19 @@ export function enterBranchModeForMilestone(
     const integrationBranch =
       readIntegrationBranch(basePath, milestoneId) ?? undefined;
     const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+    // Validate main_branch preference exists in the repo before using it —
+    // a stale preference (e.g. "master" when repo uses "main") would cause
+    // nativeBranchForceReset to fail with a bad start-point reference.
+    const validatedPrefBranch =
+      gitPrefs?.main_branch &&
+      typeof gitPrefs.main_branch === "string" &&
+      gitPrefs.main_branch.length > 0 &&
+      nativeBranchExists(basePath, gitPrefs.main_branch)
+        ? gitPrefs.main_branch
+        : undefined;
     const startPoint =
       integrationBranch ??
-      (gitPrefs?.main_branch as string | undefined) ??
+      validatedPrefBranch ??
       nativeDetectMainBranch(basePath);
 
     // nativeBranchForceReset creates (or resets) branch at startPoint,

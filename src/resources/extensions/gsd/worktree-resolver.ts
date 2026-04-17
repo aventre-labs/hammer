@@ -195,8 +195,10 @@ export class WorktreeResolver {
       try {
         this.deps.enterBranchModeForMilestone(basePath, milestoneId);
         // basePath does not change — no worktree, no chdir.
-        // Rebuild GitService so the new HEAD is reflected.
+        // Rebuild GitService so the new HEAD is reflected, then flush any
+        // path-keyed caches that may have been populated before the checkout.
         this.rebuildGitService();
+        this.deps.invalidateAllCaches();
         debugLog("WorktreeResolver", {
           action: "enterMilestone",
           milestoneId,
