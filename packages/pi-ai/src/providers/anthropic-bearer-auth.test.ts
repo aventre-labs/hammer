@@ -9,17 +9,17 @@ describe("anthropic bearer auth for custom providers (#3874)", () => {
 	it("treats Bearer Authorization headers as authToken-capable providers", () => {
 		assert.match(
 			source,
-			/model\.provider === "alibaba-coding-plan" \|\| hasBearerAuthorizationHeader\(model\)/,
+			/usesAnthropicBearerAuth\(model\.provider\) \|\| hasBearerAuthorizationHeader\(model\)/,
 			"custom providers with Authorization headers should opt into bearer auth",
 		);
 		assert.match(
 			source,
-			/apiKey: useBearerAuth \? null : apiKey/,
+			/apiKey: usesBearerAuth \? null : apiKey/,
 			"bearer-auth providers should not send x-api-key",
 		);
 		assert.match(
 			source,
-			/authToken: useBearerAuth \? apiKey : undefined/,
+			/authToken: usesBearerAuth \? apiKey : undefined/,
 			"bearer-auth providers should send authToken instead",
 		);
 	});
