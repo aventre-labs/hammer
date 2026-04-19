@@ -776,32 +776,26 @@ export function registerDbTools(pi: ExtensionAPI): void {
       };
     }
     try {
-      const { getSlice, updateSliceStatus } = await import("../gsd-db.js");
+      const { handleSkipSlice } = await import("../tools/skip-slice.js");
       const { invalidateStateCache } = await import("../state.js");
 
-      const slice = getSlice(params.milestoneId, params.sliceId);
-      if (!slice) {
+      const result = handleSkipSlice({
+        milestoneId: params.milestoneId,
+        sliceId: params.sliceId,
+        reason: params.reason,
+      });
+
+      if (result.error) {
         return {
-          content: [{ type: "text" as const, text: `Error: Slice ${params.sliceId} not found in milestone ${params.milestoneId}` }],
-          details: { operation: "skip_slice", error: "slice_not_found" } as any,
+          content: [{ type: "text" as const, text: `Error: ${result.error}` }],
+          details: {
+            operation: "skip_slice",
+            error: result.error,
+            errorCode: result.errorCode ?? "skip_failed",
+          } as any,
         };
       }
 
-      if (slice.status === "complete" || slice.status === "done") {
-        return {
-          content: [{ type: "text" as const, text: `Error: Slice ${params.sliceId} is already complete — cannot skip.` }],
-          details: { operation: "skip_slice", error: "already_complete" } as any,
-        };
-      }
-
-      if (slice.status === "skipped") {
-        return {
-          content: [{ type: "text" as const, text: `Slice ${params.sliceId} is already skipped.` }],
-          details: { operation: "skip_slice", sliceId: params.sliceId, milestoneId: params.milestoneId } as any,
-        };
-      }
-
-      updateSliceStatus(params.milestoneId, params.sliceId, "skipped");
       invalidateStateCache();
 
       // Rebuild STATE.md so it reflects the skip immediately (#3477).
@@ -814,13 +808,21 @@ export function registerDbTools(pi: ExtensionAPI): void {
         logError("tool", `skip_slice rebuildState failed: ${(err as Error).message}`, { tool: "gsd_skip_slice" });
       }
 
+      const suffix = result.wasAlreadySkipped
+        ? result.tasksSkipped > 0
+          ? ` (already skipped; cascaded ${result.tasksSkipped} leftover task(s) to skipped).`
+          : " (already skipped; no pending tasks to cascade)."
+        : ` Cascaded ${result.tasksSkipped} task(s) to skipped. Auto-mode will advance past this slice.`;
+
       return {
-        content: [{ type: "text" as const, text: `Skipped slice ${params.sliceId} (${params.milestoneId}). Reason: ${params.reason ?? "User-directed skip"}. Auto-mode will advance past this slice.` }],
+        content: [{ type: "text" as const, text: `Skipped slice ${params.sliceId} (${params.milestoneId}). Reason: ${params.reason ?? "User-directed skip"}.${suffix}` }],
         details: {
           operation: "skip_slice",
           sliceId: params.sliceId,
           milestoneId: params.milestoneId,
           reason: params.reason,
+          tasksSkipped: result.tasksSkipped,
+          wasAlreadySkipped: result.wasAlreadySkipped,
         } as any,
       };
     } catch (err) {
@@ -838,12 +840,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
     label: "Skip Slice",
     description:
       "Mark a slice as skipped so auto-mode advances past it without executing. " +
+      "Non-closed tasks within the slice are cascaded to skipped so milestone completion is not blocked by leftover pending tasks (#4375). " +
       "The slice data is preserved for reference. The state machine treats skipped slices like completed ones for dependency satisfaction.",
     promptSnippet: "Skip a GSD slice (mark as skipped, auto-mode will advance past it)",
     promptGuidelines: [
       "Use gsd_skip_slice when a slice should be bypassed — descoped, superseded, or no longer relevant.",
       "Cannot skip a slice that is already complete.",
       "Skipped slices satisfy downstream dependencies just like completed slices.",
+      "All pending/active tasks in the slice are cascaded to skipped; completed tasks are never downgraded.",
     ],
     parameters: Type.Object({
       sliceId: Type.String({ description: "Slice ID (e.g. S02)" }),
