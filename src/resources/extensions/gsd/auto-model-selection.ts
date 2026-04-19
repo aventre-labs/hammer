@@ -205,7 +205,7 @@ export async function selectAndApplyModel(
           budgetPct,
           taskMetadataForPolicy,
         );
-        const availableModelIds = routingEligibleModels.map(m => m.id);
+        const availableModelIds = routingEligibleModels.map(m => `${m.provider}/${m.id}`);
 
         // Escalate tier on retry when escalate_on_failure is enabled (default: true)
         if (

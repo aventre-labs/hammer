@@ -247,6 +247,18 @@ test("model policy receives task metadata for requirement-vector decisions", () 
   );
 });
 
+test("dynamic routing passes provider-qualified model keys to the router", () => {
+  const src = readFileSync(join(__dirname, "..", "auto-model-selection.ts"), "utf-8");
+  assert.ok(
+    src.includes("routingEligibleModels.map(m => `${m.provider}/${m.id}`)"),
+    "selectAndApplyModel should preserve provider prefixes for dynamic routing candidates",
+  );
+  assert.ok(
+    !src.includes("routingEligibleModels.map(m => m.id)"),
+    "selectAndApplyModel must not strip providers before resolving tier_models",
+  );
+});
+
 test("resolveModelId: anthropic wins over claude-code when session provider is not claude-code", () => {
   const availableModels = [
     { id: "claude-sonnet-4-6", provider: "claude-code" },

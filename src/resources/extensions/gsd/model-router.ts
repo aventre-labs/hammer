@@ -279,8 +279,9 @@ export function scoreEligibleModels(
   capabilityOverrides?: Record<string, Partial<ModelCapabilities>>,
 ): Array<{ modelId: string; score: number }> {
   const scored = eligibleModelIds.map(modelId => {
-    const builtin = MODEL_CAPABILITY_PROFILES[modelId];
-    const override = capabilityOverrides?.[modelId];
+    const bareId = bareModelId(modelId);
+    const builtin = MODEL_CAPABILITY_PROFILES[bareId];
+    const override = capabilityOverrides?.[modelId] ?? capabilityOverrides?.[bareId];
     const profile: ModelCapabilities = builtin
       ? override ? { ...builtin, ...override } : builtin
       : { coding: 50, debugging: 50, research: 50, reasoning: 50, speed: 50, longContext: 50, instruction: 50 };
@@ -516,7 +517,7 @@ export function defaultRoutingConfig(): DynamicRoutingConfig {
 
 function getModelTier(modelId: string): ComplexityTier {
   // Strip provider prefix if present
-  const bareId = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  const bareId = bareModelId(modelId);
 
   // Check exact match first
   if (MODEL_CAPABILITY_TIER[bareId]) return MODEL_CAPABILITY_TIER[bareId];
@@ -532,7 +533,7 @@ function getModelTier(modelId: string): ComplexityTier {
 
 /** Check if a model ID has a known capability tier mapping. (#2192) */
 function isKnownModel(modelId: string): boolean {
-  const bareId = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  const bareId = bareModelId(modelId);
   if (MODEL_CAPABILITY_TIER[bareId]) return true;
   for (const knownId of Object.keys(MODEL_CAPABILITY_TIER)) {
     if (bareId.includes(knownId) || knownId.includes(bareId)) return true;
@@ -541,7 +542,7 @@ function isKnownModel(modelId: string): boolean {
 }
 
 function getModelCost(modelId: string): number {
-  const bareId = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  const bareId = bareModelId(modelId);
 
   if (MODEL_COST_PER_1K_INPUT[bareId] !== undefined) {
     return MODEL_COST_PER_1K_INPUT[bareId];
@@ -554,6 +555,10 @@ function getModelCost(modelId: string): number {
 
   // Unknown cost — assume expensive to avoid routing to unknown cheap models
   return 999;
+}
+
+function bareModelId(modelId: string): string {
+  return modelId.includes("/") ? modelId.split("/").pop()! : modelId;
 }
 
 // ─── Tool Compatibility Filter (ADR-005 Phase 3) ───────────────────────────

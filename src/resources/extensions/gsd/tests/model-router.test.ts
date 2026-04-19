@@ -126,6 +126,43 @@ test("uses explicit tier_models when configured", () => {
   assert.equal(result.wasDowngraded, true);
 });
 
+test("preserves explicit provider-qualified tier_models when duplicate bare IDs exist", () => {
+  const config: DynamicRoutingConfig = {
+    ...defaultRoutingConfig(),
+    enabled: true,
+    capability_routing: false,
+    tier_models: {
+      light: "custom-openai/gpt-5.3-codex-spark",
+      standard: "custom-openai/gpt-5.4",
+    },
+  };
+  const providerModels = [
+    "openai-codex/gpt-5.4",
+    "custom-openai/gpt-5.4",
+    "openai-codex/gpt-5.3-codex-spark",
+    "custom-openai/gpt-5.3-codex-spark",
+    "custom-anthropic/claude-opus-4-7",
+  ];
+
+  const standard = resolveModelForComplexity(
+    makeClassification("standard"),
+    { primary: "custom-anthropic/claude-opus-4-7", fallbacks: [] },
+    config,
+    providerModels,
+  );
+  assert.equal(standard.modelId, "custom-openai/gpt-5.4");
+  assert.equal(standard.wasDowngraded, true);
+
+  const light = resolveModelForComplexity(
+    makeClassification("light"),
+    { primary: "custom-anthropic/claude-opus-4-7", fallbacks: [] },
+    config,
+    providerModels,
+  );
+  assert.equal(light.modelId, "custom-openai/gpt-5.3-codex-spark");
+  assert.equal(light.wasDowngraded, true);
+});
+
 // ─── Fallback chain construction ─────────────────────────────────────────────
 
 test("fallback chain includes configured primary as last resort", () => {
@@ -216,6 +253,19 @@ test("#2192: known model is still downgraded normally", () => {
 test("defaultRoutingConfig includes capability_routing: true", () => {
   const config = defaultRoutingConfig();
   assert.equal(config.capability_routing, true);
+});
+
+test("scoreEligibleModels uses bare capability profiles for provider-qualified IDs", () => {
+  const scored = scoreEligibleModels(
+    ["custom-openai/gpt-5.4", "custom-openai/gpt-5.3-codex-spark"],
+    { coding: 1 },
+  );
+
+  assert.equal(scored[0]?.modelId, "custom-openai/gpt-5.4");
+  assert.ok(
+    (scored[0]?.score ?? 0) > (scored[1]?.score ?? 0),
+    "provider-qualified IDs should still use the built-in bare model capability profile",
+  );
 });
 
 test("scoreModel computes weighted average of capability × requirement", () => {
