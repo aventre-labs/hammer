@@ -162,6 +162,10 @@ Preserve the specification's exact terminology, emphasis, and specific framing. 
 6. For each architectural or pattern decision, call `gsd_decision_save` — the tool auto-assigns IDs and regenerates `.gsd/DECISIONS.md` automatically.
 7. {{commitInstruction}}
 
+### Ready-phrase pre-condition (NON-BYPASSABLE)
+
+Before emitting the ready phrase, verify in the CURRENT turn that you have written `.gsd/PROJECT.md`, `.gsd/REQUIREMENTS.md`, `{{contextPath}}`, and called `gsd_plan_milestone`. If any is missing, **STOP** — emit the missing tool calls in this same turn. The system rejects premature ready signals and retries are capped.
+
 After writing the files, say exactly: "Milestone {{milestoneId}} ready." — nothing else. Auto-mode will start automatically.
 
 ### Multi-Milestone
@@ -233,6 +237,10 @@ For single-milestone projects, do NOT write this file.
 #### Phase 4: Finalize
 
 7. {{multiMilestoneCommitInstruction}}
+
+### Ready-phrase pre-condition (NON-BYPASSABLE)
+
+Before emitting the ready phrase, verify in the CURRENT turn that you have written `.gsd/PROJECT.md`, `.gsd/REQUIREMENTS.md`, the primary `CONTEXT.md`, called `gsd_plan_milestone` for the primary milestone, and written `.gsd/DISCUSSION-MANIFEST.json` with `gates_completed === total`. If any is missing, **STOP** — emit the missing tool calls in this same turn. The system rejects premature ready signals and retries are capped.
 
 After writing the files, say exactly: "Milestone {{milestoneId}} ready." — nothing else. Auto-mode will start automatically.
 

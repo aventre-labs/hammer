@@ -1,7 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 
 import { logWarning } from "../workflow-logger.js";
-import { checkAutoStartAfterDiscuss } from "../guided-flow.js";
+import {
+  checkAutoStartAfterDiscuss,
+  maybeHandleReadyPhraseWithoutFiles,
+  maybeHandleEmptyIntentTurn,
+  resetEmptyTurnCounter,
+} from "../guided-flow.js";
 import { getAutoDashboardData, getAutoModeStartModel, isAutoActive, pauseAuto, setCurrentDispatchedModelId } from "../auto.js";
 import { getNextFallbackModel, resolveModelWithFallbacksForUnit } from "../preferences.js";
 import { pauseAutoForProviderError } from "../provider-error-pause.js";
@@ -74,6 +79,20 @@ export async function handleAgentEnd(
     clearDiscussionFlowState();
     return;
   }
+
+  // #4573 — When the LLM emits "Milestone X ready." but the required files
+  // are missing, `checkAutoStartAfterDiscuss` returns false silently. Surface
+  // that and nudge the LLM to complete the writes before the user hits the
+  // downstream "All milestones complete" warning loop.
+  if (maybeHandleReadyPhraseWithoutFiles(event)) return;
+
+  // #4573 — Empty-turn recovery: if the LLM announced intent in prose but
+  // emitted no tool calls, nudge it to execute. Fires only when auto-mode is
+  // active or a discussion autostart is pending (non-auto interactive discuss
+  // is user-driven). Runs before `isAutoActive` early return so pending
+  // discussions (where isAutoActive may be false) still get recovered.
+  if (maybeHandleEmptyIntentTurn(event, isAutoActive())) return;
+
   if (!isAutoActive()) return;
   if (isSessionSwitchInFlight()) return;
 
@@ -239,6 +258,9 @@ export async function handleAgentEnd(
   // ── Success path ─────────────────────────────────────────────────────────
   try {
     resetRetryState(retryState);
+    // #4573 — Reset the empty-turn counter on any successful agent turn so
+    // transient stalls don't accumulate across independent units.
+    resetEmptyTurnCounter();
     resolveAgentEnd(event);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
