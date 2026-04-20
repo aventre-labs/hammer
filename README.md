@@ -27,47 +27,67 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.75
+## What's New in v2.76
 
-### Knowledge Graph & Learning Extraction
+### Memory System
 
-- **Knowledge graph system** — GSD now builds a structured knowledge graph from project artifacts. Learnings, decisions, and patterns are parsed into queryable graph nodes.
-- **`/gsd extract-learnings`** — new command extracts decisions, lessons, patterns, and surprises from completed phase artifacts into `LEARNINGS.md`, which feeds the knowledge graph automatically.
+- **Persistent agent memory** — new `capture_thought`, `memory_query`, and `gsd_graph` tools let GSD store, retrieve, and relate thoughts across sessions (Phase 1).
+- **Ingestion + scopes/tags** — memories can be scoped (project, milestone, slice) and tagged for filtering (Phase 2).
+- **Hybrid retrieval** — keyword + semantic search over stored memory for higher-recall lookup (Phase 3).
+- **Knowledge graph relationships** — memories link into a queryable graph, feeding planning and dispatch context (Phase 4).
+- **Maintenance & observability** — cap cascade, decay metrics, and export/import for memory stores (Phase 5).
 
-### Unified Orchestration Kernel (UOK)
+### Progressive Planning (ADR-011)
 
-- **UOK is now the default** — the unified orchestration kernel replaces the legacy execution path. Plan-v2 compile gates, unified audit envelopes, turn-level git transaction modes, reactive/parallel scheduling via execution graph, and model policy filtering are all enforced by default. Legacy fallback remains as an emergency escape.
+- **Sketch-then-refine planning** — Phase 1 introduces progressive plan elaboration so GSD drafts a lightweight sketch before locking a full plan (#3789).
+- **Mid-execution escalation** — Phase 2 lets tasks escalate complexity mid-run with compensating rollback on write failure (#3789).
 
-### Extension API
+### Workflow & Onboarding
 
-- **GSD Extension API** — third-party extensions can now be loaded from `.gsd/extensions/`, with a formal API surface for hooking into the GSD lifecycle (#3338).
+- **Unified workflow plugin system** — new plugin architecture with modes and remote install. Manage via `/gsd workflow list|run|install|info|validate`.
+- **`/gsd onboarding` re-entry** — revisit setup without restarting the TUI; setup hub disambiguation prevents duplicate banners.
+- **`/gsd scan`** — new lightweight command for rapid codebase assessment, writing to `.gsd/codebase/`.
 
-### v1 Command Parity
+### Remote Control & TUI
 
-- **12 missing commands added** — GSD v2 now covers all v1 commands, closing the migration gap.
+- **Telegram command interface** — control auto-mode remotely via Telegram alongside existing Slack/Discord routes.
+- **Chat, footer, and welcome refresh** — TUI visuals updated; onboarding no longer hangs on re-entry.
+- **New themes** — `tui-classic` and web `classic`/`vivid` palettes added (#4301).
 
-### TUI Improvements
+### Models & Providers
 
-- **Chat frame redesign** — compaction notices, tool execution cards, and the chat frame now share a unified styling with timestamps and model headers.
-- **Inline tool calls** — assistant tool calls render inline with text instead of grouped at the end.
-- **Compaction and success fixes** — tool cards no longer stick after compaction; success notifications are properly promoted.
+- **Claude Opus 4.7** — added across Anthropic, Bedrock, Antigravity, and OpenRouter (#4348).
+- **GPT-5.4-mini** — added to the OpenAI Codex model list (#1215).
+- **Anthropic proxy support** — `ANTHROPIC_BASE_URL` env var honored for custom proxy endpoints (#4140).
+- **Flat-rate provider opt-in** — `allow_flat_rate_providers` routing toggle (#4386).
+- **Ask User Questions** — optional markdown preview panel with side-by-side layout.
 
 ### Auto-Mode & Reliability
 
-- **Session timeout recovery** — auto-resume timer handles session creation timeouts; timeout counter resets on resume.
-- **Compaction checkpoint fix** — all session phases are checkpointed during compaction, not just the executing phase.
-- **MCP worktree routing** — tool writes are routed to the active worktree when a milestone has one; worktree paths are accepted in the project root guard.
-- **Single-writer DB invariant** — the engine database now enforces a single-writer invariant, preventing corruption from concurrent access.
-
-### Providers & CI
-
-- **Alibaba DashScope** — added as a standalone provider (#3891).
-- **Persistent language preference** — `/gsd language` sets a persistent language preference.
-- **Flat-rate provider detection** — extended to custom and externalCli providers.
-- **Thinking level as effort** — Claude Code now passes thinking level as an effort parameter.
-- **Hardened release pipeline** — workspace versions synced in release commits, package-lock.json regenerated during bumps, incremental build cache issues resolved.
+- **Stuck-loop hardening** — repeated units detected across the stuck window; research-dispatch stuck loop fixed (#4414).
+- **Branch isolation** — milestone branch is created on entry in `isolation: branch` mode with `main_branch` validation (#4389).
+- **Model fallback on limits** — auto-mode limit errors now trigger model fallback (#4373).
+- **Python/Windows verification** — python invocations normalized on Windows in the verification gate (#4416).
+- **Self-healing `.gsd/`** — symlinked `.gsd` staging self-heals to prevent silent data loss (#4423); `.gsd.migrating` healed on resume.
+- **Stale OAuth recovery** — stale Anthropic OAuth credentials self-heal (#4399).
 
 See the full [Changelog](./CHANGELOG.md) for details on every release.
+
+<details>
+<summary>v2.75 highlights</summary>
+
+- **Knowledge graph system** — structured knowledge graph built from project artifacts
+- **`/gsd extract-learnings`** — extracts decisions, lessons, patterns, and surprises into `LEARNINGS.md`
+- **Unified Orchestration Kernel (UOK)** — now the default execution path with plan-v2 compile gates and reactive/parallel scheduling
+- **GSD Extension API** — third-party extensions loadable from `.gsd/extensions/` (#3338)
+- **v1 command parity** — 12 missing commands added, closing the migration gap
+- **Chat frame redesign** — unified styling for compaction notices, tool cards, and chat frame with timestamps and model headers
+- **Single-writer DB invariant** — engine database enforces single-writer to prevent corruption
+- **MCP worktree routing** — tool writes routed to active worktree; worktree paths accepted in project root guard
+- **Alibaba DashScope** — added as a standalone provider (#3891)
+- **Persistent language preference** — `/gsd language`
+
+</details>
 
 <details>
 <summary>v2.74 highlights</summary>
