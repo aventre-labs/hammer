@@ -621,40 +621,80 @@ export async function generateSummary(
 
 		// Degenerate-summary guard (issue #4665). UPDATE_SUMMARIZATION_PROMPT says
 		// "PRESERVE all existing information" — so if a chunk summary is empty or
-		// near-empty, propagating it forward actively reinforces the emptiness for
-		// every subsequent chunk. Two-part guard:
-		//   1. Don't propagate a degenerate output forward as `runningSummary`.
-		//   2. If it's the FIRST chunk and it's degenerate, retry once with a
-		//      fresh (non-update) prompt by clearing runningSummary. This breaks
-		//      the poison chain at its source.
+		// near-empty, propagating it forward actively reinforces the emptiness
+		// for every subsequent chunk.
+		//
+		// Strategy per chunk:
+		//   1. If degenerate, retry once. For the FIRST chunk with no prior
+		//      context, retry with the initial prompt (undefined previousSummary)
+		//      to break the poison chain at its source. For later chunks, retry
+		//      with the same prompt state (runningSummary preserved) since the
+		//      first failure may have been transient.
+		//   2. If the retry is also degenerate, warn and continue WITHOUT
+		//      updating runningSummary — losing that chunk's content is still
+		//      preferable to propagating emptiness forward, but the drop is now
+		//      observable in logs.
 		if (isDegenerateSummary(chunkSummary)) {
-			if (i === 0 && runningSummary === undefined) {
-				// First chunk, no prior context — retry once with the initial prompt.
-				// (Passing `undefined` forces SUMMARIZATION_PROMPT instead of UPDATE.)
-				const retry = await singlePassSummary(
-					chunks[i],
-					model,
-					reserveTokens,
-					apiKey,
-					signal,
-					customInstructions,
-					undefined,
-					complete,
-				);
-				if (!isDegenerateSummary(retry)) {
-					runningSummary = retry;
-					continue;
-				}
+			const retryPreviousSummary = i === 0 && runningSummary === undefined
+				? undefined
+				: runningSummary;
+			const retry = await singlePassSummary(
+				chunks[i],
+				model,
+				reserveTokens,
+				apiKey,
+				signal,
+				customInstructions,
+				retryPreviousSummary,
+				complete,
+			);
+			if (!isDegenerateSummary(retry)) {
+				runningSummary = retry;
+				continue;
 			}
-			// Keep whatever non-degenerate runningSummary we already have; skip
-			// forward without poisoning the chain.
+			// Both attempts degenerate — log and skip without poisoning the chain.
+			// Using process.stderr directly so this doesn't require the logger
+			// dependency graph. Visible to operators reviewing compaction health.
+			process.stderr.write(
+				`[compaction] WARN: chunk ${i + 1}/${chunks.length} produced a degenerate summary on both attempts; dropping chunk content from summary.\n`,
+			);
 			continue;
 		}
 
 		runningSummary = chunkSummary;
 	}
 
-	return runningSummary ?? "";
+	// R6 (issue #4665 follow-up): if every chunk was degenerate and we have no
+	// runningSummary, do NOT silently return "" — the caller would write an
+	// empty compaction entry, destroying all context with no signal. Fall back
+	// to the original previousSummary if available; otherwise throw a named
+	// error so the compaction pipeline can skip appending the entry.
+	if (runningSummary === undefined) {
+		if (previousSummary !== undefined) {
+			process.stderr.write(
+				"[compaction] WARN: every chunk produced a degenerate summary; falling back to existing previousSummary.\n",
+			);
+			return previousSummary;
+		}
+		throw new CompactionProducedNoSummaryError(
+			`Compaction produced no usable summary: all ${chunks.length} chunk(s) were degenerate and no previousSummary was available.`,
+		);
+	}
+
+	return runningSummary;
+}
+
+/**
+ * Thrown when `generateSummary` could not produce any non-degenerate summary
+ * from the provided messages AND no previous summary was available to fall
+ * back to. Callers should catch this and skip writing a compaction entry
+ * rather than writing an empty string to the session history (issue #4665).
+ */
+export class CompactionProducedNoSummaryError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "CompactionProducedNoSummaryError";
+	}
 }
 
 /**

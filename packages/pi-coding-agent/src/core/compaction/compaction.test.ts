@@ -9,7 +9,7 @@ import { describe, it, mock } from "node:test";
 import type { AgentMessage } from "@gsd/pi-agent-core";
 import type { Model, AssistantMessage } from "@gsd/pi-ai";
 
-import { generateSummary, estimateTokens, chunkMessages, isDegenerateSummary } from "./compaction.js";
+import { generateSummary, estimateTokens, chunkMessages, isDegenerateSummary, CompactionProducedNoSummaryError } from "./compaction.js";
 import { estimateSerializedTokens } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -458,6 +458,119 @@ describe("(#4665) degenerate summary guard", () => {
 		assert.ok(
 			mockComplete.mock.callCount() >= 3,
 			`expected at least 3 calls (first attempt, retry, second chunk), got ${mockComplete.mock.callCount()}`,
+		);
+	});
+
+	// -------------------------------------------------------------------------
+	// R1 — retry non-first chunks too + observable log when both attempts fail
+	// -------------------------------------------------------------------------
+
+	it("(R1) retries a degenerate NON-FIRST chunk before silently dropping it", async () => {
+		// Use a small model window to force exactly 2 chunks from 2 messages.
+		// Chunk 0 ok, chunk 1 degenerate on first try then real on retry.
+		// Chunk 1's recovered content must reach the final summary.
+		const messages: AgentMessage[] = [
+			makeBranchSummaryMessage(80_000),
+			makeBranchSummaryMessage(80_000),
+		];
+		const model = makeModel(100_000);
+		const reserveTokens = 16_384;
+
+		const CHUNK0_SUMMARY = "## Done\n- Chunk 0 real summary with enough length to clear the degenerate threshold of 100 characters — easily.";
+		const CHUNK1_RETRY_SUMMARY = "## Done\n- Chunk 1 recovered on retry — its content must appear in the final summary or the R1 fix regressed for non-first chunks.";
+
+		let callIndex = 0;
+		const responses = [
+			CHUNK0_SUMMARY,           // chunk 0
+			"empty conversation",     // chunk 1 first try → degenerate
+			CHUNK1_RETRY_SUMMARY,     // chunk 1 retry → real
+		];
+		const mockComplete = mock.fn(async () => {
+			const r = responses[Math.min(callIndex, responses.length - 1)];
+			callIndex++;
+			return makeFakeResponse(r);
+		});
+
+		const summary = await generateSummary(
+			messages,
+			model,
+			reserveTokens,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			mockComplete,
+		);
+
+		assert.equal(
+			mockComplete.mock.callCount(),
+			3,
+			"expected 3 calls: chunk 0 + chunk 1 initial + chunk 1 retry",
+		);
+		assert.ok(
+			summary.includes("recovered on retry"),
+			`final summary must include chunk 1's retry content (R1: non-first chunks must also retry), got: ${JSON.stringify(summary)}`,
+		);
+	});
+
+	// -------------------------------------------------------------------------
+	// R6 — empty output must not be silently written as a compaction entry
+	// -------------------------------------------------------------------------
+
+	it("(R6) throws CompactionProducedNoSummaryError when every chunk is degenerate AND no previousSummary", async () => {
+		const messages: AgentMessage[] = [
+			makeBranchSummaryMessage(80_000),
+			makeBranchSummaryMessage(80_000),
+		];
+		const model = makeModel(100_000);
+		const reserveTokens = 16_384;
+
+		// Every response is degenerate, both initial and retry attempts.
+		const mockComplete = mock.fn(async () => makeFakeResponse("empty conversation"));
+
+		await assert.rejects(
+			() => generateSummary(
+				messages,
+				model,
+				reserveTokens,
+				undefined,
+				undefined,
+				undefined,
+				undefined, // no previousSummary
+				mockComplete,
+			),
+			(err: unknown) => err instanceof CompactionProducedNoSummaryError,
+			"expected CompactionProducedNoSummaryError when all chunks degenerate and no previousSummary",
+		);
+	});
+
+	it("(R6) falls back to previousSummary when every chunk is degenerate", async () => {
+		const messages: AgentMessage[] = [
+			makeBranchSummaryMessage(80_000),
+			makeBranchSummaryMessage(80_000),
+		];
+		const model = makeModel(100_000);
+		const reserveTokens = 16_384;
+		const previousSummary =
+			"Previously-computed summary from the last compaction — deliberately long enough to clear the degenerate-output threshold.";
+
+		const mockComplete = mock.fn(async () => makeFakeResponse("empty conversation"));
+
+		const result = await generateSummary(
+			messages,
+			model,
+			reserveTokens,
+			undefined,
+			undefined,
+			undefined,
+			previousSummary,
+			mockComplete,
+		);
+
+		assert.equal(
+			result,
+			previousSummary,
+			"when all chunks degenerate, must fall back to previousSummary rather than return empty string",
 		);
 	});
 });
