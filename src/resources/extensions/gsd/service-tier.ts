@@ -37,6 +37,7 @@ const SERVICE_TIER_SCOPE_NOTE = "Only affects gpt-5.4 models, regardless of prov
  *
  * See: https://github.com/gsd-build/gsd-2/issues/2546
  */
+// TODO: add "gpt-5.5" once API GA confirms service_tier support (announced 2026-04-23, API not yet live).
 const SERVICE_TIER_MODEL_PREFIXES = ["gpt-5.4"] as const;
 
 /**

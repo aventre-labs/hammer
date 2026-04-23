@@ -74,7 +74,7 @@ test("#2885: cost table includes openai-codex provider models", () => {
   const ids = BUNDLED_COST_TABLE.map(e => e.id);
   const codexModels = [
     "gpt-5.1", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
-    "gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini",
+    "gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5",
   ];
   for (const model of codexModels) {
     assert.ok(ids.includes(model), `cost table should include openai-codex model "${model}"`);
