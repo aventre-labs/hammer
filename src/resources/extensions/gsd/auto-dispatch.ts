@@ -422,6 +422,26 @@ export const DISPATCH_RULES: DispatchRule[] = [
     },
   },
   {
+    name: "planning (require_slice_discussion) → pause for discussion (#3454)",
+    match: async ({ state, mid, basePath, prefs }) => {
+      if (state.phase !== "planning") return null;
+      if (!prefs?.phases?.require_slice_discussion) return null;
+      if (!state.activeSlice) return null;
+      // Only pause if the slice has no context file yet (discussion not done).
+      // resolveSliceFile returns null when the file does not exist on disk,
+      // but cachedReaddir could return a stale hit — verify with existsSync
+      // so the guard is defence-in-depth and the contract is explicit at the
+      // call site.
+      const sliceContextFile = resolveSliceFile(basePath, mid, state.activeSlice.id, "CONTEXT");
+      if (sliceContextFile && existsSync(sliceContextFile)) return null; // discussion already done, proceed
+      return {
+        action: "stop" as const,
+        reason: `Slice ${state.activeSlice.id} requires discussion before planning (require_slice_discussion is enabled). Run /gsd discuss to discuss this slice, then /gsd auto to resume.`,
+        level: "info" as const,
+      };
+    },
+  },
+  {
     // Keep this rule before the single-slice research rule so the multi-slice
     // path wins whenever 2+ slices are ready.
     name: "planning (multiple slices need research) → parallel-research-slices",
