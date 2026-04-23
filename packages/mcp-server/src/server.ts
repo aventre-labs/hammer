@@ -40,12 +40,6 @@ const SERVER_VERSION = '2.53.0';
 const ELICIT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
- * Race a promise against a timeout. Rejects with a typed error on timeout so
- * callers can return a specific MCP error response rather than hanging.
- *
- * @param timeoutMs - override for testing; defaults to ELICIT_TIMEOUT_MS
- */
-/**
  * Default child-process runner used by secure_env_collect to push secrets
  * into `vercel env add` / `npx convex env set`. Previously `applySecrets`
  * was called without an `execFn`, so vercel/convex destinations silently
@@ -56,7 +50,11 @@ function defaultExecFn(
   args: string[],
 ): Promise<{ code: number; stderr: string }> {
   return new Promise((res) => {
-    const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // stdin: ignore — avoids hanging if the child ever prompts interactively.
+    // stdout: ignore — consumer only cares about stderr + exit code, and an
+    //   un-drained pipe deadlocks once the kernel buffer (~64KB) fills.
+    // stderr: pipe — captured below for error surfacing.
+    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString('utf8');
@@ -66,6 +64,12 @@ function defaultExecFn(
   });
 }
 
+/**
+ * Race a promise against a timeout. Rejects with a typed error on timeout so
+ * callers can return a specific MCP error response rather than hanging.
+ *
+ * @param timeoutMs - override for testing; defaults to ELICIT_TIMEOUT_MS
+ */
 export async function withElicitTimeout<T>(
   promise: Promise<T>,
   label: string,
