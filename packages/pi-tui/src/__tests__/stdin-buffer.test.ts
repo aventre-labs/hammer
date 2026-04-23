@@ -42,12 +42,14 @@ describe("StdinBuffer", () => {
 	});
 
 	it("flushes a stale incomplete escape prefix after the stale timeout", async () => {
-		const buffer = new StdinBuffer({ timeout: 5, staleTimeout: 10 });
+		// Timers must exceed Windows setTimeout resolution (~15.6ms) so the
+		// sequence timeout + stale timeout both fire within the delay window.
+		const buffer = new StdinBuffer({ timeout: 20, staleTimeout: 40 });
 		const received: string[] = [];
 		buffer.on("data", (sequence) => received.push(sequence));
 
 		buffer.process("\x1b[");
-		await delay(25);
+		await delay(150);
 
 		assert.deepEqual(received, ["\x1b["]);
 		assert.equal(buffer.getBuffer(), "");
