@@ -72,8 +72,11 @@ function assistantMsg(
     // claude-code-cli, openai — normalizes incoming tool blocks into these
     // shapes before they reach guided-flow. The Anthropic-wire literal
     // "tool_use" never appears here.
-    const blockType = opts.toolUse === "serverToolUse" ? "serverToolUse" : "toolCall";
-    content.push({ type: blockType, id: "test-id", name: "whatever", arguments: {} });
+    if (opts.toolUse === "serverToolUse") {
+      content.push({ type: "serverToolUse", id: "test-id", name: "web_search", input: {} });
+    } else {
+      content.push({ type: "toolCall", id: "test-id", name: "whatever", arguments: {} });
+    }
   }
   return { role: "assistant", content };
 }
