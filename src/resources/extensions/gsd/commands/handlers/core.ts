@@ -98,6 +98,15 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "  /gsd knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",
     "  /gsd codebase [generate|update|stats]   Manage the CODEBASE.md cache used in prompt context",
     "",
+    "SHIPPING & BACKLOG",
+    "  /gsd ship           Create a PR from milestone artifacts  [--dry-run|--draft|--base|--force]",
+    "  /gsd do <text>      Route freeform text to the right GSD command",
+    "  /gsd session-report Show session cost, tokens, and work summary  [--json|--save]",
+    "  /gsd backlog        Manage backlog items  [add|promote|remove|list]",
+    "  /gsd pr-branch      Create a clean PR branch filtering .gsd/ commits  [--dry-run|--name]",
+    "  /gsd add-tests      Generate tests for completed slices",
+    "  /gsd scan           Rapid codebase assessment  [--focus tech|arch|quality|concerns|tech+arch]",
+    "",
     "SETUP & CONFIGURATION",
     "  /gsd onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
     "  /gsd setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
@@ -125,6 +134,7 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "  /gsd remote         Control remote auto-mode  [slack|discord|status|disconnect]",
     "  /gsd inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
     "  /gsd update         Update GSD to the latest version via npm",
+    "  /gsd language       Set or clear the global response language  [off|clear|<language>]",
   ];
   const full = ["full", "--full", "all"].includes(args.trim().toLowerCase());
   ctx.ui.notify((full ? fullLines : summaryLines).join("\n"), "info");

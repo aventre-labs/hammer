@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { TOP_LEVEL_SUBCOMMANDS } from "../commands/catalog.ts";
 
 /**
- * Extracts command names from the showHelp() lines array.
+ * Extracts command names from the showHelp("full") lines array.
  * Each help line follows the pattern: "  /gsd <cmd>  ..."
  */
 function extractHelpCommands(lines: string[]): Set<string> {
@@ -20,7 +20,7 @@ function extractHelpCommands(lines: string[]): Set<string> {
 }
 
 describe("help menu coverage", () => {
-  test("every TOP_LEVEL_SUBCOMMAND appears in showHelp() output", async () => {
+  test("every TOP_LEVEL_SUBCOMMAND appears in showHelp(\"full\") output", async () => {
     // Import showHelp and capture its output via a mock ctx
     const lines: string[] = [];
     const mockCtx = {
@@ -33,7 +33,7 @@ describe("help menu coverage", () => {
     };
 
     const { showHelp } = await import("../commands/handlers/core.ts");
-    showHelp(mockCtx as any);
+    showHelp(mockCtx as any, "full");
 
     const helpCmds = extractHelpCommands(lines);
 
@@ -51,7 +51,7 @@ describe("help menu coverage", () => {
     assert.deepStrictEqual(
       missing,
       [],
-      `Commands registered in TOP_LEVEL_SUBCOMMANDS but missing from /gsd help:\n  ${missing.join(", ")}`,
+      `Commands registered in TOP_LEVEL_SUBCOMMANDS but missing from /gsd help full:\n  ${missing.join(", ")}`,
     );
   });
 });
