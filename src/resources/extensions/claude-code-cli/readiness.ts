@@ -5,8 +5,9 @@
  * Results are cached for 30 seconds to avoid shelling out on every
  * model-availability check.
  *
- * Auth verification follows the T3 Code pattern: run `claude auth status`
- * and check the exit code + output for an authenticated session.
+ * Auth verification runs `claude auth status --json` and inspects the
+ * `loggedIn` field, falling back to a text heuristic when the JSON shape
+ * is unavailable (older Claude CLI builds).
  */
 
 import { execFileSync } from "node:child_process";
@@ -27,27 +28,68 @@ const CLAUDE_COMMAND = process.platform === "win32" ? "claude.cmd" : "claude";
  */
 const CLAUDE_COMMAND_CANDIDATES = process.platform === "win32" ? [CLAUDE_COMMAND, "claude.exe", "claude"] : [CLAUDE_COMMAND];
 
-function execClaude(args: string[]): Buffer {
+// Codes treated as "this candidate didn't run — try the next one" rather than
+// fatal failures. ENOENT/EINVAL cover the original Windows .cmd shim cases.
+// ETIMEDOUT and EAGAIN cover slow-spawn cases where cmd.exe wrapping plus
+// the Claude CLI startup path together exceed the per-attempt timeout
+// (Issue #4997 regression on Windows + Node 25).
+const SOFT_FAIL_CODES = new Set(["ENOENT", "EINVAL", "ETIMEDOUT", "EAGAIN"]);
+
+// Keep the version probe snappy — `claude --version` is a quick path.
+const VERSION_TIMEOUT_MS = 5_000;
+// Auth status can be much slower on Windows because the spawn goes through
+// cmd.exe → claude.cmd → node → Claude CLI. 15s leaves headroom on cold spawns
+// without making startup feel hung when the CLI is genuinely missing.
+const AUTH_TIMEOUT_MS = 15_000;
+
+function execClaude(args: string[], timeoutMs: number): Buffer {
 	let lastError: unknown;
 	for (const command of CLAUDE_COMMAND_CANDIDATES) {
 		try {
 			return execFileSync(command, args, {
-				timeout: 5_000,
+				timeout: timeoutMs,
 				stdio: "pipe",
 				shell: process.platform === "win32",
 			});
 		} catch (error) {
 			lastError = error;
 			const code = (error as NodeJS.ErrnoException | undefined)?.code;
-			// Windows Git Bash can surface `.cmd` spawn failures as EINVAL instead
-			// of ENOENT. Treat both as "try next candidate".
-			if (code === "ENOENT" || code === "EINVAL") {
+			if (code && SOFT_FAIL_CODES.has(code)) {
 				continue;
 			}
 			throw error;
 		}
 	}
 	throw lastError ?? new Error(`Claude CLI executable not found (tried: ${CLAUDE_COMMAND_CANDIDATES.join(", ")})`);
+}
+
+/**
+ * Decide auth state from `claude auth status` output.
+ *
+ * Newer Claude CLI builds emit JSON by default with a `loggedIn` boolean.
+ * Older builds emit free-form text. We prefer the structured signal and fall
+ * back to a text heuristic. Note: the text heuristic only covers English
+ * phrasing — the JSON path is the durable signal.
+ */
+function parseAuthStatus(output: string): boolean {
+	const trimmed = output.trim();
+	if (trimmed.startsWith("{")) {
+		try {
+			const parsed = JSON.parse(trimmed) as { loggedIn?: unknown };
+			if (typeof parsed.loggedIn === "boolean") {
+				return parsed.loggedIn;
+			}
+		} catch {
+			// Fall through to text heuristic.
+		}
+	}
+
+	const lower = trimmed.toLowerCase();
+	if (/not logged in|no credentials|unauthenticated|not authenticated/.test(lower)) {
+		return false;
+	}
+	// Exit-0 with non-error output and no negative markers — treat as authed.
+	return true;
 }
 
 let cachedBinaryPresent: boolean | null = null;
@@ -66,7 +108,7 @@ function refreshCache(): void {
 
 	// Check binary presence
 	try {
-		execClaude(["--version"]);
+		execClaude(["--version"], VERSION_TIMEOUT_MS);
 		cachedBinaryPresent = true;
 	} catch {
 		cachedBinaryPresent = false;
@@ -74,15 +116,20 @@ function refreshCache(): void {
 		return;
 	}
 
-	// Check auth status — exit code 0 with non-error output means authenticated
+	// Request JSON explicitly so older CLI builds that defaulted to text and
+	// newer builds that default to JSON produce a consistent shape.
 	try {
-		const output = execClaude(["auth", "status"])
-			.toString()
-			.toLowerCase();
-		// The CLI outputs "not logged in", "no credentials", or similar when unauthenticated
-		cachedAuthed = !(/not logged in|no credentials|unauthenticated|not authenticated/i.test(output));
-	} catch {
-		// Non-zero exit code means not authenticated
+		const output = execClaude(["auth", "status", "--json"], AUTH_TIMEOUT_MS).toString();
+		cachedAuthed = parseAuthStatus(output);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException | undefined)?.code;
+		// Spawn-shape failures (timeout, transient) shouldn't be treated as
+		// "definitely not authed" — leave the previous value if we have one,
+		// otherwise default to false. The version probe already established
+		// the binary works, so a flaky auth probe is more likely transient.
+		if (code && SOFT_FAIL_CODES.has(code) && cachedAuthed !== null) {
+			return;
+		}
 		cachedAuthed = false;
 	}
 }
