@@ -14,127 +14,127 @@ import { formattedShortcutPair } from "../../shortcut-defs.js";
 
 export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
   const summaryLines = [
-    "GSD — Get Shit Done\n",
+    "Hammer\n",
     "QUICK START",
-    "  /gsd start <tpl>   Start a workflow template",
-    "  /gsd               Run next unit (same as /gsd next)",
-    "  /gsd auto          Run all queued units continuously",
-    "  /gsd pause         Pause auto-mode",
-    "  /gsd stop          Stop auto-mode gracefully",
+    "  /hammer start <tpl>   Start a workflow template",
+    "  /hammer               Run next unit (same as /hammer next)",
+    "  /hammer auto          Run all queued units continuously",
+    "  /hammer pause         Pause auto-mode",
+    "  /hammer stop          Stop auto-mode gracefully",
     "",
     "VISIBILITY",
-    `  /gsd status         Dashboard  (${formattedShortcutPair("dashboard")})`,
-    `  /gsd parallel watch Parallel monitor  (${formattedShortcutPair("parallel")})`,
-    `  /gsd notifications  Notification history  (${formattedShortcutPair("notifications")})`,
-    "  /gsd visualize      Interactive 10-tab TUI",
-    "  /gsd queue          Show queued/dispatched units",
+    `  /hammer status         Dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /hammer parallel watch Parallel monitor  (${formattedShortcutPair("parallel")})`,
+    `  /hammer notifications  Notification history  (${formattedShortcutPair("notifications")})`,
+    "  /hammer visualize      Interactive 10-tab TUI",
+    "  /hammer queue          Show queued/dispatched units",
     "",
     "COURSE CORRECTION",
-    "  /gsd steer <desc>   Apply user override to active work",
-    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
-    "  /gsd triage         Classify and route pending captures",
-    "  /gsd undo           Revert last completed unit  [--force]",
-    "  /gsd rethink        Conversational project reorganization",
+    "  /hammer steer <desc>   Apply user override to active work",
+    "  /hammer capture <text> Quick-capture a thought to CAPTURES.md",
+    "  /hammer triage         Classify and route pending captures",
+    "  /hammer undo           Revert last completed unit  [--force]",
+    "  /hammer rethink        Conversational project reorganization",
     "",
     "OBSERVABILITY",
-    "  /gsd logs           Browse activity and debug logs",
-    "  /gsd debug          Create/list/continue persistent debug sessions",
+    "  /hammer logs           Browse activity and debug logs",
+    "  /hammer debug          Create/list/continue persistent debug sessions",
     "",
     "SETUP",
-    "  /gsd onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
-    "  /gsd setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
-    "  /gsd init           Project init wizard",
-    "  /gsd model          Switch active session model",
-    "  /gsd prefs          Manage preferences (alias for /gsd setup prefs)",
-    "  /gsd keys           API key manager (LLM + tool keys)",
-    "  /gsd doctor         Diagnose and repair .gsd/ state",
+    "  /hammer onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
+    "  /hammer setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
+    "  /hammer init           Project init wizard",
+    "  /hammer model          Switch active session model",
+    "  /hammer prefs          Manage preferences (alias for /hammer setup prefs)",
+    "  /hammer keys           API key manager (LLM + tool keys)",
+    "  /hammer doctor         Diagnose and repair .hammer/ state",
     "",
-    "Use /gsd help full for the complete command reference.",
+    "Use /hammer help full for the complete command reference.",
   ];
 
   const fullLines = [
-    "GSD — Get Shit Done\n",
+    "Hammer\n",
     "WORKFLOW",
-    "  /gsd start <tpl>   Start a workflow template (bugfix, spike, feature, hotfix, etc.)",
-    "  /gsd templates     List available workflow templates  [info <name>]",
-    "  /gsd               Run next unit in step mode (same as /gsd next)",
-    "  /gsd next           Execute next task, then pause  [--dry-run] [--verbose]",
-    "  /gsd auto           Run all queued units continuously  [--verbose]",
-    "  /gsd stop           Stop auto-mode gracefully",
-    "  /gsd pause          Pause auto-mode (preserves state, /gsd auto to resume)",
-    "  /gsd discuss        Start guided milestone/slice discussion",
-    "  /gsd new-milestone  Create milestone from headless context (used by gsd headless)",
-    "  /gsd quick          Execute a quick task without full planning overhead",
-    "  /gsd dispatch       Dispatch a specific phase directly  [research|plan|execute|complete|uat|replan]",
-    "  /gsd parallel       Parallel milestone orchestration  [start|status|stop|pause|resume|merge|watch]",
-    "  /gsd workflow       Custom workflow lifecycle  [new|run|list|validate|pause|resume]",
+    "  /hammer start <tpl>   Start a workflow template (bugfix, spike, feature, hotfix, etc.)",
+    "  /hammer templates     List available workflow templates  [info <name>]",
+    "  /hammer               Run next unit in step mode (same as /hammer next)",
+    "  /hammer next           Execute next task, then pause  [--dry-run] [--verbose]",
+    "  /hammer auto           Run all queued units continuously  [--verbose]",
+    "  /hammer stop           Stop auto-mode gracefully",
+    "  /hammer pause          Pause auto-mode (preserves state, /hammer auto to resume)",
+    "  /hammer discuss        Start guided milestone/slice discussion",
+    "  /hammer new-milestone  Create milestone from headless context (used by hammer headless)",
+    "  /hammer quick          Execute a quick task without full planning overhead",
+    "  /hammer dispatch       Dispatch a specific phase directly  [research|plan|execute|complete|uat|replan]",
+    "  /hammer parallel       Parallel milestone orchestration  [start|status|stop|pause|resume|merge|watch]",
+    "  /hammer workflow       Custom workflow lifecycle  [new|run|list|validate|pause|resume]",
     "",
     "VISIBILITY",
-    `  /gsd status         Show progress dashboard  (${formattedShortcutPair("dashboard")})`,
-    `  /gsd parallel watch Open parallel worker monitor  (${formattedShortcutPair("parallel")})`,
-    "  /gsd widget         Cycle status widget  [full|small|min|off]",
-    "  /gsd visualize      Interactive 10-tab TUI (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)",
-    "  /gsd queue          Show queued/dispatched units and execution order",
-    "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
-    "  /gsd changelog      Show categorized release notes  [version]",
-    `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formattedShortcutPair("notifications")})`,
-    "  /gsd logs           Browse activity logs, debug logs, and metrics  [debug|tail|clear]",
-    "  /gsd debug          Create/list/continue persistent debug sessions",
+    `  /hammer status         Show progress dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /hammer parallel watch Open parallel worker monitor  (${formattedShortcutPair("parallel")})`,
+    "  /hammer widget         Cycle status widget  [full|small|min|off]",
+    "  /hammer visualize      Interactive 10-tab TUI (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)",
+    "  /hammer queue          Show queued/dispatched units and execution order",
+    "  /hammer history        View execution history  [--cost] [--phase] [--model] [N]",
+    "  /hammer changelog      Show categorized release notes  [version]",
+    `  /hammer notifications  View persistent notification history  [clear|tail|filter]  (${formattedShortcutPair("notifications")})`,
+    "  /hammer logs           Browse activity logs, debug logs, and metrics  [debug|tail|clear]",
+    "  /hammer debug          Create/list/continue persistent debug sessions",
     "",
     "COURSE CORRECTION",
-    "  /gsd steer <desc>   Apply user override to active work",
-    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
-    "  /gsd triage         Classify and route pending captures",
-    "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
-    "  /gsd undo           Revert last completed unit  [--force]",
-    "  /gsd undo-task      Reset a specific task's completion state  [DB + markdown]",
-    "  /gsd reset-slice    Reset a slice and all its tasks  [DB + markdown]",
-    "  /gsd rate           Rate last unit's model tier  [over|ok|under]",
-    "  /gsd rethink        Conversational project reorganization — reorder, park, discard, add milestones",
-    "  /gsd park [id]      Park a milestone — skip without deleting  [reason]",
-    "  /gsd unpark [id]    Reactivate a parked milestone",
+    "  /hammer steer <desc>   Apply user override to active work",
+    "  /hammer capture <text> Quick-capture a thought to CAPTURES.md",
+    "  /hammer triage         Classify and route pending captures",
+    "  /hammer skip <unit>    Prevent a unit from auto-mode dispatch",
+    "  /hammer undo           Revert last completed unit  [--force]",
+    "  /hammer undo-task      Reset a specific task's completion state  [DB + markdown]",
+    "  /hammer reset-slice    Reset a slice and all its tasks  [DB + markdown]",
+    "  /hammer rate           Rate last unit's model tier  [over|ok|under]",
+    "  /hammer rethink        Conversational project reorganization — reorder, park, discard, add milestones",
+    "  /hammer park [id]      Park a milestone — skip without deleting  [reason]",
+    "  /hammer unpark [id]    Reactivate a parked milestone",
     "",
     "PROJECT KNOWLEDGE",
-    "  /gsd knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",
-    "  /gsd codebase [generate|update|stats]   Manage the CODEBASE.md cache used in prompt context",
+    "  /hammer knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",
+    "  /hammer codebase [generate|update|stats]   Manage the CODEBASE.md cache used in prompt context",
     "",
     "SHIPPING & BACKLOG",
-    "  /gsd ship           Create a PR from milestone artifacts  [--dry-run|--draft|--base|--force]",
-    "  /gsd do <text>      Route freeform text to the right GSD command",
-    "  /gsd session-report Show session cost, tokens, and work summary  [--json|--save]",
-    "  /gsd backlog        Manage backlog items  [add|promote|remove|list]",
-    "  /gsd pr-branch      Create a clean PR branch filtering .gsd/ commits  [--dry-run|--name]",
-    "  /gsd add-tests      Generate tests for completed slices",
-    "  /gsd scan           Rapid codebase assessment  [--focus tech|arch|quality|concerns|tech+arch]",
+    "  /hammer ship           Create a PR from milestone artifacts  [--dry-run|--draft|--base|--force]",
+    "  /hammer do <text>      Route freeform text to the right Hammer command",
+    "  /hammer session-report Show session cost, tokens, and work summary  [--json|--save]",
+    "  /hammer backlog        Manage backlog items  [add|promote|remove|list]",
+    "  /hammer pr-branch      Create a clean PR branch filtering .hammer/ commits  [--dry-run|--name]",
+    "  /hammer add-tests      Generate tests for completed slices",
+    "  /hammer scan           Rapid codebase assessment  [--focus tech|arch|quality|concerns|tech+arch]",
     "",
     "SETUP & CONFIGURATION",
-    "  /gsd onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
-    "  /gsd setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
-    "  /gsd init           Project init wizard — detect, configure, bootstrap .gsd/",
-    "  /gsd model          Switch active session model  [provider/model|model-id]",
-    "  /gsd mode           Set workflow mode (solo/team)  [global|project]",
-    "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup|import-claude]  (alias for /gsd setup prefs)",
-    "  /gsd cmux           Manage cmux integration  [status|on|off|notifications|sidebar|splits|browser]",
-    "  /gsd keys           API key manager (LLM + tool keys)  [list|add|remove|test|rotate|doctor]",
-    "  /gsd config         (deprecated) Set tool API keys — use /gsd keys instead",
-    "  /gsd show-config    Show effective configuration (models, routing, toggles)",
-    "  /gsd hooks          Show post-unit hook configuration",
-    "  /gsd run-hook       Manually trigger a specific hook",
-    "  /gsd skill-health   Skill lifecycle dashboard",
-    "  /gsd extensions     Manage extensions  [list|enable|disable|info]",
-    "  /gsd fast           Toggle OpenAI service tier  [on|off|flex|status]",
-    "  /gsd mcp            MCP server status and connectivity  [status|check <server>|init [dir]]",
+    "  /hammer onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
+    "  /hammer setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
+    "  /hammer init           Project init wizard — detect, configure, bootstrap .hammer/",
+    "  /hammer model          Switch active session model  [provider/model|model-id]",
+    "  /hammer mode           Set workflow mode (solo/team)  [global|project]",
+    "  /hammer prefs          Manage preferences  [global|project|status|wizard|setup|import-claude]  (alias for /hammer setup prefs)",
+    "  /hammer cmux           Manage cmux integration  [status|on|off|notifications|sidebar|splits|browser]",
+    "  /hammer keys           API key manager (LLM + tool keys)  [list|add|remove|test|rotate|doctor]",
+    "  /hammer config         (deprecated) Set tool API keys — use /hammer keys instead",
+    "  /hammer show-config    Show effective configuration (models, routing, toggles)",
+    "  /hammer hooks          Show post-unit hook configuration",
+    "  /hammer run-hook       Manually trigger a specific hook",
+    "  /hammer skill-health   Skill lifecycle dashboard",
+    "  /hammer extensions     Manage extensions  [list|enable|disable|info]",
+    "  /hammer fast           Toggle OpenAI service tier  [on|off|flex|status]",
+    "  /hammer mcp            MCP server status and connectivity  [status|check <server>|init [dir]]",
     "",
     "MAINTENANCE",
-    "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
-    "  /gsd forensics      Examine execution logs and post-mortem analysis",
-    "  /gsd export         Export milestone/slice results  [--json|--markdown|--html] [--all]",
-    "  /gsd cleanup        Remove merged branches or snapshots  [branches|snapshots]",
-    "  /gsd migrate        Migrate .planning/ (v1) to .gsd/ (v2) format",
-    "  /gsd remote         Control remote auto-mode  [slack|discord|status|disconnect]",
-    "  /gsd inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
-    "  /gsd update         Update GSD to the latest version via npm",
-    "  /gsd language       Set or clear the global response language  [off|clear|<language>]",
+    "  /hammer doctor         Diagnose and repair .hammer/ state  [audit|fix|heal] [scope]",
+    "  /hammer forensics      Examine execution logs and post-mortem analysis",
+    "  /hammer export         Export milestone/slice results  [--json|--markdown|--html] [--all]",
+    "  /hammer cleanup        Remove merged branches or snapshots  [branches|snapshots]",
+    "  /hammer migrate        Migrate .planning/ (v1) to .hammer/ (v2) format",
+    "  /hammer remote         Control remote auto-mode  [slack|discord|status|disconnect]",
+    "  /hammer inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
+    "  /hammer update         Update Hammer to the latest version via npm",
+    "  /hammer language       Set or clear the global response language  [off|clear|<language>]",
   ];
   const full = ["full", "--full", "all"].includes(args.trim().toLowerCase());
   ctx.ui.notify((full ? fullLines : summaryLines).join("\n"), "info");
@@ -148,7 +148,7 @@ export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> 
   const state = await deriveState(basePath);
 
   if (state.registry.length === 0) {
-    ctx.ui.notify("No GSD milestones found. Run /gsd to start.", "info");
+    ctx.ui.notify("No Hammer milestones found. Run /hammer to start.", "info");
     return;
   }
 
@@ -196,7 +196,7 @@ export async function handleVisualize(ctx: ExtensionCommandContext): Promise<voi
   );
 
   if (result === undefined) {
-    ctx.ui.notify("Visualizer requires an interactive terminal. Use /gsd status for a text-based overview.", "warning");
+    ctx.ui.notify("Visualizer requires an interactive terminal. Use /hammer status for a text-based overview.", "warning");
   }
 }
 
@@ -204,8 +204,8 @@ export async function handleSetup(args: string, ctx: ExtensionCommandContext, pi
   const { detectProjectState, hasGlobalSetup } = await import("../../detection.js");
   const { isOnboardingComplete, readOnboardingRecord } = await import("../../onboarding-state.js");
 
-  // Sub-route dispatch — keep redirects but route the canonical work to /gsd
-  // onboarding (single source for wizard steps) and /gsd keys (single source
+  // Sub-route dispatch — keep redirects but route the canonical work to /hammer
+  // onboarding (single source for wizard steps) and /hammer keys (single source
   // for credentials).
   if (args === "onboarding" || args === "wizard") {
     const { handleOnboarding } = await import("./onboarding.js");
@@ -232,7 +232,7 @@ export async function handleSetup(args: string, ctx: ExtensionCommandContext, pi
     return;
   }
   if (args === "keys") {
-    ctx.ui.notify("Tip: /gsd keys is the canonical command for API key management.", "info");
+    ctx.ui.notify("Tip: /hammer keys is the canonical command for API key management.", "info");
     const { handleKeys } = await import("../../key-manager.js");
     await handleKeys("", ctx);
     return;
@@ -243,17 +243,17 @@ export async function handleSetup(args: string, ctx: ExtensionCommandContext, pi
     return;
   }
 
-  // Bare /gsd setup — render the hub: status + actions
+  // Bare /hammer setup — render the hub: status + actions
   const globalConfigured = hasGlobalSetup();
   const detection = detectProjectState(projectRoot());
   const onboardingDone = isOnboardingComplete();
   const record = readOnboardingRecord();
 
-  const statusLines: string[] = ["GSD Setup\n"];
+  const statusLines: string[] = ["Hammer Setup\n"];
   statusLines.push(
     onboardingDone
       ? `  Onboarding:         ✓ complete${record.completedAt ? ` (${record.completedAt.slice(0, 10)})` : ""}`
-      : `  Onboarding:         ○ not complete  —  /gsd onboarding to start`,
+      : `  Onboarding:         ○ not complete  —  /hammer onboarding to start`,
   );
   statusLines.push(`  Global preferences: ${globalConfigured ? "configured" : "not set"}`);
   statusLines.push(`  Project state:      ${detection.state}`);
@@ -264,14 +264,14 @@ export async function handleSetup(args: string, ctx: ExtensionCommandContext, pi
   ctx.ui.notify(statusLines.join("\n"), "info");
   ctx.ui.notify(
     "Configuration hub:\n" +
-    "  /gsd setup llm        — LLM provider & auth\n" +
-    "  /gsd setup model      — Default model picker\n" +
-    "  /gsd setup search     — Web search provider\n" +
-    "  /gsd setup remote     — Remote questions (Discord/Slack/Telegram)\n" +
-    "  /gsd setup keys       — API keys (alias for /gsd keys)\n" +
-    "  /gsd setup prefs      — Global preferences (alias for /gsd prefs)\n" +
-    "  /gsd setup onboarding — Full wizard (alias for /gsd onboarding)\n\n" +
-    "Tip: /gsd onboarding --resume to continue an incomplete setup.",
+    "  /hammer setup llm        — LLM provider & auth\n" +
+    "  /hammer setup model      — Default model picker\n" +
+    "  /hammer setup search     — Web search provider\n" +
+    "  /hammer setup remote     — Remote questions (Discord/Slack/Telegram)\n" +
+    "  /hammer setup keys       — API keys (alias for /hammer keys)\n" +
+    "  /hammer setup prefs      — Global preferences (alias for /hammer prefs)\n" +
+    "  /hammer setup onboarding — Full wizard (alias for /hammer onboarding)\n\n" +
+    "Tip: /hammer onboarding --resume to continue an incomplete setup.",
     "info",
   );
 }
@@ -375,7 +375,7 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
   if (!trimmed) {
     if (!ctx.hasUI) {
       const current = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "(none)";
-      ctx.ui.notify(`Current model: ${current}\nUsage: /gsd model <provider/model|model-id>`, "info");
+      ctx.ui.notify(`Current model: ${current}\nUsage: /hammer model <provider/model|model-id>`, "info");
       return;
     }
 
@@ -385,7 +385,7 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
   }
 
   if (!targetModel) {
-    ctx.ui.notify(`Model "${trimmed}" not found. Use /gsd model with an exact provider/model or a unique model ID.`, "warning");
+    ctx.ui.notify(`Model "${trimmed}" not found. Use /hammer model with an exact provider/model or a unique model ID.`, "warning");
     return;
   }
 
@@ -395,9 +395,9 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
     return;
   }
 
-  // /gsd model is an explicit per-session pin for GSD dispatches.
+  // /hammer model is an explicit per-session pin for Hammer dispatches.
   // This is captured at auto bootstrap so it survives internal session
-  // switches during /gsd auto and /gsd next runs.
+  // switches during /hammer auto and /hammer next runs.
   const sessionId = ctx.sessionManager?.getSessionId?.();
   if (sessionId) {
     setSessionModelOverride(sessionId, {
@@ -493,7 +493,7 @@ export async function handleCoreCommand(
 }
 
 export function formatTextStatus(state: GSDState): string {
-  const lines: string[] = ["GSD Status\n"];
+  const lines: string[] = ["Hammer Status\n"];
   lines.push(formatProgressLine(computeProgressScore()));
   lines.push("");
   lines.push(`Phase: ${state.phase}`);

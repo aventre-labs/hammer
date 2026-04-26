@@ -1,8 +1,8 @@
 {
-  "id": "gsd",
-  "name": "GSD Workflow",
+  "id": "hammer",
+  "name": "Hammer Workflow",
   "version": "1.0.0",
-  "description": "Core GSD workflow engine — milestone planning, execution, and tracking",
+  "description": "Core Hammer workflow engine — milestone planning, execution, and tracking",
   "tier": "core",
   "requires": { "platform": ">=2.29.0" },
   "provides": {
@@ -11,7 +11,7 @@
       "gsd_decision_save", "gsd_summary_save",
       "gsd_requirement_update", "gsd_milestone_generate_id"
     ],
-    "commands": ["gsd", "kill", "worktree", "exit"],
+    "commands": ["hammer", "kill", "worktree", "exit"],
     "hooks": [
       "session_start",
       "session_switch",

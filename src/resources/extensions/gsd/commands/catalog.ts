@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { loadRegistry } from "../workflow-templates.js";
 import { resolveProjectRoot } from "../worktree.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+const gsdHome = process.env.HAMMER_HOME || process.env.GSD_HOME || join(homedir(), ".hammer"); // legacy alias for compatibility — bootstrap-migration
 
 export interface GsdCommandDefinition {
   cmd: string;
@@ -14,15 +14,19 @@ export interface GsdCommandDefinition {
 
 type CompletionMap = Record<string, readonly GsdCommandDefinition[]>;
 
-export const GSD_COMMAND_DESCRIPTION =
-  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|onboarding|inspect|extensions|update|fast|mcp|rethink|workflow|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|scan|language";
+/** @deprecated use HAMMER_COMMAND_DESCRIPTION */
+export const GSD_COMMAND_DESCRIPTION = // legacy alias for compatibility — explicit-legacy-alias-marker
+  "Hammer: /hammer help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|onboarding|inspect|extensions|update|fast|mcp|rethink|workflow|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|scan|language";
+
+export const HAMMER_COMMAND_DESCRIPTION =
+  "Hammer: /hammer help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|onboarding|inspect|extensions|update|fast|mcp|rethink|workflow|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|scan|language";
 
 export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "help", desc: "Categorized command reference with descriptions" },
-  { cmd: "next", desc: "Explicit step mode (same as /gsd)" },
+  { cmd: "next", desc: "Explicit step mode (same as /hammer)" },
   { cmd: "auto", desc: "Autonomous mode — research, plan, execute, commit, repeat" },
   { cmd: "stop", desc: "Stop auto mode gracefully" },
-  { cmd: "pause", desc: "Pause auto-mode (preserves state, /gsd auto to resume)" },
+  { cmd: "pause", desc: "Pause auto-mode (preserves state, /hammer auto to resume)" },
   { cmd: "status", desc: "Progress dashboard" },
   { cmd: "widget", desc: "Cycle widget: full → small → min → off" },
   { cmd: "visualize", desc: "Open 10-tab workflow visualizer (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)" },
@@ -44,7 +48,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "model", desc: "Switch the active session model or open a picker" },
   { cmd: "mode", desc: "Switch workflow mode (solo/team)" },
   { cmd: "prefs", desc: "Manage preferences (model selection, timeouts, etc.)" },
-  { cmd: "config", desc: "(deprecated) Set tool API keys — use /gsd keys instead" },
+  { cmd: "config", desc: "(deprecated) Set tool API keys — use /hammer keys instead" },
   { cmd: "keys", desc: "API key manager — list, add, remove, test, rotate, doctor" },
   { cmd: "hooks", desc: "Show configured post-unit and pre-dispatch hooks" },
   { cmd: "run-hook", desc: "Manually trigger a specific hook" },
@@ -52,12 +56,12 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "notifications", desc: "View, filter, and clear persistent notification history" },
   { cmd: "doctor", desc: "Runtime health checks with auto-fix" },
   { cmd: "logs", desc: "Browse activity logs, debug logs, and metrics" },
-  { cmd: "debug", desc: "Create and inspect persistent /gsd debug sessions" },
+  { cmd: "debug", desc: "Create and inspect persistent /hammer debug sessions" },
   { cmd: "forensics", desc: "Examine execution logs" },
-  { cmd: "init", desc: "Project init wizard — detect, configure, bootstrap .gsd/" },
+  { cmd: "init", desc: "Project init wizard — detect, configure, bootstrap .hammer/" },
   { cmd: "setup", desc: "Configuration hub: status + sub-routes (llm, model, search, remote, keys, prefs, onboarding)" },
   { cmd: "onboarding", desc: "Re-run the setup wizard  [--resume|--reset|--step <name>]" },
-  { cmd: "migrate", desc: "Migrate a v1 .planning directory to .gsd format" },
+  { cmd: "migrate", desc: "Migrate a v1 .planning directory to .hammer format" },
   { cmd: "remote", desc: "Control remote auto-mode" },
   { cmd: "steer", desc: "Hard-steer plan documents during execution" },
   { cmd: "inspect", desc: "Show SQLite DB diagnostics" },
@@ -67,7 +71,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "cmux", desc: "Manage cmux integration (status, sidebar, notifications, splits)" },
   { cmd: "park", desc: "Park a milestone — skip without deleting" },
   { cmd: "unpark", desc: "Reactivate a parked milestone" },
-  { cmd: "update", desc: "Update GSD to the latest version" },
+  { cmd: "update", desc: "Update Hammer to the latest version" },
   { cmd: "start", desc: "Start a workflow template (bugfix, spike, feature, etc.)" },
   { cmd: "templates", desc: "List available workflow templates" },
   { cmd: "extensions", desc: "Manage extensions (list, enable, disable, info)" },
@@ -75,15 +79,15 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "mcp", desc: "MCP server status, connectivity, and local config bootstrap (status, check, init)" },
   { cmd: "rethink", desc: "Conversational project reorganization — reorder, park, discard, add milestones" },
   { cmd: "workflow", desc: "Custom workflow lifecycle (new, run, list, info, install, uninstall, validate, pause, resume) or run <name> directly" },
-  { cmd: "codebase", desc: "Generate, refresh, and inspect the codebase map cache (.gsd/CODEBASE.md)" },
+  { cmd: "codebase", desc: "Generate, refresh, and inspect the codebase map cache (.hammer/CODEBASE.md)" },
   { cmd: "ship", desc: "Create PR from milestone artifacts and open for review" },
-  { cmd: "do", desc: "Route freeform text to the right GSD command" },
+  { cmd: "do", desc: "Route freeform text to the right Hammer command" },
   { cmd: "session-report", desc: "Session cost, tokens, and work summary" },
   { cmd: "backlog", desc: "Manage backlog items (add, promote, remove, list)" },
-  { cmd: "pr-branch", desc: "Create clean PR branch filtering .gsd/ commits" },
+  { cmd: "pr-branch", desc: "Create clean PR branch filtering .hammer/ commits" },
   { cmd: "add-tests", desc: "Generate tests for completed slices" },
   { cmd: "scan", desc: "Rapid codebase assessment — lightweight alternative to full map (--focus tech|arch|quality|concerns|tech+arch)" },
-  { cmd: "language", desc: "Set or clear the global response language (e.g. /gsd language Chinese)" },
+  { cmd: "language", desc: "Set or clear the global response language (e.g. /hammer language Chinese)" },
 ];
 
 const NESTED_COMPLETIONS: CompletionMap = {
@@ -120,9 +124,9 @@ const NESTED_COMPLETIONS: CompletionMap = {
     { cmd: "model", desc: "Pick default model for the active provider" },
     { cmd: "search", desc: "Configure web search provider" },
     { cmd: "remote", desc: "Configure remote integrations (Discord/Slack/Telegram)" },
-    { cmd: "keys", desc: "Manage API keys (alias for /gsd keys)" },
-    { cmd: "prefs", desc: "Global preferences wizard (alias for /gsd prefs)" },
-    { cmd: "onboarding", desc: "Run the full onboarding wizard (alias for /gsd onboarding)" },
+    { cmd: "keys", desc: "Manage API keys (alias for /hammer keys)" },
+    { cmd: "prefs", desc: "Global preferences wizard (alias for /hammer prefs)" },
+    { cmd: "onboarding", desc: "Run the full onboarding wizard (alias for /hammer onboarding)" },
   ],
   onboarding: [
     { cmd: "--resume", desc: "Resume from the last completed step" },
@@ -185,7 +189,7 @@ const NESTED_COMPLETIONS: CompletionMap = {
     { cmd: "branches", desc: "Remove merged milestone and legacy branches" },
     { cmd: "snapshots", desc: "Remove old execution snapshots" },
     { cmd: "worktrees", desc: "Remove merged/safe-to-delete worktrees" },
-    { cmd: "projects", desc: "Audit orphaned ~/.gsd/projects/ state directories" },
+    { cmd: "projects", desc: "Audit orphaned ~/.hammer/projects/ state directories" },
     { cmd: "projects --fix", desc: "Delete orphaned project state directories (cannot be undone)" },
   ],
   knowledge: [
@@ -201,7 +205,7 @@ const NESTED_COMPLETIONS: CompletionMap = {
     { cmd: "refactor", desc: "Inventory, plan waves, migrate, verify" },
     { cmd: "security-audit", desc: "Scan, triage, remediate, re-scan" },
     { cmd: "dep-upgrade", desc: "Assess, upgrade, fix breaks, verify" },
-    { cmd: "full-project", desc: "Complete GSD workflow with full ceremony" },
+    { cmd: "full-project", desc: "Complete Hammer workflow with full ceremony" },
     { cmd: "resume", desc: "Resume an in-progress workflow" },
     { cmd: "--list", desc: "List all available templates" },
     { cmd: "--dry-run", desc: "Preview workflow without executing" },
@@ -224,7 +228,7 @@ const NESTED_COMPLETIONS: CompletionMap = {
   mcp: [
     { cmd: "status", desc: "Show all MCP server statuses (default)" },
     { cmd: "check", desc: "Detailed status for a specific server" },
-    { cmd: "init", desc: "Write .mcp.json for the local GSD workflow MCP server" },
+    { cmd: "init", desc: "Write .mcp.json for the local Hammer workflow MCP server" },
   ],
   doctor: [
     { cmd: "fix", desc: "Auto-fix detected issues" },
@@ -278,7 +282,7 @@ const NESTED_COMPLETIONS: CompletionMap = {
   ],
   "session-report": [
     { cmd: "--json", desc: "Machine-readable JSON output" },
-    { cmd: "--save", desc: "Save report to .gsd/reports/" },
+    { cmd: "--save", desc: "Save report to .hammer/reports/" },
   ],
   backlog: [
     { cmd: "add", desc: "Add item to backlog" },
@@ -406,7 +410,11 @@ export function getGsdArgumentCompletions(prefix: string) {
   // Workflow definition-name completion for `workflow run <name>` and `workflow validate <name>`
   if (command === "workflow" && (subcommand === "run" || subcommand === "validate") && parts.length <= 3) {
     try {
-      const defsDir = join(resolveProjectRoot(process.cwd()), ".gsd", "workflow-defs");
+      const projectBase = resolveProjectRoot(process.cwd());
+      // Probe canonical .hammer path first, then legacy .gsd as fallback — state-namespace-bridge
+      const defsDir = existsSync(join(projectBase, ".hammer", "workflow-defs"))
+        ? join(projectBase, ".hammer", "workflow-defs")
+        : join(projectBase, ".gsd", "workflow-defs"); // legacy fallback — state-namespace-bridge
       if (existsSync(defsDir)) {
         return readdirSync(defsDir)
           .filter((f) => f.endsWith(".yaml") && f.startsWith(third))
@@ -425,7 +433,7 @@ export function getGsdArgumentCompletions(prefix: string) {
     return [];
   }
 
-  // Completion for `/gsd workflow info <name>` — list all discoverable plugins (project + global).
+  // Completion for `/hammer workflow info <name>` — list all discoverable plugins (project + global).
   if (command === "workflow" && subcommand === "info" && parts.length <= 3) {
     const results: GsdCommandDefinition[] = [];
     const seen = new Set<string>();
@@ -444,9 +452,11 @@ export function getGsdArgumentCompletions(prefix: string) {
     };
     try {
       const base = resolveProjectRoot(process.cwd());
-      scanDir(join(base, ".gsd", "workflows"), "project");
-      scanDir(join(base, ".gsd", "workflow-defs"), "project-legacy");
-      scanDir(join(gsdHome, "workflows"), "global");
+      scanDir(join(base, ".hammer", "workflows"), "project");
+      scanDir(join(base, ".hammer", "workflow-defs"), "project-legacy");
+      scanDir(join(base, ".gsd", "workflows"), "project"); // legacy fallback — state-namespace-bridge
+      scanDir(join(base, ".gsd", "workflow-defs"), "project-legacy"); // legacy fallback — state-namespace-bridge
+      scanDir(join(gsdHome, "workflows"), "global"); // gsdHome resolves HAMMER_HOME first — bootstrap-migration
     } catch { /* ignore */ }
     // Also include bundled template names.
     try {
@@ -471,3 +481,8 @@ export function getGsdArgumentCompletions(prefix: string) {
 
   return [];
 }
+
+/** Canonical export — same implementation as getGsdArgumentCompletions. */
+export const getHammerArgumentCompletions = getGsdArgumentCompletions;
+// getGsdArgumentCompletions is already exported above as `export function getGsdArgumentCompletions`
+// @deprecated — use getHammerArgumentCompletions instead — explicit-legacy-alias-marker

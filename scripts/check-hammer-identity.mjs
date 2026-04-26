@@ -234,6 +234,7 @@ function printHelp() {
   process.stdout.write("                   cli       loader and CLI entry points (src/loader.ts, src/cli.ts)\n");
   process.stdout.write("                   help      user-visible help text (src/help-text.ts)\n");
   process.stdout.write("                   state     state path resolvers (src/app-paths.ts, src/resources/extensions/gsd/paths.ts, repo-identity.ts, detection.ts, gitignore.ts, migrate-external.ts)\n");
+  process.stdout.write("                   extension-command   extension command surface (index.ts, commands/index.ts, catalog.ts, dispatcher.ts, handlers/core.ts)\n");
   process.stdout.write("                 Omit to scan all tracked files.\n");
 }
 
@@ -243,6 +244,7 @@ const SCOPE_PATH_FILTERS = {
   cli:     (p) => /^src\/(?:loader|cli)\.(?:ts|js)$/.test(p),
   help:    (p) => /^src\/help-text\.(?:ts|js)$/.test(p),
   state:   (p) => /^src\/(?:app-paths|resources\/extensions\/gsd\/(?:paths|repo-identity|detection|gitignore|migrate-external))\.(?:ts|js)$/.test(p),
+  "extension-command": (p) => /^src\/resources\/extensions\/gsd\/(?:index|commands\/index|commands\/catalog|commands\/dispatcher|commands\/handlers\/core)\.(?:ts|js)$/.test(p),
 };
 
 /** Parse --scope a,b,c → array of known scope keys, or null if unset. */

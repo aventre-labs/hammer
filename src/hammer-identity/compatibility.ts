@@ -196,6 +196,28 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["const entry = \"src/resources/extensions/gsd/index.ts\""] as const,
   },
   {
+    id: "extension-command-legacy-registration",
+    category: "legacy-alias",
+    description: "The commands/index.ts module exports registerGSDCommand, registerGSDLegacyAlias, GSD_COMMAND_DESCRIPTION, and getGsdArgumentCompletions as explicit legacy shims so callers using the old API continue to compile. catalog.ts reads GSD_HOME as a legacy fallback and probes .gsd paths during workflow completion.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/(?:index|commands/index|commands/catalog|commands/dispatcher)\.ts$`,
+    linePattern: String.raw`(?:(?:registerGSD|GSD_COMMAND|getGsd|legacyAlias|viaLegacy|legacy alias|legacy fallback|deprecated|handleGSDCommand|/gsd\b|fallback|state-namespace-bridge|bootstrap-migration).{0,120}|.{0,120}(?:registerGSD|GSD_COMMAND|getGsd|legacyAlias|viaLegacy|legacy alias|legacy fallback|deprecated|handleGSDCommand|/gsd\b|fallback|state-namespace-bridge|bootstrap-migration))`,
+    rationale:
+      "The extension's commands/index.ts must keep registerGSDCommand and related exports for any callers that reference the old API. dispatcher.ts accepts a viaLegacyAlias flag and surfaces the canonical /hammer path in diagnostics. catalog.ts retains GSD_HOME and .gsd path probes as explicit state-namespace bridges for existing installations. These are deliberate, documented shims — not unclassified regressions.",
+    allowedUntil: "Remove when all callers are updated to registerHammerCommand and the /gsd alias, GSD_HOME fallback, and .gsd path probes are retired.",
+    examples: ["export function registerGSDCommand(pi: ExtensionAPI): void { // legacy alias for compatibility", "const gsdHome = process.env.HAMMER_HOME || process.env.GSD_HOME || ... // legacy alias for compatibility — bootstrap-migration"] as const,
+  },
+  {
+    id: "extension-manifest-gsd-id",
+    category: "internal-implementation-path",
+    description: "The extension directory is physically still named 'gsd' and the previous manifest id 'gsd' may appear in bootstrap code that references this package.json path before the directory is renamed.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/(?:extension-manifest\.json|package\.json)$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "The extension directory retains the 'gsd' name until a physical rename is planned; the manifest and package.json files live inside that directory. Any gsd token in these files is a directory-path artifact, not a user-visible identity regression.",
+    allowedUntil: "Remove once the extensions/gsd directory is renamed to extensions/hammer.",
+    examples: ['"pi-extension-gsd"'] as const,
+  },
+  {
     id: "marked-downstream-follow-up",
     category: "downstream-follow-up",
     description: "Explicit TODO/FIXME notes for IAM, prompt, workflow, or package rename tasks planned later in S01.",

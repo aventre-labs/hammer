@@ -7,12 +7,27 @@ import { handleOpsCommand } from "./handlers/ops.js";
 import { handleParallelCommand } from "./handlers/parallel.js";
 import { handleWorkflowCommand } from "./handlers/workflow.js";
 
+export interface HandleGSDCommandOptions {
+  /** True when the invocation arrived via the /gsd legacy alias rather than /hammer canonical. */
+  viaLegacyAlias?: boolean;
+}
+
 export async function handleGSDCommand(
   args: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
+  { viaLegacyAlias = false }: HandleGSDCommandOptions = {},
 ): Promise<void> {
   const trimmed = (typeof args === "string" ? args : "").trim();
+
+  // Observability: log legacy alias usage so operators can track adoption of /hammer.
+  if (viaLegacyAlias) {
+    const { logWarning } = await import("../workflow-logger.js");
+    logWarning(
+      "command",
+      `/gsd ${trimmed || "(bare)"} dispatched via legacy alias — canonical: /hammer ${trimmed || "(bare)"}`, // legacy alias for compatibility — explicit-legacy-alias-marker
+    );
+  }
 
   const handlers = [
     () => handleCoreCommand(trimmed, ctx, pi),
@@ -39,5 +54,12 @@ export async function handleGSDCommand(
     throw err;
   }
 
-  ctx.ui.notify(`Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`, "warning");
+  // Unknown command — suggest the canonical /hammer form.
+  const invocationPrefix = viaLegacyAlias
+    ? `/gsd ${trimmed}` // legacy alias for compatibility — explicit-legacy-alias-marker
+    : `/hammer ${trimmed}`;
+  ctx.ui.notify(
+    `Unknown: ${invocationPrefix}. Run /hammer help for available commands.`,
+    "warning",
+  );
 }
