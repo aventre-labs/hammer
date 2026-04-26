@@ -843,6 +843,17 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     allowedUntil: "Remove GSD_HOME fallback once all installations have HAMMER_HOME set.",
     examples: ["env.GSD_HOME || join(osHomedir(), '.gsd')"] as const,
   },
+  {
+    id: "iam-persist-internal-path-comment",
+    category: "internal-implementation-path",
+    description: "src/iam/persist.ts names gsd-db.ts in a code comment explaining why OmegaRunRow / SavesuccessResultRow are declared locally rather than imported.",
+    pathPattern: String.raw`(?:^|/)src/iam/persist\.ts$`,
+    linePattern: String.raw`gsd-db\.ts`,
+    rationale:
+      "The comment is an internal implementation note explaining the deliberate zero-import design decision. It names the sibling database module (gsd-db.ts) only to clarify why its exported types are mirrored locally — the iam/ layer does not import from the extension tree.",
+    allowedUntil: "Remove or update if gsd-db.ts is renamed as part of the broader DB module identity migration.",
+    examples: ["// exported from gsd-db.ts but declared locally to avoid cross-tree imports."] as const,
+  },
 ] as const satisfies readonly HammerIdentityCompatibilityRule[];
 
 export type HammerIdentityCompatibilityRuleId = typeof HAMMER_LEGACY_COMPATIBILITY_RULES[number]["id"];
