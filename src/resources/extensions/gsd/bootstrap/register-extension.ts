@@ -13,6 +13,7 @@ import { registerJournalTools } from "./journal-tools.js";
 import { registerMemoryTools } from "./memory-tools.js";
 import { registerQueryTools } from "./query-tools.js";
 import { registerHooks } from "./register-hooks.js";
+import { registerIAMTools } from "./iam-tools.js";
 import { registerShortcuts } from "./register-shortcuts.js";
 import { writeCrashLog } from "./crash-log.js";
 import { logWarning } from "../workflow-logger.js";
@@ -107,6 +108,7 @@ export function registerGsdExtension(pi: ExtensionAPI): void {
     ["db-tools", () => registerDbTools(pi)],
     ["journal-tools", () => registerJournalTools(pi)],
     ["query-tools", () => registerQueryTools(pi)],
+    ["iam-tools", () => registerIAMTools(pi)],
     ["memory-tools", () => registerMemoryTools(pi)],
     ["exec-tools", () => registerExecTools(pi)],
     ["shortcuts", () => registerShortcuts(pi)],

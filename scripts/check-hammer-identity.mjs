@@ -235,7 +235,7 @@ function printHelp() {
   process.stdout.write("                   help      user-visible help text (src/help-text.ts)\n");
   process.stdout.write("                   state     state path resolvers (src/app-paths.ts, src/resources/extensions/gsd/paths.ts, repo-identity.ts, detection.ts, gitignore.ts, migrate-external.ts)\n");
   process.stdout.write("                   extension-command   extension command surface (index.ts, commands/index.ts, catalog.ts, dispatcher.ts, handlers/core.ts)\n");
-  process.stdout.write("                   tools     tool registration modules (bootstrap/db-tools.ts, memory-tools.ts, query-tools.ts, exec-tools.ts, journal-tools.ts)\n");
+  process.stdout.write("                   tools     tool registration modules (bootstrap/db-tools.ts, memory-tools.ts, query-tools.ts, exec-tools.ts, journal-tools.ts, iam-tools.ts)\n");
   process.stdout.write("                   headless  headless orchestrator modules (src/headless*.ts)\n");
   process.stdout.write("                   browser   browser slash-command dispatch and surface contract modules\n");
   process.stdout.write("                   mcp       MCP server identity surface (packages/mcp-server package.json, server.ts, cli.ts, workflow-tools.ts, readers/paths.ts)\n");
@@ -249,7 +249,7 @@ const SCOPE_PATH_FILTERS = {
   help:    (p) => /^src\/help-text\.(?:ts|js)$/.test(p),
   state:   (p) => /^src\/(?:app-paths|resources\/extensions\/gsd\/(?:paths|repo-identity|detection|gitignore|migrate-external))\.(?:ts|js)$/.test(p),
   "extension-command": (p) => /^src\/resources\/extensions\/gsd\/(?:index|commands\/index|commands\/catalog|commands\/dispatcher|commands\/handlers\/core)\.(?:ts|js)$/.test(p),
-  tools:   (p) => /^src\/resources\/extensions\/gsd\/bootstrap\/(?:db-tools|memory-tools|query-tools|exec-tools|journal-tools)\.(?:ts|js)$/.test(p),
+  tools:   (p) => /^src\/resources\/extensions\/gsd\/bootstrap\/(?:db-tools|memory-tools|query-tools|exec-tools|journal-tools|iam-tools)\.(?:ts|js)$/.test(p),
   headless: (p) => /^src\/headless(?:-context|-events|-[a-z]+)?\.(?:ts|js)$/.test(p),
   browser:  (p) => /^web\/lib\/(?:browser-slash-command-dispatch|command-surface-contract)\.(?:ts|js)$/.test(p),
   mcp:      (p) => /^packages\/mcp-server\/(?:package\.json|src\/(?:server|cli|workflow-tools|readers\/paths)\.(?:ts|js))$/.test(p),
