@@ -738,14 +738,22 @@ function bareModelId(modelId: string): string {
  * "maximum number of items is 128"
  * @see https://console.groq.com/docs/tool-use
  */
+// Most tool-calling providers reject oversized tool arrays at or near 128
+// entries. Keep the hard cap provider-agnostic and prefer canonical tools over
+// legacy gsd_* aliases when trimming the active set.
 export const GROQ_MAX_TOOLS = 128;
+const MAX_PROVIDER_TOOLS = GROQ_MAX_TOOLS;
+const LEGACY_TOOL_ALIAS_PREFIXES = ["gsd_"];
+
+function isLegacyToolAlias(toolName: string): boolean {
+  return LEGACY_TOOL_ALIAS_PREFIXES.some((prefix) => toolName.startsWith(prefix));
+}
 
 /**
  * Provider IDs that map to the Groq API backend.
  * Used to detect Groq at the GSD routing layer where only the provider string
  * is available (the pi-ai openai-completions adapter is shared across providers).
  */
-const GROQ_PROVIDER_IDS = new Set(["groq"]);
 
 // ─── Tool Compatibility Filter (ADR-005 Phase 3) ───────────────────────────
 
@@ -804,14 +812,21 @@ export function filterToolsForProvider(
     }
   }
 
-  // Groq enforces a hard limit of 128 tools per request (#4376).
-  // Trim the compatible list to GROQ_MAX_TOOLS and move the excess to filtered.
-  if (provider && GROQ_PROVIDER_IDS.has(provider) && compatible.length > GROQ_MAX_TOOLS) {
-    const trimmed = compatible.splice(GROQ_MAX_TOOLS);
+  // Most providers enforce a hard limit of ~128 tools per request (#4376, #tool-cap-128).
+  // Trim legacy aliases first so canonical Hammer/core tools remain available.
+  if (compatible.length > MAX_PROVIDER_TOOLS) {
+    const ordered = [
+      ...compatible.filter((name) => !isLegacyToolAlias(name)),
+      ...compatible.filter((name) => isLegacyToolAlias(name)),
+    ];
+    const kept = ordered.slice(0, MAX_PROVIDER_TOOLS);
+    const trimmed = ordered.slice(MAX_PROVIDER_TOOLS);
+    compatible.splice(0, compatible.length, ...kept);
     filtered.push(...trimmed);
+    const providerLabel = provider ?? providerApi;
     console.warn(
-      `[gsd] Groq tool limit: ${compatible.length + trimmed.length} tools active but Groq allows at most ${GROQ_MAX_TOOLS}. ` +
-        `Trimming to the first ${GROQ_MAX_TOOLS} tools. Removed: ${trimmed.join(", ")}`,
+      `[hammer] Provider tool limit: ${compatible.length + trimmed.length} tools active for ${providerLabel}, ` +
+        `but providers allow at most ${MAX_PROVIDER_TOOLS}. Trimming legacy aliases first. Removed: ${trimmed.join(", ")}`,
     );
   }
 
