@@ -3,6 +3,13 @@
 // Storage layer for auto-learned project memories. Follows context-store.ts patterns.
 // All functions degrade gracefully: return empty results when DB unavailable, never throw.
 
+import type { TrinityMetadata } from '../../../iam/trinity.js';
+import {
+  buildDefaultTrinityMetadata,
+  normalizeTrinityMetadata,
+  parseTrinityJson,
+  serializeTrinityJson,
+} from '../../../iam/trinity.js';
 import {
   isDbAvailable,
   _getAdapter,
@@ -44,6 +51,7 @@ export interface Memory {
    * decisions table (Step 5) with the original scope/decision/choice/etc.
    */
   structured_fields: Record<string, unknown> | null;
+  trinity?: TrinityMetadata;
 }
 
 export type MemoryActionCreate = {
@@ -54,6 +62,7 @@ export type MemoryActionCreate = {
   scope?: string;
   tags?: string[];
   structuredFields?: Record<string, unknown> | null;
+  trinity?: Partial<TrinityMetadata> | null;
 };
 
 export type MemoryActionUpdate = {
@@ -118,7 +127,34 @@ function rowToMemory(row: Record<string, unknown>): Memory {
     scope: (row['scope'] as string) ?? 'project',
     tags: parseTags(row['tags']),
     structured_fields: parseStructuredFields(row['structured_fields']),
+    trinity: rowToTrinityMetadata(row),
   };
+}
+
+function rowToTrinityMetadata(row: Record<string, unknown>): TrinityMetadata {
+  const category = row['category'] as string | undefined;
+  const sourceUnitType = (row['source_unit_type'] as string | null) ?? null;
+  const sourceUnitId = (row['source_unit_id'] as string | null) ?? null;
+  const ity = parseTrinityJson(row['trinity_ity']);
+  const pathy = parseTrinityJson(row['trinity_pathy']);
+  const provenance = parseTrinityJson(row['trinity_provenance']);
+  return normalizeTrinityMetadata(
+    {
+      layer: row['trinity_layer'],
+      ity,
+      pathy,
+      provenance,
+      validation: {
+        state: row['trinity_validation_state'],
+        score: row['trinity_validation_score'],
+      },
+    },
+    buildDefaultTrinityMetadata({ category }).layer,
+    {
+      ...(sourceUnitType ? { sourceUnitType } : {}),
+      ...(sourceUnitId ? { sourceUnitId } : {}),
+    },
+  );
 }
 
 function parseStructuredFields(raw: unknown): Record<string, unknown> | null {
@@ -506,6 +542,7 @@ export function createMemory(fields: {
   scope?: string;
   tags?: string[];
   structuredFields?: Record<string, unknown> | null;
+  trinity?: Partial<TrinityMetadata> | null;
 }): string | null {
   if (!isDbAvailable()) return null;
   const adapter = _getAdapter();
@@ -549,9 +586,18 @@ function doCreateMemory(
     scope?: string;
     tags?: string[];
     structuredFields?: Record<string, unknown> | null;
+    trinity?: Partial<TrinityMetadata> | null;
   },
 ): string {
   const now = new Date().toISOString();
+  const trinity = normalizeTrinityMetadata(
+    fields.trinity,
+    buildDefaultTrinityMetadata({ category: fields.category }).layer,
+    {
+      ...(fields.source_unit_type ? { sourceUnitType: fields.source_unit_type } : {}),
+      ...(fields.source_unit_id ? { sourceUnitId: fields.source_unit_id } : {}),
+    },
+  );
   // Insert with a temporary placeholder ID — seq is auto-assigned
   const placeholder = `_TMP_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   insertMemoryRow({
@@ -566,6 +612,7 @@ function doCreateMemory(
     scope: fields.scope ?? 'project',
     tags: fields.tags ?? [],
     structuredFields: fields.structuredFields ?? null,
+    trinity,
   });
   // Derive the real ID from the assigned seq (SELECT is still fine via adapter)
   const row = adapter.prepare('SELECT seq FROM memories WHERE id = :id').get({ ':id': placeholder });
@@ -754,6 +801,7 @@ export function applyMemoryActions(
               // bulk applyMemoryActions callers (extraction, ingestion) don't
               // silently drop it.
               structuredFields: action.structuredFields ?? null,
+              trinity: action.trinity ?? null,
             });
             break;
           case 'UPDATE':

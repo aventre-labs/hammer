@@ -3,6 +3,7 @@ import {
   closeDatabase,
   isDbAvailable,
   _getAdapter,
+  SCHEMA_VERSION,
 } from '../gsd-db.ts';
 import {
   _resetLogs,
@@ -68,6 +69,65 @@ test('memory-store: create and query memories', () => {
   assert.deepStrictEqual(active[0].category, 'gotcha', 'first memory category');
   assert.deepStrictEqual(active[0].content, 'esbuild drops .node binaries', 'first memory content');
   assert.deepStrictEqual(active[1].confidence, 0.9, 'second memory confidence');
+
+  closeDatabase();
+});
+
+test('memory-store: createMemory persists normalized Trinity metadata', () => {
+  openDatabase(':memory:');
+
+  const id = createMemory({
+    category: 'pattern',
+    content: 'Trinity vector persistence',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S04/T01',
+    trinity: {
+      layer: 'generative',
+      ity: { factuality: 2, creativity: 0.25 },
+      pathy: { empathy: -1, reciprocity: 0.75 },
+      provenance: {
+        sourceRelations: [
+          { type: 'derived_from', targetId: 'M001-CONTEXT', targetKind: 'artifact', weight: 2 },
+        ],
+      },
+      validation: { state: 'validated', score: 1 },
+    },
+  });
+  assert.equal(id, 'MEM001');
+
+  const memory = getActiveMemories()[0];
+  assert.equal(memory.trinity?.layer, 'generative');
+  assert.deepStrictEqual(memory.trinity?.ity, { factuality: 1, creativity: 0.25 });
+  assert.deepStrictEqual(memory.trinity?.pathy, { empathy: 0, reciprocity: 0.75 });
+  assert.deepStrictEqual(memory.trinity?.provenance.sourceRelations, [
+    { type: 'derived_from', targetId: 'M001-CONTEXT', targetKind: 'artifact', weight: 1 },
+  ]);
+  assert.deepStrictEqual(memory.trinity?.validation, { state: 'validated', score: 1 });
+
+  const row = _getAdapter()!.prepare(`
+    SELECT trinity_layer, trinity_ity, trinity_pathy, trinity_provenance,
+           trinity_validation_state, trinity_validation_score
+    FROM memories WHERE id = 'MEM001'
+  `).get();
+  assert.equal(row?.['trinity_layer'], 'generative');
+  assert.equal(row?.['trinity_validation_state'], 'validated');
+  assert.equal(row?.['trinity_validation_score'], 1);
+  assert.deepStrictEqual(JSON.parse(row?.['trinity_ity'] as string), { creativity: 0.25, factuality: 1 });
+
+  closeDatabase();
+});
+
+test('memory-store: legacy callers get deterministic Trinity defaults', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'preference', content: 'user likes concise summaries' });
+  const memory = getActiveMemories()[0];
+
+  assert.equal(memory.trinity?.layer, 'social');
+  assert.deepStrictEqual(memory.trinity?.ity, {});
+  assert.deepStrictEqual(memory.trinity?.pathy, {});
+  assert.deepStrictEqual(memory.trinity?.provenance, { sourceRelations: [] });
+  assert.deepStrictEqual(memory.trinity?.validation, { state: 'unvalidated', score: 0 });
 
   closeDatabase();
 });
@@ -328,9 +388,9 @@ test('memory-store: schema includes memories table', () => {
   const viewCount = adapter.prepare('SELECT count(*) as cnt FROM active_memories').get();
   assert.deepStrictEqual(viewCount?.['cnt'], 0, 'active_memories view should exist');
 
-  // Verify schema version is 22 (v22 quality_gates DDL fix included)
+  // Verify schema version is current.
   const version = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assert.deepStrictEqual(version?.["v"], 22, 'schema version should be 22');
+  assert.deepStrictEqual(version?.["v"], SCHEMA_VERSION, 'schema version should be current');
 
   closeDatabase();
 });

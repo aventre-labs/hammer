@@ -57,7 +57,7 @@ export async function resumeAutoAfterProviderDelay(
   }
 
   const commandCtx = hasSessionControl(ctx) ? ctx : deps.getCommandContext();
-  if (!commandCtx) {
+  if (!commandCtx || !hasSessionControl(commandCtx)) {
     ctx.ui.notify(
       "Provider error recovery delay elapsed, but no command context is available to create a fresh session. Leaving auto-mode paused; run /gsd auto to resume.",
       "warning",

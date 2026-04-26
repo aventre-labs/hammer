@@ -190,6 +190,34 @@ describe('buildGraph', () => {
     assert.ok(!isNaN(Date.parse(graph.builtAt)));
   });
 
+  it('nodes carry valid Trinity defaults and provenance without breaking old consumers', async () => {
+    const graph = await buildGraph(projectDir);
+    assert.ok(graph.nodes.length > 0, 'fixture should produce graph nodes');
+
+    for (const node of graph.nodes) {
+      assert.ok(node.trinity, `node ${node.id} should include Trinity metadata`);
+      assert.ok(['social', 'knowledge', 'generative'].includes(node.trinity.layer), `valid layer for ${node.id}`);
+      assert.deepEqual(node.trinity.ity, {}, 'artifact graph defaults keep empty -ity vector');
+      assert.deepEqual(node.trinity.pathy, {}, 'artifact graph defaults keep empty -pathy vector');
+      assert.ok(Array.isArray(node.trinity.provenance.sourceRelations), 'sourceRelations should be an array');
+      assert.ok(['unvalidated', 'validated', 'contested', 'deprecated'].includes(node.trinity.validation.state));
+      assert.ok(node.trinity.validation.score >= 0 && node.trinity.validation.score <= 1);
+      assert.equal(typeof node.id, 'string', 'legacy node id field remains available');
+      assert.equal(typeof node.label, 'string', 'legacy node label field remains available');
+      assert.equal(typeof node.confidence, 'string', 'legacy node confidence field remains available');
+    }
+
+    const rule = graph.nodes.find((node) => node.type === 'rule');
+    assert.equal(rule?.trinity?.layer, 'knowledge');
+    assert.equal(rule?.trinity?.provenance.artifactPath, 'KNOWLEDGE.md');
+    assert.deepEqual(rule?.trinity?.provenance.sourceRelations, [
+      { type: 'derived_from', targetId: 'KNOWLEDGE.md', targetKind: 'artifact', weight: 1 },
+    ]);
+
+    const slice = graph.nodes.find((node) => node.type === 'slice');
+    assert.equal(slice?.trinity?.layer, 'generative');
+  });
+
   it('skips unparseable artifact and does not throw', async () => {
     const badProject = tmpProject();
     // Write a corrupt/minimal STATE.md that is technically valid but empty
@@ -379,7 +407,7 @@ missing_artifacts: []
     assert.ok(Array.isArray(graph.nodes));
     assert.equal(typeof graph.builtAt, 'string');
     const learningNodes = graph.nodes.filter(
-      (n) => n.type === 'decision' || n.type === 'lesson' || n.type === 'pattern' || n.type === 'surprise',
+      (n) => n.type === 'decision' || n.type === 'lesson' || n.type === 'pattern' || (n.type as string) === 'surprise',
     );
     assert.equal(
       learningNodes.length,

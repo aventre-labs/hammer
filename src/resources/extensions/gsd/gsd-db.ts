@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -284,7 +284,13 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         hit_count INTEGER NOT NULL DEFAULT 0,
         scope TEXT NOT NULL DEFAULT 'project',
         tags TEXT NOT NULL DEFAULT '[]',
-        structured_fields TEXT DEFAULT NULL
+        structured_fields TEXT DEFAULT NULL,
+        trinity_layer TEXT NOT NULL DEFAULT 'knowledge',
+        trinity_ity TEXT NOT NULL DEFAULT '{}',
+        trinity_pathy TEXT NOT NULL DEFAULT '{}',
+        trinity_provenance TEXT NOT NULL DEFAULT '{"sourceRelations":[]}',
+        trinity_validation_state TEXT NOT NULL DEFAULT 'unvalidated',
+        trinity_validation_score REAL NOT NULL DEFAULT 0
       )
     `);
 
@@ -623,6 +629,8 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_id)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_layer ON memories(trinity_layer)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_validation ON memories(trinity_validation_state)");
 
       db.prepare(
         "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
@@ -1293,6 +1301,47 @@ function migrateSchema(db: DbAdapter): void {
       `);
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 23,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 24) {
+      // v24 — Trinity Graph metadata on memories. Layer and validation state
+      // are first-class columns for cheap filtering; vector/provenance payloads
+      // are JSON text so SQLite JSON1 is not required.
+      ensureColumn(db, "memories", "trinity_layer", "ALTER TABLE memories ADD COLUMN trinity_layer TEXT NOT NULL DEFAULT 'knowledge'");
+      ensureColumn(db, "memories", "trinity_ity", "ALTER TABLE memories ADD COLUMN trinity_ity TEXT NOT NULL DEFAULT '{}'");
+      ensureColumn(db, "memories", "trinity_pathy", "ALTER TABLE memories ADD COLUMN trinity_pathy TEXT NOT NULL DEFAULT '{}'");
+      ensureColumn(db, "memories", "trinity_provenance", "ALTER TABLE memories ADD COLUMN trinity_provenance TEXT NOT NULL DEFAULT '{\"sourceRelations\":[]}'");
+      ensureColumn(db, "memories", "trinity_validation_state", "ALTER TABLE memories ADD COLUMN trinity_validation_state TEXT NOT NULL DEFAULT 'unvalidated'");
+      ensureColumn(db, "memories", "trinity_validation_score", "ALTER TABLE memories ADD COLUMN trinity_validation_score REAL NOT NULL DEFAULT 0");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_layer ON memories(trinity_layer)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_validation ON memories(trinity_validation_state)");
+      db.exec(`
+        UPDATE memories
+        SET trinity_provenance = '{"sourceRelations":[]}'
+        WHERE trinity_provenance IS NULL OR trinity_provenance = ''
+      `);
+      db.exec(`
+        UPDATE memories
+        SET trinity_layer = 'knowledge'
+        WHERE trinity_layer NOT IN ('social', 'knowledge', 'generative')
+      `);
+      db.exec(`
+        UPDATE memories
+        SET trinity_validation_state = 'unvalidated'
+        WHERE trinity_validation_state NOT IN ('unvalidated', 'validated', 'contested', 'deprecated')
+      `);
+      db.exec(`
+        UPDATE memories
+        SET trinity_validation_score = CASE
+          WHEN trinity_validation_score < 0 THEN 0
+          WHEN trinity_validation_score > 1 THEN 1
+          ELSE trinity_validation_score
+        END
+      `);
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 24,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -3834,11 +3883,28 @@ export function insertMemoryRow(args: {
    * open inside the JSON; documented per category in ADR-013.
    */
   structuredFields?: Record<string, unknown> | null;
+  trinity?: {
+    layer: string;
+    ity: Record<string, unknown>;
+    pathy: Record<string, unknown>;
+    provenance: object;
+    validation: { state: string; score: number };
+  } | null;
 }): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
-    `INSERT INTO memories (id, category, content, confidence, source_unit_type, source_unit_id, created_at, updated_at, scope, tags, structured_fields)
-     VALUES (:id, :category, :content, :confidence, :source_unit_type, :source_unit_id, :created_at, :updated_at, :scope, :tags, :structured_fields)`,
+    `INSERT INTO memories (
+       id, category, content, confidence, source_unit_type, source_unit_id,
+       created_at, updated_at, scope, tags, structured_fields,
+       trinity_layer, trinity_ity, trinity_pathy, trinity_provenance,
+       trinity_validation_state, trinity_validation_score
+     )
+     VALUES (
+       :id, :category, :content, :confidence, :source_unit_type, :source_unit_id,
+       :created_at, :updated_at, :scope, :tags, :structured_fields,
+       :trinity_layer, :trinity_ity, :trinity_pathy, :trinity_provenance,
+       :trinity_validation_state, :trinity_validation_score
+     )`,
   ).run({
     ":id": args.id,
     ":category": args.category,
@@ -3851,6 +3917,12 @@ export function insertMemoryRow(args: {
     ":scope": args.scope ?? "project",
     ":tags": JSON.stringify(args.tags ?? []),
     ":structured_fields": args.structuredFields == null ? null : JSON.stringify(args.structuredFields),
+    ":trinity_layer": args.trinity?.layer ?? "knowledge",
+    ":trinity_ity": JSON.stringify(args.trinity?.ity ?? {}),
+    ":trinity_pathy": JSON.stringify(args.trinity?.pathy ?? {}),
+    ":trinity_provenance": JSON.stringify(args.trinity?.provenance ?? { sourceRelations: [] }),
+    ":trinity_validation_state": args.trinity?.validation?.state ?? "unvalidated",
+    ":trinity_validation_score": args.trinity?.validation?.score ?? 0,
   });
 }
 

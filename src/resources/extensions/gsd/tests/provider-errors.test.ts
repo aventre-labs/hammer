@@ -489,6 +489,46 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no command context is
   ]);
 });
 
+test("resumeAutoAfterProviderDelay rejects a stale command context without newSession", async () => {
+  const notifications: Array<{ message: string; level: string }> = [];
+  const calls: string[] = [];
+
+  const result = await resumeAutoAfterProviderDelay(
+    {} as any,
+    {
+      ui: {
+        notify(message: string, level?: string) {
+          notifications.push({ message, level: level ?? "info" });
+        },
+      },
+    } as any,
+    {
+      getSnapshot: () => ({
+        active: false,
+        paused: true,
+        stepMode: false,
+        basePath: "/tmp/project",
+      }),
+      getCommandContext: () => ({ ui: { notify() {} } } as any),
+      resetTransientRetryState: () => {
+        calls.push("reset-transient");
+      },
+      startAuto: async () => {
+        calls.push("start-auto");
+      },
+    },
+  );
+
+  assert.equal(result, "missing-command-context");
+  assert.deepEqual(calls, []);
+  assert.deepEqual(notifications, [
+    {
+      message: "Provider error recovery delay elapsed, but no command context is available to create a fresh session. Leaving auto-mode paused; run /gsd auto to resume.",
+      level: "warning",
+    },
+  ]);
+});
+
 test("resumeAutoAfterProviderDelay leaves auto paused when no base path is available", async () => {
   const notifications: Array<{ message: string; level: string }> = [];
   let startCalls = 0;

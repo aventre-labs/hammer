@@ -18,6 +18,12 @@ import {
 } from "../memory-store.js";
 import type { Memory, RankedMemory } from "../memory-store.js";
 import { traverseGraph } from "../memory-relations.js";
+import {
+  buildDefaultTrinityMetadata,
+  normalizeTrinityMetadata,
+  parseTrinityJson,
+} from "../../../../iam/trinity.js";
+import type { TrinityMetadata } from "../../../../iam/trinity.js";
 
 // ─── Shared result shape (matches tools/workflow-tool-executors.ts) ─────────
 
@@ -56,6 +62,12 @@ export interface MemoryCaptureParams {
    * Plain pattern/gotcha/convention captures may omit this entirely.
    */
   structuredFields?: Record<string, unknown> | null;
+  trinity_layer?: unknown;
+  trinity_ity?: unknown;
+  trinity_pathy?: unknown;
+  trinity_provenance?: unknown;
+  trinity_validation_state?: unknown;
+  trinity_validation_score?: unknown;
 }
 
 const VALID_CATEGORIES = new Set([
@@ -96,9 +108,10 @@ export function executeMemoryCapture(params: MemoryCaptureParams): ToolExecution
   const tags = normalizeTags(params.tags);
 
   const structuredFields = normalizeStructuredFields(params.structuredFields);
+  const trinity = normalizeCaptureTrinity(params, category);
   let id: string | null;
   try {
-    id = createMemory({ category, content, confidence, scope, tags, structuredFields });
+    id = createMemory({ category, content, confidence, scope, tags, structuredFields, trinity });
   } catch (err) {
     // Surface the underlying SQL message (e.g. "database disk image is
     // malformed", "no such table: memories") so the operator gets the
@@ -123,8 +136,26 @@ export function executeMemoryCapture(params: MemoryCaptureParams): ToolExecution
 
   return {
     content: [{ type: "text", text: `Captured ${id} (${category}): ${content}` }],
-    details: { operation: "memory_capture", id, category, confidence, scope, tags },
+    details: { operation: "memory_capture", id, category, confidence, scope, tags, trinity },
   };
+}
+
+function normalizeCaptureTrinity(params: MemoryCaptureParams, category: string): TrinityMetadata {
+  const fallback = buildDefaultTrinityMetadata({ category });
+  return normalizeTrinityMetadata(
+    {
+      layer: params.trinity_layer ?? fallback.layer,
+      ity: params.trinity_ity,
+      pathy: params.trinity_pathy,
+      provenance: params.trinity_provenance,
+      validation: {
+        state: params.trinity_validation_state,
+        score: params.trinity_validation_score,
+      },
+    },
+    fallback.layer,
+    fallback.provenance,
+  );
 }
 
 function normalizeScope(value: unknown): string {
@@ -178,6 +209,7 @@ export interface MemoryQueryHit {
   reason: "keyword" | "semantic" | "both" | "ranked";
   keyword_rank: number | null;
   semantic_rank: number | null;
+  trinity: TrinityMetadata;
 }
 
 export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResult {
@@ -233,6 +265,11 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
       reason: r.reason,
       keyword_rank: r.keywordRank,
       semantic_rank: r.semanticRank,
+      trinity: r.memory.trinity ?? buildDefaultTrinityMetadata({
+        category: r.memory.category,
+        sourceUnitType: r.memory.source_unit_type,
+        sourceUnitId: r.memory.source_unit_id,
+      }),
     }));
 
     if (params.reinforce_hits) {
@@ -293,14 +330,34 @@ function includeSupersededMemories(rankedActive: Memory[]): Memory[] {
           }
         } catch { /* leave null */ }
       }
+      const category = row["category"] as string;
+      const sourceUnitType = (row["source_unit_type"] as string) ?? null;
+      const sourceUnitId = (row["source_unit_id"] as string) ?? null;
+      const trinity = normalizeTrinityMetadata(
+        {
+          layer: row["trinity_layer"],
+          ity: parseTrinityJson(row["trinity_ity"]),
+          pathy: parseTrinityJson(row["trinity_pathy"]),
+          provenance: parseTrinityJson(row["trinity_provenance"]),
+          validation: {
+            state: row["trinity_validation_state"],
+            score: row["trinity_validation_score"],
+          },
+        },
+        buildDefaultTrinityMetadata({ category }).layer,
+        {
+          ...(sourceUnitType ? { sourceUnitType } : {}),
+          ...(sourceUnitId ? { sourceUnitId } : {}),
+        },
+      );
       return {
         seq: row["seq"] as number,
         id: row["id"] as string,
-        category: row["category"] as string,
+        category,
         content: row["content"] as string,
         confidence: row["confidence"] as number,
-        source_unit_type: (row["source_unit_type"] as string) ?? null,
-        source_unit_id: (row["source_unit_id"] as string) ?? null,
+        source_unit_type: sourceUnitType,
+        source_unit_id: sourceUnitId,
         created_at: row["created_at"] as string,
         updated_at: row["updated_at"] as string,
         superseded_by: (row["superseded_by"] as string) ?? null,
@@ -308,6 +365,7 @@ function includeSupersededMemories(rankedActive: Memory[]): Memory[] {
         scope: (row["scope"] as string) ?? "project",
         tags,
         structured_fields: structuredFields,
+        trinity,
       };
     });
   } catch {
@@ -329,6 +387,7 @@ export interface GraphNode {
   category: string;
   content: string;
   confidence: number;
+  trinity?: TrinityMetadata;
 }
 
 export interface GraphEdge {
@@ -405,7 +464,7 @@ export function executeGsdGraph(params: GsdGraphParams): ToolExecutionResult {
         operation: "gsd_graph",
         mode: "query",
         memoryId,
-        nodes: nodes.map((n) => ({ id: n.id, category: n.category, content: n.content })),
+        nodes: nodes.map((n) => ({ id: n.id, category: n.category, content: n.content, trinity: n.trinity })),
         edges: edges.map((e) => ({ from: e.from, to: e.to, rel: e.rel })),
       },
     };

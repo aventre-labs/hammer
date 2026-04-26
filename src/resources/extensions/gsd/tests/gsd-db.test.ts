@@ -28,6 +28,7 @@ import {
   getTask,
   getSliceTasks,
   checkpointDatabase,
+  SCHEMA_VERSION,
 } from '../gsd-db.ts';
 
 const _require = createRequire(import.meta.url);
@@ -101,7 +102,7 @@ describe('gsd-db', () => {
     // Check schema_version table
     const adapter = _getAdapter()!;
     const version = adapter.prepare('SELECT MAX(version) as version FROM schema_version').get();
-    assert.deepStrictEqual(version?.['version'], 22, 'schema version should be 22');
+    assert.deepStrictEqual(version?.['version'], SCHEMA_VERSION, 'schema version should be current');
 
     // Check tables exist by querying them
     const dRows = adapter.prepare('SELECT count(*) as cnt FROM decisions').get();
@@ -486,15 +487,107 @@ describe('gsd-db', () => {
     const names = columns.map((row) => row['name']);
     assert.ok(names.includes('scope'), 'memories.scope should be added during bootstrap');
     assert.ok(names.includes('tags'), 'memories.tags should be added during bootstrap');
+    assert.ok(names.includes('trinity_layer'), 'memories.trinity_layer should be added during bootstrap');
+    assert.ok(names.includes('trinity_ity'), 'memories.trinity_ity should be added during bootstrap');
+    assert.ok(names.includes('trinity_pathy'), 'memories.trinity_pathy should be added during bootstrap');
+    assert.ok(names.includes('trinity_provenance'), 'memories.trinity_provenance should be added during bootstrap');
+    assert.ok(names.includes('trinity_validation_state'), 'memories.trinity_validation_state should be added during bootstrap');
+    assert.ok(names.includes('trinity_validation_score'), 'memories.trinity_validation_score should be added during bootstrap');
 
-    const row = adapter.prepare(`SELECT scope, tags FROM memories WHERE id = 'legacy-memory'`).get();
+    const row = adapter.prepare(`
+      SELECT scope, tags, trinity_layer, trinity_ity, trinity_pathy, trinity_provenance,
+             trinity_validation_state, trinity_validation_score
+      FROM memories WHERE id = 'legacy-memory'
+    `).get();
     assert.equal(row?.['scope'], 'project', 'legacy rows should receive default scope');
     assert.equal(row?.['tags'], '[]', 'legacy rows should receive default tags');
+    assert.equal(row?.['trinity_layer'], 'knowledge', 'legacy rows should receive default Trinity layer');
+    assert.equal(row?.['trinity_ity'], '{}', 'legacy rows should receive default Trinity -ity vector');
+    assert.equal(row?.['trinity_pathy'], '{}', 'legacy rows should receive default Trinity -pathy vector');
+    assert.equal(row?.['trinity_provenance'], '{"sourceRelations":[]}', 'legacy rows should receive default Trinity provenance');
+    assert.equal(row?.['trinity_validation_state'], 'unvalidated', 'legacy rows should receive default Trinity validation state');
+    assert.equal(row?.['trinity_validation_score'], 0, 'legacy rows should receive default Trinity validation score');
 
     const index = adapter.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_memories_scope'",
     ).get();
     assert.equal(index?.['name'], 'idx_memories_scope', 'scope index should be created after bootstrap columns are present');
+
+    cleanup(dbPath);
+  });
+
+  test('gsd-db: v24 migration adds Trinity columns idempotently to partially migrated memories', () => {
+    const dbPath = tempDbPath();
+    const legacyDb = openRawSqliteForTest(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE schema_version (
+        version INTEGER NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_version(version, applied_at) VALUES (23, '2026-04-25T00:00:00.000Z');
+      CREATE TABLE memories (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        source_unit_type TEXT,
+        source_unit_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        superseded_by TEXT DEFAULT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        scope TEXT NOT NULL DEFAULT 'project',
+        tags TEXT NOT NULL DEFAULT '[]',
+        structured_fields TEXT DEFAULT NULL,
+        trinity_layer TEXT NOT NULL DEFAULT 'knowledge'
+      );
+      INSERT INTO memories(
+        id, category, content, source_unit_type, source_unit_id,
+        created_at, updated_at, trinity_layer
+      ) VALUES (
+        'partial-trinity-memory', 'pattern', 'legacy partial row', 'slice', 'M001/S04',
+        '2026-04-25T00:00:00.000Z', '2026-04-25T00:00:00.000Z', 'generative'
+      );
+    `);
+    legacyDb.close();
+
+    assert.equal(openDatabase(dbPath), true, 'openDatabase should migrate a partially v24-shaped v23 DB');
+
+    const adapter = _getAdapter()!;
+    const names = adapter.prepare('PRAGMA table_info(memories)').all().map((row) => row['name']);
+    for (const col of [
+      'trinity_layer',
+      'trinity_ity',
+      'trinity_pathy',
+      'trinity_provenance',
+      'trinity_validation_state',
+      'trinity_validation_score',
+    ]) {
+      assert.ok(names.includes(col), `memories.${col} should exist after v24 migration`);
+    }
+
+    const row = adapter.prepare(`
+      SELECT trinity_layer, trinity_ity, trinity_pathy, trinity_provenance,
+             trinity_validation_state, trinity_validation_score
+      FROM memories WHERE id = 'partial-trinity-memory'
+    `).get();
+    assert.equal(row?.['trinity_layer'], 'generative', 'existing Trinity layer should survive partial migration');
+    assert.equal(row?.['trinity_ity'], '{}');
+    assert.equal(row?.['trinity_pathy'], '{}');
+    assert.equal(row?.['trinity_provenance'], '{"sourceRelations":[]}');
+    assert.equal(row?.['trinity_validation_state'], 'unvalidated');
+    assert.equal(row?.['trinity_validation_score'], 0);
+
+    const version = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
+    assert.equal(version?.['v'], SCHEMA_VERSION, 'v23 DB should land on current schema version');
+
+    closeDatabase();
+    assert.equal(openDatabase(dbPath), true, 'reopening migrated DB should be idempotent');
+    const count = _getAdapter()!
+      .prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('memories') WHERE name = 'trinity_ity'")
+      .get();
+    assert.equal(count?.['cnt'], 1, 'Trinity columns should not be duplicated on reopen');
 
     cleanup(dbPath);
   });

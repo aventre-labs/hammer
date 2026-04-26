@@ -2,9 +2,11 @@
  * src/iam/types.ts
  *
  * Foundational TypeScript types for the IAM awareness kernel.
- * Pure type exports only — zero runtime logic, zero imports from src/iam/
- * or the extension tree.
+ * Pure type exports only — zero runtime logic and zero imports from the
+ * extension tree.
  */
+
+import type { TrinityMetadata } from "./trinity.js";
 
 // ---------------------------------------------------------------------------
 // Omega Protocol — ten-stage names
@@ -216,6 +218,7 @@ export interface GraphNode {
   category: string;
   content: string;
   confidence: number;
+  trinity?: TrinityMetadata;
 }
 
 export interface GraphEdge {
@@ -224,9 +227,25 @@ export interface GraphEdge {
   relation: string;
 }
 
+export interface IAMMemoryListEntry {
+  id: string;
+  content: string;
+  score: number;
+  category: string;
+  trinity?: TrinityMetadata;
+}
+
+export interface IAMActiveMemoryEntry {
+  id: string;
+  content: string;
+  confidence: number;
+  category: string;
+  trinity?: TrinityMetadata;
+}
+
 export type IAMToolOutput =
-  | { kind: "memory-list"; memories: Array<{ id: string; content: string; score: number; category: string }> }
-  | { kind: "memory-created"; id: string; content: string; category: string }
+  | { kind: "memory-list"; memories: IAMMemoryListEntry[] }
+  | { kind: "memory-created"; id: string; content: string; category: string; trinity?: TrinityMetadata }
   | { kind: "rune-contract"; rune: RuneContract }
   | { kind: "rune-list"; runes: RuneContract[] }
   | { kind: "savesuccess-report"; scorecard: SavesuccessScorecard; report: string; success: boolean }
@@ -236,9 +255,9 @@ export type IAMToolOutput =
   | { kind: "spiral-deferred"; reason: string; guidance: string };
 
 export interface IAMToolAdapters {
-  queryMemories: (query: string, k?: number, category?: string) => Array<{ id: string; content: string; score: number; category: string }>;
-  getActiveMemories: (limit?: number) => Array<{ id: string; content: string; confidence: number; category: string }>;
-  createMemory: (fields: { category: string; content: string; confidence?: number; source_unit_type?: string; structuredFields?: Record<string, unknown> | null }) => string | null;
-  traverseGraph: (startId: string, depth?: number) => { nodes: Array<{ id: string; category: string; content: string; confidence: number }>; edges: Array<{ fromId: string; toId: string; relation: string }> };
+  queryMemories: (query: string, k?: number, category?: string) => IAMMemoryListEntry[];
+  getActiveMemories: (limit?: number) => IAMActiveMemoryEntry[];
+  createMemory: (fields: { category: string; content: string; confidence?: number; source_unit_type?: string; structuredFields?: Record<string, unknown> | null; trinity?: Partial<TrinityMetadata> | null }) => string | null;
+  traverseGraph: (startId: string, depth?: number) => { nodes: GraphNode[]; edges: Array<{ fromId: string; toId: string; relation: string }> };
   isDbAvailable: () => boolean;
 }

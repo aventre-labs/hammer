@@ -135,6 +135,34 @@ test('memory-relations: traverseGraph walks multi-hop edges', () => {
   closeDatabase();
 });
 
+test('memory-relations: traverseGraph nodes carry Trinity metadata', () => {
+  openDatabase(':memory:');
+  createMemory({
+    category: 'pattern',
+    content: 'A Trinity node',
+    trinity: {
+      layer: 'generative',
+      ity: { creativity: 0.9 },
+      pathy: {},
+      provenance: { sourceRelations: [] },
+      validation: { state: 'validated', score: 1 },
+    },
+  });
+  createMemory({ category: 'gotcha', content: 'B default node' });
+  createMemoryRelation('MEM001', 'MEM002', 'related_to');
+
+  const graph = traverseGraph('MEM001', 1);
+  const first = graph.nodes.find((n) => n.id === 'MEM001');
+  const second = graph.nodes.find((n) => n.id === 'MEM002');
+
+  assert.equal(first?.trinity?.layer, 'generative');
+  assert.deepStrictEqual(first?.trinity?.ity, { creativity: 0.9 });
+  assert.deepStrictEqual(first?.trinity?.validation, { state: 'validated', score: 1 });
+  assert.equal(second?.trinity?.layer, 'knowledge', 'legacy/default graph nodes keep deterministic Trinity metadata');
+
+  closeDatabase();
+});
+
 test('memory-relations: traverseGraph still reports supersedes edges', () => {
   openDatabase(':memory:');
   createMemory({ category: 'convention', content: 'old style' });

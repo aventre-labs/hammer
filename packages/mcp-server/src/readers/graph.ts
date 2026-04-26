@@ -15,6 +15,8 @@
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { resolveGsdRoot, findMilestoneIds, resolveMilestoneDir, findSliceIds, resolveSliceDir } from './paths.js';
+import { withGraphNodeTrinity } from './trinity.js';
+import type { TrinityMetadata } from './trinity.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +47,7 @@ export interface GraphNode {
   description?: string;
   confidence: ConfidenceTier;
   sourceFile?: string;
+  trinity?: TrinityMetadata;
 }
 
 export interface GraphEdge {
@@ -576,7 +579,7 @@ export async function buildGraph(projectDir: string): Promise<KnowledgeGraph> {
     if (seen.has(n.id)) return false;
     seen.add(n.id);
     return true;
-  });
+  }).map((node) => withGraphNodeTrinity(node));
 
   return {
     nodes: dedupedNodes,

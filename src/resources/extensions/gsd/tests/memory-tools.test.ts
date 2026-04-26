@@ -109,6 +109,39 @@ test('memory-tools: memory_query keyword-matches and ranks by confidence × hits
   closeDatabase();
 });
 
+test('memory-tools: capture_thought and memory_query expose Trinity metadata', () => {
+  openDatabase(':memory:');
+
+  const capture = executeMemoryCapture({
+    category: 'pattern',
+    content: 'rank with Trinity lens',
+    trinity_layer: 'generative',
+    trinity_ity: { creativity: 1.4, factuality: 0.5 },
+    trinity_pathy: { reciprocity: 0.5 },
+    trinity_validation_state: 'validated',
+    trinity_validation_score: 0,
+  });
+  assert.ok(!capture.isError);
+  assert.equal((capture.details.trinity as { layer: string }).layer, 'generative');
+
+  const result = executeMemoryQuery({ query: 'Trinity lens', k: 5 });
+  assert.ok(!result.isError);
+  const hits = result.details.hits as Array<{
+    trinity: {
+      layer: string;
+      ity: Record<string, number>;
+      pathy: Record<string, number>;
+      validation: { state: string; score: number };
+    };
+  }>;
+  assert.equal(hits[0].trinity.layer, 'generative');
+  assert.deepStrictEqual(hits[0].trinity.ity, { factuality: 0.5, creativity: 1 });
+  assert.deepStrictEqual(hits[0].trinity.pathy, { reciprocity: 0.5 });
+  assert.deepStrictEqual(hits[0].trinity.validation, { state: 'validated', score: 0 });
+
+  closeDatabase();
+});
+
 test('memory-tools: memory_query returns empty list when no keywords match', () => {
   openDatabase(':memory:');
   createMemory({ category: 'gotcha', content: 'unrelated content' });

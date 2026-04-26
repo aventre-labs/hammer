@@ -185,6 +185,25 @@ test("runUnit returns cancelled when session creation fails", async () => {
   assert.equal(pi.calls.length, 0);
 });
 
+test("runUnit returns a non-transient session-failed result when command context lacks newSession", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  const s = makeMockSession();
+  s.cmdCtx = {};
+
+  const result = await runUnit(ctx, pi, s, "task", "T01", "prompt");
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.event, undefined);
+  assert.equal(result.errorContext?.category, "session-failed");
+  assert.equal(result.errorContext?.isTransient, false);
+  assert.match(result.errorContext?.message ?? "", /newSession\(\)/);
+  assert.equal(pi.calls.length, 0);
+  assert.equal(isSessionSwitchInFlight(), false);
+});
+
 test("runUnit returns cancelled when session creation times out", async () => {
   _resetPendingResolve();
 

@@ -1416,6 +1416,15 @@ export async function startAuto(
     return;
   }
 
+  if (typeof (ctx as Partial<ExtensionCommandContext>).newSession !== "function") {
+    const message =
+      "Auto-mode requires a command context with newSession() to dispatch fresh units. Run /hammer auto from an interactive command context.";
+    ctx.ui.notify(message, "warning");
+    logWarning("engine", message, { file: "auto.ts" });
+    debugLog("startAuto", { phase: "missing-command-context" });
+    return;
+  }
+
   // On a *fresh* start, drop any stale active-tool baseline left by a prior
   // auto session that didn't run stopAuto cleanly.  Skip on resume: pauseAuto
   // leaves the last provider-trimmed active tools in place, so clearing here

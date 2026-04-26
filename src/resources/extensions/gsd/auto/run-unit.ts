@@ -53,9 +53,29 @@ export async function runUnit(
   // it from capturing the (now-root) process.cwd() and rebuilding the tool
   // runtime with the wrong cwd.
   const sessionAbortController = new AbortController();
+  const commandContext = s.cmdCtx;
+  if (typeof commandContext?.newSession !== "function") {
+    const message =
+      "Auto-mode cannot create a fresh session because the stored command context does not expose newSession(). Run /gsd auto from an interactive command context to resume.";
+    debugLog("runUnit", {
+      phase: "session-missing-command-context",
+      unitType,
+      unitId,
+    });
+    logWarning("engine", message, { unitType, unitId });
+    return {
+      status: "cancelled",
+      errorContext: {
+        message,
+        category: "session-failed",
+        isTransient: false,
+      },
+    };
+  }
+
   _setSessionSwitchInFlight(true);
   try {
-    const sessionPromise = s.cmdCtx!.newSession({ abortSignal: sessionAbortController.signal }).finally(() => {
+    const sessionPromise = commandContext.newSession({ abortSignal: sessionAbortController.signal }).finally(() => {
       if (sessionSwitchGeneration === mySessionSwitchGeneration) {
         _setSessionSwitchInFlight(false);
       }

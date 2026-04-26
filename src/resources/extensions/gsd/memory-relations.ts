@@ -5,6 +5,12 @@
 // extractor, or (b) future `/gsd memory link` CLI commands. All writes go
 // through the single-writer gate in `gsd-db.ts`.
 
+import type { TrinityMetadata } from "../../../iam/trinity.js";
+import {
+  buildDefaultTrinityMetadata,
+  normalizeTrinityMetadata,
+  parseTrinityJson,
+} from "../../../iam/trinity.js";
 import {
   _getAdapter,
   deleteMemoryRelationsFor,
@@ -42,6 +48,7 @@ export interface MemoryGraphNode {
   category: string;
   content: string;
   confidence: number;
+  trinity?: TrinityMetadata;
 }
 
 export interface MemoryGraph {
@@ -143,16 +150,36 @@ export function traverseGraph(startId: string, depth: number): MemoryGraph {
 
       const nodeRow = adapter
         .prepare(
-          "SELECT id, category, content, confidence, superseded_by FROM memories WHERE id = :id",
+          "SELECT id, category, content, confidence, source_unit_type, source_unit_id, superseded_by, trinity_layer, trinity_ity, trinity_pathy, trinity_provenance, trinity_validation_state, trinity_validation_score FROM memories WHERE id = :id",
         )
         .get({ ":id": id });
       if (!nodeRow) continue;
 
+      const category = nodeRow["category"] as string;
+      const sourceUnitType = (nodeRow["source_unit_type"] as string | null) ?? null;
+      const sourceUnitId = (nodeRow["source_unit_id"] as string | null) ?? null;
       nodes.set(id, {
         id: nodeRow["id"] as string,
-        category: nodeRow["category"] as string,
+        category,
         content: nodeRow["content"] as string,
         confidence: nodeRow["confidence"] as number,
+        trinity: normalizeTrinityMetadata(
+          {
+            layer: nodeRow["trinity_layer"],
+            ity: parseTrinityJson(nodeRow["trinity_ity"]),
+            pathy: parseTrinityJson(nodeRow["trinity_pathy"]),
+            provenance: parseTrinityJson(nodeRow["trinity_provenance"]),
+            validation: {
+              state: nodeRow["trinity_validation_state"],
+              score: nodeRow["trinity_validation_score"],
+            },
+          },
+          buildDefaultTrinityMetadata({ category }).layer,
+          {
+            ...(sourceUnitType ? { sourceUnitType } : {}),
+            ...(sourceUnitId ? { sourceUnitId } : {}),
+          },
+        ),
       });
 
       // Include supersedes edges from the base table so old graphs remain

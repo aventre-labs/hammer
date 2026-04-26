@@ -44,15 +44,15 @@ function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
     isDbAvailable: () => dbAvailable,
     queryMemories: (query, k = 10, category) =>
       queryMemoriesRanked({ query, k, ...(category ? { category } : {}) })
-        .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, category: r.memory.category })),
+        .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, category: r.memory.category, trinity: r.memory.trinity })),
     getActiveMemories: (limit = 30) =>
       getActiveMemoriesRanked(limit)
-        .map((m) => ({ id: m.id, content: m.content, confidence: m.confidence, category: m.category })),
+        .map((m) => ({ id: m.id, content: m.content, confidence: m.confidence, category: m.category, trinity: m.trinity })),
     createMemory: (fields) => createMemory(fields),
     traverseGraph: (startId, depth = 2) => {
       const graph = traverseGraph(startId, depth);
       return {
-        nodes: graph.nodes.map((n) => ({ id: n.id, category: n.category, content: n.content, confidence: n.confidence })),
+        nodes: graph.nodes.map((n) => ({ id: n.id, category: n.category, content: n.content, confidence: n.confidence, trinity: n.trinity })),
         edges: graph.edges.map((e) => ({ fromId: e.from, toId: e.to, relation: e.rel })),
       };
     },
