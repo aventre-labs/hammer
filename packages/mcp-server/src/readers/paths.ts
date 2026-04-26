@@ -1,4 +1,4 @@
-// GSD MCP Server — .gsd/ directory resolution
+// Hammer MCP Server — state directory resolution
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { existsSync, statSync, readdirSync } from 'node:fs';
@@ -6,24 +6,59 @@ import { join, resolve, dirname, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 /**
- * Resolve the .gsd/ root directory for a project.
+ * Resolve the canonical Hammer state root directory for a project.
  *
- * Probes in order:
- *   1. projectDir/.gsd (fast path)
- *   2. git repo root/.gsd
- *   3. Walk up from projectDir
- *   4. Fallback: projectDir/.gsd (even if missing — for init)
+ * Probes in order (legacy import bridge — state-namespace-bridge):
+ *   1. projectDir/.hammer (canonical Hammer path — fast path)
+ *   2. git repo root/.hammer
+ *   3. Walk up from projectDir for .hammer
+ *   4. projectDir/.gsd (legacy fallback for existing installations — bootstrap-migration)
+ *   5. git repo root/.gsd (legacy fallback — bootstrap-migration)
+ *   6. Walk up from projectDir for .gsd (legacy fallback — bootstrap-migration)
+ *   7. Fallback: projectDir/.hammer (even if missing — for init)
+ *
+ * MCP diagnostics include stateRootReason to distinguish canonical from legacy paths.
  */
-export function resolveGsdRoot(projectDir: string): string {
+export function resolveHammerRoot(projectDir: string): string {
   const resolved = resolve(projectDir);
 
-  // Fast path: .gsd/ in the given directory
-  const direct = join(resolved, '.gsd');
-  if (existsSync(direct) && statSync(direct).isDirectory()) {
-    return direct;
+  // 1. Fast path: .hammer/ in the given directory (canonical)
+  const directHammer = join(resolved, '.hammer');
+  if (existsSync(directHammer) && statSync(directHammer).isDirectory()) {
+    return directHammer;
   }
 
-  // Try git repo root
+  // 2. Try git repo root for .hammer
+  try {
+    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: resolved,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const gitHammer = join(gitRoot, '.hammer');
+    if (existsSync(gitHammer) && statSync(gitHammer).isDirectory()) {
+      return gitHammer;
+    }
+  } catch {
+    // Not a git repo or git not available
+  }
+
+  // 3. Walk up from projectDir for .hammer
+  let dir = resolved;
+  while (dir !== dirname(dir)) {
+    const candidate = join(dir, '.hammer');
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+      return candidate;
+    }
+    dir = dirname(dir);
+  }
+
+  // 4–6. Legacy fallback: probe .gsd paths for existing installations (legacy import bridge — bootstrap-migration)
+  const directGsd = join(resolved, '.gsd');
+  if (existsSync(directGsd) && statSync(directGsd).isDirectory()) {
+    return directGsd; // legacy fallback — bootstrap-migration
+  }
+
   try {
     const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd: resolved,
@@ -32,24 +67,32 @@ export function resolveGsdRoot(projectDir: string): string {
     }).trim();
     const gitGsd = join(gitRoot, '.gsd');
     if (existsSync(gitGsd) && statSync(gitGsd).isDirectory()) {
-      return gitGsd;
+      return gitGsd; // legacy fallback — bootstrap-migration
     }
   } catch {
     // Not a git repo or git not available
   }
 
-  // Walk up from projectDir
-  let dir = resolved;
+  dir = resolved;
   while (dir !== dirname(dir)) {
     const candidate = join(dir, '.gsd');
     if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-      return candidate;
+      return candidate; // legacy fallback — bootstrap-migration
     }
     dir = dirname(dir);
   }
 
-  // Fallback
-  return direct;
+  // 7. Fallback: return .hammer even if it doesn't exist (for init/fresh projects)
+  return directHammer;
+}
+
+/**
+ * Legacy alias for resolveHammerRoot — for compatibility with existing callers.
+ * Prefer resolveHammerRoot for new code.
+ * @deprecated Use resolveHammerRoot instead — legacy alias for compatibility
+ */
+export function resolveGsdRoot(projectDir: string): string {
+  return resolveHammerRoot(projectDir); // legacy alias for compatibility — legacy-alias
 }
 
 /** Resolve path to a .gsd/ root file (STATE.md, KNOWLEDGE.md, etc.) */

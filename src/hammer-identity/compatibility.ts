@@ -261,6 +261,39 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     allowedUntil: "End of the S01 slice.",
     examples: ["// TODO(S01 prompt follow-up): replace GSD wording in prompt fixtures"] as const,
   },
+  {
+    id: "mcp-server-legacy-tool-aliases",
+    category: "legacy-alias",
+    description: "The MCP server registers gsd_* tool names as explicit legacy aliases for hammer_* canonical tools in server.ts and workflow-tools.ts, including WORKFLOW_TOOL_NAMES array entries and tool() registration call arguments.",
+    pathPattern: String.raw`(?:^|/)packages/mcp-server/src/(?:server|workflow-tools)\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "All gsd_* tokens in server.ts and workflow-tools.ts are either: (a) legacy alias tool registrations annotated with 'legacy alias' descriptions, (b) WORKFLOW_TOOL_NAMES array entries that preserve backwards-compatible tool name constants, or (c) parameter schema strings like 'gsd_execute' in session ID descriptions. Every occurrence is a deliberate compatibility shim.",
+    allowedUntil: "Remove when legacy MCP clients have migrated to hammer_* tool names.",
+    examples: ["// gsd_execute — legacy alias for hammer_execute for existing MCP clients.", '"gsd_decision_save"'] as const,
+  },
+  {
+    id: "mcp-server-state-path-bridge",
+    category: "bootstrap-migration",
+    description: "The MCP server's paths.ts resolves .gsd/ as a fallback for projects that haven't migrated to .hammer/. workflow-tools.ts reads GSD_* env vars as legacy fallbacks. validateProjectDir uses .gsd worktree paths for auto-worktree external state layout.",
+    pathPattern: String.raw`(?:^|/)packages/mcp-server/src/(?:readers/paths|workflow-tools|server)\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "The MCP state reader probes .hammer first and falls back to .gsd for legacy installations. The env var aliases and worktree .gsd path computations are backwards-compatible bridges for existing projects and tool configurations.",
+    allowedUntil: "Remove .gsd fallbacks and GSD_* env var aliases once all installations have migrated to .hammer and HAMMER_* env vars.",
+    examples: ["const directGsd = join(resolved, '.gsd'); // legacy fallback — bootstrap-migration"] as const,
+  },
+  {
+    id: "mcp-server-package-bin-alias",
+    category: "legacy-alias",
+    description: "The MCP server package.json keeps gsd-mcp-server bin alias for existing clients that launch the server by that name.",
+    pathPattern: String.raw`(?:^|/)packages/mcp-server/package\.json$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "The bin entry gsd-mcp-server is retained as a backwards-compatible alias alongside the canonical hammer-mcp-server. Existing MCP client configurations reference gsd-mcp-server by name.",
+    allowedUntil: "Remove when all MCP client configurations have been migrated to hammer-mcp-server.",
+    examples: ['"gsd-mcp-server": "./dist/cli.js"'] as const,
+  },
 ] as const satisfies readonly HammerIdentityCompatibilityRule[];
 
 export type HammerIdentityCompatibilityRuleId = typeof HAMMER_LEGACY_COMPATIBILITY_RULES[number]["id"];

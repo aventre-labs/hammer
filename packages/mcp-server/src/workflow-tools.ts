@@ -263,7 +263,8 @@ let workflowExecutionQueue: Promise<void> = Promise.resolve();
 let workflowWriteGatePromise: Promise<WorkflowWriteGateModule> | null = null;
 
 function getAllowedProjectRoot(env: NodeJS.ProcessEnv = process.env): string | null {
-  const configuredRoot = env.GSD_WORKFLOW_PROJECT_ROOT?.trim();
+  // HAMMER_WORKFLOW_PROJECT_ROOT is canonical; GSD_WORKFLOW_PROJECT_ROOT is a legacy alias for compatibility — bootstrap-migration
+  const configuredRoot = (env.HAMMER_WORKFLOW_PROJECT_ROOT ?? env.GSD_WORKFLOW_PROJECT_ROOT)?.trim();
   return configuredRoot ? resolve(configuredRoot) : null;
 }
 
@@ -428,10 +429,11 @@ function getSupportedSummaryArtifactTypes(executors: WorkflowToolExecutors): rea
 
 function getWriteGateModuleCandidates(): string[] {
   const candidates: string[] = [];
-  const explicitModule = process.env.GSD_WORKFLOW_WRITE_GATE_MODULE?.trim();
+  // HAMMER_WORKFLOW_WRITE_GATE_MODULE is canonical; GSD_WORKFLOW_WRITE_GATE_MODULE is a legacy alias — bootstrap-migration
+  const explicitModule = (process.env.HAMMER_WORKFLOW_WRITE_GATE_MODULE ?? process.env.GSD_WORKFLOW_WRITE_GATE_MODULE)?.trim();
   if (explicitModule) {
     if (/^[a-z]{2,}:/i.test(explicitModule) && !explicitModule.startsWith("file:")) {
-      throw new Error("GSD_WORKFLOW_WRITE_GATE_MODULE only supports file: URLs or filesystem paths.");
+      throw new Error("HAMMER_WORKFLOW_WRITE_GATE_MODULE only supports file: URLs or filesystem paths.");
     }
     candidates.push(explicitModule.startsWith("file:") ? explicitModule : toFileUrl(explicitModule));
   }
@@ -486,10 +488,11 @@ async function importLocalModule<T>(relativePath: string): Promise<T> {
 
 function getWorkflowExecutorModuleCandidates(env: NodeJS.ProcessEnv = process.env): string[] {
   const candidates: string[] = [];
-  const explicitModule = env.GSD_WORKFLOW_EXECUTORS_MODULE?.trim();
+  // HAMMER_WORKFLOW_EXECUTORS_MODULE is canonical; GSD_WORKFLOW_EXECUTORS_MODULE is a legacy alias — bootstrap-migration
+  const explicitModule = (env.HAMMER_WORKFLOW_EXECUTORS_MODULE ?? env.GSD_WORKFLOW_EXECUTORS_MODULE)?.trim();
   if (explicitModule) {
     if (/^[a-z]{2,}:/i.test(explicitModule) && !explicitModule.startsWith("file:")) {
-      throw new Error("GSD_WORKFLOW_EXECUTORS_MODULE only supports file: URLs or filesystem paths.");
+      throw new Error("HAMMER_WORKFLOW_EXECUTORS_MODULE only supports file: URLs or filesystem paths.");
     }
     candidates.push(explicitModule.startsWith("file:") ? explicitModule : toFileUrl(explicitModule));
   }
@@ -520,9 +523,9 @@ async function getWorkflowToolExecutors(): Promise<WorkflowToolExecutors> {
       }
 
       throw new Error(
-        "Unable to load GSD workflow executor bridge for MCP mutation tools. " +
-        "Set GSD_WORKFLOW_EXECUTORS_MODULE to an importable workflow-tool-executors module, " +
-        "or run the MCP server from a GSD checkout that includes src/resources/extensions/gsd/tools/workflow-tool-executors.(js|ts). " +
+        "Unable to load Hammer workflow executor bridge for MCP mutation tools. " +
+        "Set HAMMER_WORKFLOW_EXECUTORS_MODULE to an importable workflow-tool-executors module, " +
+        "or run the MCP server from a Hammer checkout that includes src/resources/extensions/gsd/tools/workflow-tool-executors.(js|ts). " +
         `Attempts: ${attempts.join("; ")}`,
       );
     })();
@@ -552,7 +555,7 @@ async function getWorkflowWriteGateModule(): Promise<WorkflowWriteGateModule> {
       }
 
       throw new Error(
-        "Unable to load GSD write-gate bridge for workflow MCP tools. " +
+        "Unable to load Hammer write-gate bridge for workflow MCP tools. " +
         `Attempts: ${attempts.join("; ")}`,
       );
     })();
@@ -570,6 +573,40 @@ interface McpToolServer {
 }
 
 export const WORKFLOW_TOOL_NAMES = [
+  // Canonical hammer_* tool names — primary surface
+  "hammer_decision_save",
+  "hammer_save_decision",
+  "hammer_requirement_update",
+  "hammer_update_requirement",
+  "hammer_requirement_save",
+  "hammer_save_requirement",
+  "hammer_milestone_generate_id",
+  "hammer_generate_milestone_id",
+  "hammer_plan_milestone",
+  "hammer_plan_slice",
+  "hammer_plan_task",
+  "hammer_task_plan",
+  "hammer_replan_slice",
+  "hammer_slice_replan",
+  "hammer_slice_complete",
+  "hammer_complete_slice",
+  "hammer_skip_slice",
+  "hammer_complete_milestone",
+  "hammer_milestone_complete",
+  "hammer_validate_milestone",
+  "hammer_milestone_validate",
+  "hammer_reassess_roadmap",
+  "hammer_roadmap_reassess",
+  "hammer_save_gate_result",
+  "hammer_summary_save",
+  "hammer_task_complete",
+  "hammer_complete_task",
+  "hammer_milestone_status",
+  "hammer_journal_query",
+  "hammer_capture_thought",
+  "hammer_memory_query",
+  "hammer_memory_graph",
+  // Legacy gsd_* aliases — compatibility for existing MCP clients
   "gsd_decision_save",
   "gsd_save_decision",
   "gsd_requirement_update",
@@ -610,7 +647,8 @@ export const WORKFLOW_TOOL_NAMES = [
 const DEFAULT_WORKFLOW_OP_TIMEOUT_MS = 5 * 60 * 1000;
 
 function getWorkflowOpTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.GSD_MCP_WORKFLOW_TIMEOUT_MS?.trim();
+  // HAMMER_MCP_WORKFLOW_TIMEOUT_MS is canonical; GSD_MCP_WORKFLOW_TIMEOUT_MS is a legacy alias — bootstrap-migration
+  const raw = (env.HAMMER_MCP_WORKFLOW_TIMEOUT_MS ?? env.GSD_MCP_WORKFLOW_TIMEOUT_MS)?.trim();
   if (!raw) return DEFAULT_WORKFLOW_OP_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_WORKFLOW_OP_TIMEOUT_MS;
@@ -692,7 +730,7 @@ async function runSerializedWorkflowOperation<T>(fn: () => Promise<T>): Promise<
     let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error(`Workflow operation exceeded ${timeoutMs}ms deadline (GSD_MCP_WORKFLOW_TIMEOUT_MS)`));
+        reject(new Error(`Workflow operation exceeded ${timeoutMs}ms deadline (HAMMER_MCP_WORKFLOW_TIMEOUT_MS)`));
       }, timeoutMs);
     });
     try {
@@ -753,7 +791,7 @@ async function handleTaskComplete(
   projectDir: string,
   args: Omit<z.infer<typeof taskCompleteSchema>, "projectDir">,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_task_complete", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_task_complete", projectDir, args.milestoneId);
   const { executeTaskComplete } = await getWorkflowToolExecutors();
   // Pass `args` through directly rather than destructure-then-rebuild. The
   // previous implementation re-listed each field, which silently dropped
@@ -770,7 +808,7 @@ async function handleSliceComplete(
   projectDir: string,
   args: z.infer<typeof sliceCompleteSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_slice_complete", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_slice_complete", projectDir, args.milestoneId);
   const { executeSliceComplete } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -782,7 +820,7 @@ async function handleReplanSlice(
   projectDir: string,
   args: z.infer<typeof replanSliceSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_replan_slice", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_replan_slice", projectDir, args.milestoneId);
   const { executeReplanSlice } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -794,7 +832,7 @@ async function handleCompleteMilestone(
   projectDir: string,
   args: z.infer<typeof completeMilestoneSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_complete_milestone", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_complete_milestone", projectDir, args.milestoneId);
   const { executeCompleteMilestone } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -806,7 +844,7 @@ async function handleValidateMilestone(
   projectDir: string,
   args: z.infer<typeof validateMilestoneSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_validate_milestone", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_validate_milestone", projectDir, args.milestoneId);
   const { executeValidateMilestone } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -818,7 +856,7 @@ async function handleReassessRoadmap(
   projectDir: string,
   args: z.infer<typeof reassessRoadmapSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_reassess_roadmap", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_reassess_roadmap", projectDir, args.milestoneId);
   const { executeReassessRoadmap } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -830,7 +868,7 @@ async function handleSaveGateResult(
   projectDir: string,
   args: z.infer<typeof saveGateResultSchema>,
 ): Promise<unknown> {
-  await enforceWorkflowWriteGate("gsd_save_gate_result", projectDir, args.milestoneId);
+  await enforceWorkflowWriteGate("hammer_save_gate_result", projectDir, args.milestoneId);
   const { executeSaveGateResult } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
   return adaptExecutorResult(
@@ -1320,13 +1358,13 @@ const journalQuerySchema = z.object(journalQueryParams);
 
 export function registerWorkflowTools(server: McpToolServer): void {
   server.tool(
-    "gsd_decision_save",
-    "Record a project decision to the GSD database and regenerate DECISIONS.md.",
+    "hammer_decision_save",
+    "Record a project decision to the Hammer database and regenerate DECISIONS.md.",
     decisionSaveParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(decisionSaveSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_decision_save", projectDir);
+      await enforceWorkflowWriteGate("hammer_decision_save", projectDir);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { saveDecisionToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return saveDecisionToDb(params, projectDir);
@@ -1335,14 +1373,48 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_decision_save — legacy alias for hammer_decision_save for existing MCP clients.
+  server.tool(
+    "gsd_decision_save",
+    "Legacy alias for hammer_decision_save. Record a project decision to the Hammer database and regenerate DECISIONS.md.",
+    decisionSaveParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(decisionSaveSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_decision_save", projectDir);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { saveDecisionToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return saveDecisionToDb(params, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Saved decision ${result.id}` }] };
+    },
+  );
+
+  server.tool(
+    "hammer_save_decision",
+    "Alias for hammer_decision_save. Record a project decision to the Hammer database and regenerate DECISIONS.md.",
+    decisionSaveParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(decisionSaveSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_decision_save", projectDir);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { saveDecisionToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return saveDecisionToDb(params, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Saved decision ${result.id}` }] };
+    },
+  );
+
+  // gsd_save_decision — legacy alias for compatibility.
   server.tool(
     "gsd_save_decision",
-    "Alias for gsd_decision_save. Record a project decision to the GSD database and regenerate DECISIONS.md.",
+    "Legacy alias for hammer_decision_save. Record a project decision to the Hammer database.",
     decisionSaveParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(decisionSaveSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_decision_save", projectDir);
+      await enforceWorkflowWriteGate("hammer_decision_save", projectDir);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { saveDecisionToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return saveDecisionToDb(params, projectDir);
@@ -1352,13 +1424,13 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_requirement_update",
-    "Update an existing requirement in the GSD database and regenerate REQUIREMENTS.md.",
+    "hammer_requirement_update",
+    "Update an existing requirement in the Hammer database and regenerate REQUIREMENTS.md.",
     requirementUpdateParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(requirementUpdateSchema, args);
       const { projectDir, id, ...updates } = parsed;
-      await enforceWorkflowWriteGate("gsd_requirement_update", projectDir);
+      await enforceWorkflowWriteGate("hammer_requirement_update", projectDir);
       await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { updateRequirementInDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return updateRequirementInDb(id, updates, projectDir);
@@ -1367,14 +1439,48 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_requirement_update — legacy alias for compatibility.
+  server.tool(
+    "gsd_requirement_update",
+    "Legacy alias for hammer_requirement_update. Update an existing requirement in the Hammer database.",
+    requirementUpdateParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(requirementUpdateSchema, args);
+      const { projectDir, id, ...updates } = parsed;
+      await enforceWorkflowWriteGate("hammer_requirement_update", projectDir);
+      await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { updateRequirementInDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return updateRequirementInDb(id, updates, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Updated requirement ${id}` }] };
+    },
+  );
+
+  server.tool(
+    "hammer_update_requirement",
+    "Alias for hammer_requirement_update. Update an existing requirement in the Hammer database.",
+    requirementUpdateParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(requirementUpdateSchema, args);
+      const { projectDir, id, ...updates } = parsed;
+      await enforceWorkflowWriteGate("hammer_requirement_update", projectDir);
+      await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { updateRequirementInDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return updateRequirementInDb(id, updates, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Updated requirement ${id}` }] };
+    },
+  );
+
+  // gsd_update_requirement — legacy alias for compatibility.
   server.tool(
     "gsd_update_requirement",
-    "Alias for gsd_requirement_update. Update an existing requirement in the GSD database and regenerate REQUIREMENTS.md.",
+    "Legacy alias for hammer_requirement_update. Update an existing requirement in the Hammer database.",
     requirementUpdateParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(requirementUpdateSchema, args);
       const { projectDir, id, ...updates } = parsed;
-      await enforceWorkflowWriteGate("gsd_requirement_update", projectDir);
+      await enforceWorkflowWriteGate("hammer_requirement_update", projectDir);
       await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { updateRequirementInDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return updateRequirementInDb(id, updates, projectDir);
@@ -1384,13 +1490,13 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_requirement_save",
-    "Record a new requirement to the GSD database and regenerate REQUIREMENTS.md.",
+    "hammer_requirement_save",
+    "Record a new requirement to the Hammer database and regenerate REQUIREMENTS.md.",
     requirementSaveParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(requirementSaveSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_requirement_save", projectDir);
+      await enforceWorkflowWriteGate("hammer_requirement_save", projectDir);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { saveRequirementToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return saveRequirementToDb(params, projectDir);
@@ -1399,14 +1505,48 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_requirement_save — legacy alias for compatibility.
+  server.tool(
+    "gsd_requirement_save",
+    "Legacy alias for hammer_requirement_save. Record a new requirement to the Hammer database.",
+    requirementSaveParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(requirementSaveSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_requirement_save", projectDir);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { saveRequirementToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return saveRequirementToDb(params, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Saved requirement ${result.id}` }] };
+    },
+  );
+
+  server.tool(
+    "hammer_save_requirement",
+    "Alias for hammer_requirement_save. Record a new requirement to the Hammer database.",
+    requirementSaveParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(requirementSaveSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_requirement_save", projectDir);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { saveRequirementToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
+        return saveRequirementToDb(params, projectDir);
+      });
+      return { content: [{ type: "text" as const, text: `Saved requirement ${result.id}` }] };
+    },
+  );
+
+  // gsd_save_requirement — legacy alias for compatibility.
   server.tool(
     "gsd_save_requirement",
-    "Alias for gsd_requirement_save. Record a new requirement to the GSD database and regenerate REQUIREMENTS.md.",
+    "Legacy alias for hammer_requirement_save. Record a new requirement to the Hammer database.",
     requirementSaveParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(requirementSaveSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_requirement_save", projectDir);
+      await enforceWorkflowWriteGate("hammer_requirement_save", projectDir);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { saveRequirementToDb } = await importLocalModule<any>("../../../src/resources/extensions/gsd/db-writer.js");
         return saveRequirementToDb(params, projectDir);
@@ -1416,12 +1556,12 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_milestone_generate_id",
-    "Generate the next milestone ID for a new GSD milestone.",
+    "hammer_milestone_generate_id",
+    "Generate the next milestone ID for a new Hammer milestone.",
     milestoneGenerateIdParams,
     async (args: Record<string, unknown>) => {
       const { projectDir } = parseWorkflowArgs(milestoneGenerateIdSchema, args);
-      await enforceWorkflowWriteGate("gsd_milestone_generate_id", projectDir);
+      await enforceWorkflowWriteGate("hammer_milestone_generate_id", projectDir);
       const id = await runSerializedWorkflowDbOperation(projectDir, () =>
         generateOrReuseMilestoneId(projectDir),
       );
@@ -1429,13 +1569,43 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_milestone_generate_id — legacy alias for compatibility.
+  server.tool(
+    "gsd_milestone_generate_id",
+    "Legacy alias for hammer_milestone_generate_id. Generate the next milestone ID.",
+    milestoneGenerateIdParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir } = parseWorkflowArgs(milestoneGenerateIdSchema, args);
+      await enforceWorkflowWriteGate("hammer_milestone_generate_id", projectDir);
+      const id = await runSerializedWorkflowDbOperation(projectDir, () =>
+        generateOrReuseMilestoneId(projectDir),
+      );
+      return { content: [{ type: "text" as const, text: id }] };
+    },
+  );
+
+  server.tool(
+    "hammer_generate_milestone_id",
+    "Alias for hammer_milestone_generate_id. Generate the next milestone ID for a new Hammer milestone.",
+    milestoneGenerateIdParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir } = parseWorkflowArgs(milestoneGenerateIdSchema, args);
+      await enforceWorkflowWriteGate("hammer_milestone_generate_id", projectDir);
+      const id = await runSerializedWorkflowDbOperation(projectDir, () =>
+        generateOrReuseMilestoneId(projectDir),
+      );
+      return { content: [{ type: "text" as const, text: id }] };
+    },
+  );
+
+  // gsd_generate_milestone_id — legacy alias for compatibility.
   server.tool(
     "gsd_generate_milestone_id",
-    "Alias for gsd_milestone_generate_id. Generate the next milestone ID for a new GSD milestone.",
+    "Legacy alias for hammer_milestone_generate_id. Generate the next milestone ID.",
     milestoneGenerateIdParams,
     async (args: Record<string, unknown>) => {
       const { projectDir } = parseWorkflowArgs(milestoneGenerateIdSchema, args);
-      await enforceWorkflowWriteGate("gsd_milestone_generate_id", projectDir);
+      await enforceWorkflowWriteGate("hammer_milestone_generate_id", projectDir);
       const id = await runSerializedWorkflowDbOperation(projectDir, () =>
         generateOrReuseMilestoneId(projectDir),
       );
@@ -1444,13 +1614,29 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_plan_milestone",
-    "Write milestone planning state to the GSD database and render ROADMAP.md from DB.",
+    "hammer_plan_milestone",
+    "Write milestone planning state to the Hammer database and render ROADMAP.md from DB.",
     planMilestoneParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(planMilestoneSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_plan_milestone", projectDir, params.milestoneId);
+      await enforceWorkflowWriteGate("hammer_plan_milestone", projectDir, params.milestoneId);
+      const { executePlanMilestone } = await getWorkflowToolExecutors();
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executePlanMilestone(params, projectDir)),
+      );
+    },
+  );
+
+  // gsd_plan_milestone — legacy alias for compatibility.
+  server.tool(
+    "gsd_plan_milestone",
+    "Legacy alias for hammer_plan_milestone. Write milestone planning state to the Hammer database.",
+    planMilestoneParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(planMilestoneSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_plan_milestone", projectDir, params.milestoneId);
       const { executePlanMilestone } = await getWorkflowToolExecutors();
       return adaptExecutorResult(
         await runSerializedWorkflowOperation(() => executePlanMilestone(params, projectDir)),
@@ -1459,13 +1645,29 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_plan_slice",
-    "Write slice/task planning state to the GSD database and render plan artifacts from DB.",
+    "hammer_plan_slice",
+    "Write slice/task planning state to the Hammer database and render plan artifacts from DB.",
     planSliceParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(planSliceSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_plan_slice", projectDir, params.milestoneId);
+      await enforceWorkflowWriteGate("hammer_plan_slice", projectDir, params.milestoneId);
+      const { executePlanSlice } = await getWorkflowToolExecutors();
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executePlanSlice(params, projectDir)),
+      );
+    },
+  );
+
+  // gsd_plan_slice — legacy alias for compatibility.
+  server.tool(
+    "gsd_plan_slice",
+    "Legacy alias for hammer_plan_slice. Write slice/task planning state to the Hammer database.",
+    planSliceParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(planSliceSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_plan_slice", projectDir, params.milestoneId);
       const { executePlanSlice } = await getWorkflowToolExecutors();
       return adaptExecutorResult(
         await runSerializedWorkflowOperation(() => executePlanSlice(params, projectDir)),
@@ -1474,13 +1676,13 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_plan_task",
-    "Write task planning state to the GSD database and render tasks/T##-PLAN.md from DB.",
+    "hammer_plan_task",
+    "Write task planning state to the Hammer database and render tasks/T##-PLAN.md from DB.",
     planTaskParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(planTaskSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_plan_task", projectDir, params.milestoneId);
+      await enforceWorkflowWriteGate("hammer_plan_task", projectDir, params.milestoneId);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { handlePlanTask } = await importLocalModule<any>("../../../src/resources/extensions/gsd/tools/plan-task.js");
         return handlePlanTask(params, projectDir);
@@ -1494,14 +1696,58 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_plan_task — legacy alias for compatibility.
+  server.tool(
+    "gsd_plan_task",
+    "Legacy alias for hammer_plan_task. Write task planning state to the Hammer database.",
+    planTaskParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(planTaskSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_plan_task", projectDir, params.milestoneId);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { handlePlanTask } = await importLocalModule<any>("../../../src/resources/extensions/gsd/tools/plan-task.js");
+        return handlePlanTask(params, projectDir);
+      });
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
+      return {
+        content: [{ type: "text" as const, text: `Planned task ${result.taskId} (${result.sliceId}/${result.milestoneId})` }],
+      };
+    },
+  );
+
+  server.tool(
+    "hammer_task_plan",
+    "Alias for hammer_plan_task. Write task planning state to the Hammer database.",
+    planTaskParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(planTaskSchema, args);
+      const { projectDir, ...params } = parsed;
+      await enforceWorkflowWriteGate("hammer_plan_task", projectDir, params.milestoneId);
+      const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { handlePlanTask } = await importLocalModule<any>("../../../src/resources/extensions/gsd/tools/plan-task.js");
+        return handlePlanTask(params, projectDir);
+      });
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
+      return {
+        content: [{ type: "text" as const, text: `Planned task ${result.taskId} (${result.sliceId}/${result.milestoneId})` }],
+      };
+    },
+  );
+
+  // gsd_task_plan — legacy alias for compatibility.
   server.tool(
     "gsd_task_plan",
-    "Alias for gsd_plan_task. Write task planning state to the GSD database and render tasks/T##-PLAN.md from DB.",
+    "Legacy alias for hammer_plan_task. Write task planning state to the Hammer database.",
     planTaskParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(planTaskSchema, args);
       const { projectDir, ...params } = parsed;
-      await enforceWorkflowWriteGate("gsd_plan_task", projectDir, params.milestoneId);
+      await enforceWorkflowWriteGate("hammer_plan_task", projectDir, params.milestoneId);
       const result = await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { handlePlanTask } = await importLocalModule<any>("../../../src/resources/extensions/gsd/tools/plan-task.js");
         return handlePlanTask(params, projectDir);
@@ -1516,7 +1762,7 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_replan_slice",
+    "hammer_replan_slice",
     "Replan a slice after a blocker is discovered, preserving completed tasks and re-rendering PLAN.md + REPLAN.md.",
     replanSliceParams,
     async (args: Record<string, unknown>) => {
@@ -1525,9 +1771,10 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_replan_slice — legacy alias for compatibility.
   server.tool(
-    "gsd_slice_replan",
-    "Alias for gsd_replan_slice. Replan a slice after a blocker is discovered.",
+    "gsd_replan_slice",
+    "Legacy alias for hammer_replan_slice. Replan a slice after a blocker is discovered.",
     replanSliceParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(replanSliceSchema, args);
@@ -1536,8 +1783,29 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_slice_complete",
-    "Record a completed slice to the GSD database, render SUMMARY.md + UAT.md, and update roadmap projection.",
+    "hammer_slice_replan",
+    "Alias for hammer_replan_slice. Replan a slice after a blocker is discovered.",
+    replanSliceParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(replanSliceSchema, args);
+      return handleReplanSlice(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_slice_replan — legacy alias for compatibility.
+  server.tool(
+    "gsd_slice_replan",
+    "Legacy alias for hammer_replan_slice. Replan a slice after a blocker is discovered.",
+    replanSliceParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(replanSliceSchema, args);
+      return handleReplanSlice(parsed.projectDir, parsed);
+    },
+  );
+
+  server.tool(
+    "hammer_slice_complete",
+    "Record a completed slice to the Hammer database, render SUMMARY.md + UAT.md, and update roadmap projection.",
     sliceCompleteParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(sliceCompleteSchema, args);
@@ -1545,9 +1813,31 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_slice_complete — legacy alias for compatibility.
+  server.tool(
+    "gsd_slice_complete",
+    "Legacy alias for hammer_slice_complete. Record a completed slice to the Hammer database.",
+    sliceCompleteParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(sliceCompleteSchema, args);
+      return handleSliceComplete(parsed.projectDir, parsed);
+    },
+  );
+
+  server.tool(
+    "hammer_complete_slice",
+    "Alias for hammer_slice_complete. Record a completed slice to the Hammer database.",
+    sliceCompleteParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(sliceCompleteSchema, args);
+      return handleSliceComplete(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_complete_slice — legacy alias for compatibility.
   server.tool(
     "gsd_complete_slice",
-    "Alias for gsd_slice_complete. Record a completed slice to the GSD database and render summary/UAT artifacts.",
+    "Legacy alias for hammer_slice_complete. Record a completed slice to the Hammer database.",
     sliceCompleteParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(sliceCompleteSchema, args);
@@ -1556,12 +1846,43 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_skip_slice",
+    "hammer_skip_slice",
     "Mark a slice as skipped so auto-mode advances past it without executing.",
     skipSliceParams,
     async (args: Record<string, unknown>) => {
       const { projectDir, milestoneId, sliceId, reason } = parseWorkflowArgs(skipSliceSchema, args);
-      await enforceWorkflowWriteGate("gsd_skip_slice", projectDir, milestoneId);
+      await enforceWorkflowWriteGate("hammer_skip_slice", projectDir, milestoneId);
+      await runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { getSlice, updateSliceStatus } = await importLocalModule<any>("../../../src/resources/extensions/gsd/gsd-db.js");
+        const { invalidateStateCache } = await importLocalModule<any>("../../../src/resources/extensions/gsd/state.js");
+        const { rebuildState } = await importLocalModule<any>("../../../src/resources/extensions/gsd/doctor.js");
+        const slice = getSlice(milestoneId, sliceId);
+        if (!slice) {
+          throw new Error(`Slice ${sliceId} not found in milestone ${milestoneId}`);
+        }
+        if (slice.status === "complete" || slice.status === "done") {
+          throw new Error(`Slice ${sliceId} is already complete and cannot be skipped`);
+        }
+        if (slice.status !== "skipped") {
+          updateSliceStatus(milestoneId, sliceId, "skipped");
+          invalidateStateCache();
+          await rebuildState(projectDir);
+        }
+      });
+      return {
+        content: [{ type: "text" as const, text: `Skipped slice ${sliceId} (${milestoneId}). Reason: ${reason ?? "User-directed skip"}.` }],
+      };
+    },
+  );
+
+  // gsd_skip_slice — legacy alias for compatibility.
+  server.tool(
+    "gsd_skip_slice",
+    "Legacy alias for hammer_skip_slice. Mark a slice as skipped so auto-mode advances past it.",
+    skipSliceParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir, milestoneId, sliceId, reason } = parseWorkflowArgs(skipSliceSchema, args);
+      await enforceWorkflowWriteGate("hammer_skip_slice", projectDir, milestoneId);
       await runSerializedWorkflowDbOperation(projectDir, async () => {
         const { getSlice, updateSliceStatus } = await importLocalModule<any>("../../../src/resources/extensions/gsd/gsd-db.js");
         const { invalidateStateCache } = await importLocalModule<any>("../../../src/resources/extensions/gsd/state.js");
@@ -1586,8 +1907,8 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_complete_milestone",
-    "Record a completed milestone to the GSD database and render its SUMMARY.md.",
+    "hammer_complete_milestone",
+    "Record a completed milestone to the Hammer database and render its SUMMARY.md.",
     completeMilestoneParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(completeMilestoneSchema, args);
@@ -1595,9 +1916,31 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_complete_milestone — legacy alias for compatibility.
+  server.tool(
+    "gsd_complete_milestone",
+    "Legacy alias for hammer_complete_milestone. Record a completed milestone to the Hammer database.",
+    completeMilestoneParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(completeMilestoneSchema, args);
+      return handleCompleteMilestone(parsed.projectDir, parsed);
+    },
+  );
+
+  server.tool(
+    "hammer_milestone_complete",
+    "Alias for hammer_complete_milestone. Record a completed milestone to the Hammer database.",
+    completeMilestoneParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(completeMilestoneSchema, args);
+      return handleCompleteMilestone(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_milestone_complete — legacy alias for compatibility.
   server.tool(
     "gsd_milestone_complete",
-    "Alias for gsd_complete_milestone. Record a completed milestone to the GSD database and render its SUMMARY.md.",
+    "Legacy alias for hammer_complete_milestone. Record a completed milestone to the Hammer database.",
     completeMilestoneParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(completeMilestoneSchema, args);
@@ -1606,8 +1949,8 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_validate_milestone",
-    "Validate a milestone, persist validation results to the GSD database, and render VALIDATION.md.",
+    "hammer_validate_milestone",
+    "Validate a milestone, persist validation results to the Hammer database, and render VALIDATION.md.",
     validateMilestoneParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(validateMilestoneSchema, args);
@@ -1615,9 +1958,31 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_validate_milestone — legacy alias for compatibility.
+  server.tool(
+    "gsd_validate_milestone",
+    "Legacy alias for hammer_validate_milestone. Validate a milestone and render VALIDATION.md.",
+    validateMilestoneParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(validateMilestoneSchema, args);
+      return handleValidateMilestone(parsed.projectDir, parsed);
+    },
+  );
+
+  server.tool(
+    "hammer_milestone_validate",
+    "Alias for hammer_validate_milestone. Validate a milestone and render VALIDATION.md.",
+    validateMilestoneParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(validateMilestoneSchema, args);
+      return handleValidateMilestone(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_milestone_validate — legacy alias for compatibility.
   server.tool(
     "gsd_milestone_validate",
-    "Alias for gsd_validate_milestone. Validate a milestone and render VALIDATION.md.",
+    "Legacy alias for hammer_validate_milestone. Validate a milestone and render VALIDATION.md.",
     validateMilestoneParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(validateMilestoneSchema, args);
@@ -1626,7 +1991,7 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_reassess_roadmap",
+    "hammer_reassess_roadmap",
     "Reassess a milestone roadmap after a slice completes, writing ASSESSMENT.md and re-rendering ROADMAP.md.",
     reassessRoadmapParams,
     async (args: Record<string, unknown>) => {
@@ -1635,9 +2000,10 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_reassess_roadmap — legacy alias for compatibility.
   server.tool(
-    "gsd_roadmap_reassess",
-    "Alias for gsd_reassess_roadmap. Reassess a roadmap after slice completion.",
+    "gsd_reassess_roadmap",
+    "Legacy alias for hammer_reassess_roadmap. Reassess a roadmap after slice completion.",
     reassessRoadmapParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(reassessRoadmapSchema, args);
@@ -1646,8 +2012,40 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
+    "hammer_roadmap_reassess",
+    "Alias for hammer_reassess_roadmap. Reassess a roadmap after slice completion.",
+    reassessRoadmapParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(reassessRoadmapSchema, args);
+      return handleReassessRoadmap(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_roadmap_reassess — legacy alias for compatibility.
+  server.tool(
+    "gsd_roadmap_reassess",
+    "Legacy alias for hammer_reassess_roadmap. Reassess a roadmap after slice completion.",
+    reassessRoadmapParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(reassessRoadmapSchema, args);
+      return handleReassessRoadmap(parsed.projectDir, parsed);
+    },
+  );
+
+  server.tool(
+    "hammer_save_gate_result",
+    "Save a quality gate result to the Hammer database.",
+    saveGateResultParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(saveGateResultSchema, args);
+      return handleSaveGateResult(parsed.projectDir, parsed);
+    },
+  );
+
+  // gsd_save_gate_result — legacy alias for compatibility.
+  server.tool(
     "gsd_save_gate_result",
-    "Save a quality gate result to the GSD database.",
+    "Legacy alias for hammer_save_gate_result. Save a quality gate result to the Hammer database.",
     saveGateResultParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(saveGateResultSchema, args);
@@ -1656,13 +2054,37 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_summary_save",
-    "Save a GSD summary/research/context/assessment artifact to the database and disk.",
+    "hammer_summary_save",
+    "Save a Hammer summary/research/context/assessment artifact to the database and disk.",
     summarySaveParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(summarySaveSchema, args);
       const { projectDir, milestone_id, slice_id, task_id, artifact_type, content } = parsed;
-      await enforceWorkflowWriteGate("gsd_summary_save", projectDir, milestone_id);
+      await enforceWorkflowWriteGate("hammer_summary_save", projectDir, milestone_id);
+      const executors = await getWorkflowToolExecutors();
+      const supportedArtifactTypes = getSupportedSummaryArtifactTypes(executors);
+      if (!supportedArtifactTypes.includes(artifact_type)) {
+        throw new Error(
+          `artifact_type must be one of: ${supportedArtifactTypes.join(", ")}`,
+        );
+      }
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() =>
+          executors.executeSummarySave({ milestone_id, slice_id, task_id, artifact_type, content }, projectDir),
+        ),
+      );
+    },
+  );
+
+  // gsd_summary_save — legacy alias for compatibility.
+  server.tool(
+    "gsd_summary_save",
+    "Legacy alias for hammer_summary_save. Save a summary artifact to the Hammer database.",
+    summarySaveParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(summarySaveSchema, args);
+      const { projectDir, milestone_id, slice_id, task_id, artifact_type, content } = parsed;
+      await enforceWorkflowWriteGate("hammer_summary_save", projectDir, milestone_id);
       const executors = await getWorkflowToolExecutors();
       const supportedArtifactTypes = getSupportedSummaryArtifactTypes(executors);
       if (!supportedArtifactTypes.includes(artifact_type)) {
@@ -1679,8 +2101,8 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_task_complete",
-    "Record a completed task to the GSD database and render its SUMMARY.md.",
+    "hammer_task_complete",
+    "Record a completed task to the Hammer database and render its SUMMARY.md.",
     taskCompleteParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(taskCompleteSchema, args);
@@ -1689,9 +2111,33 @@ export function registerWorkflowTools(server: McpToolServer): void {
     },
   );
 
+  // gsd_task_complete — legacy alias for compatibility.
+  server.tool(
+    "gsd_task_complete",
+    "Legacy alias for hammer_task_complete. Record a completed task to the Hammer database.",
+    taskCompleteParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(taskCompleteSchema, args);
+      const { projectDir, ...taskArgs } = parsed;
+      return handleTaskComplete(projectDir, taskArgs);
+    },
+  );
+
+  server.tool(
+    "hammer_complete_task",
+    "Alias for hammer_task_complete. Record a completed task to the Hammer database.",
+    taskCompleteParams,
+    async (args: Record<string, unknown>) => {
+      const parsed = parseWorkflowArgs(taskCompleteSchema, args);
+      const { projectDir, ...taskArgs } = parsed;
+      return handleTaskComplete(projectDir, taskArgs);
+    },
+  );
+
+  // gsd_complete_task — legacy alias for compatibility.
   server.tool(
     "gsd_complete_task",
-    "Alias for gsd_task_complete. Record a completed task to the GSD database and render its SUMMARY.md.",
+    "Legacy alias for hammer_task_complete. Record a completed task to the Hammer database.",
     taskCompleteParams,
     async (args: Record<string, unknown>) => {
       const parsed = parseWorkflowArgs(taskCompleteSchema, args);
@@ -1701,13 +2147,25 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
-    "gsd_milestone_status",
-    "Read the current status of a milestone and all its slices from the GSD database.",
+    "hammer_milestone_status",
+    "Read the current status of a milestone and all its slices from the Hammer database.",
     milestoneStatusParams,
     async (args: Record<string, unknown>) => {
-      // gsd_milestone_status is a read-only query. In-process (query-tools.ts)
-      // does not apply the write-gate; MCP must match to avoid blocking reads
-      // during pending-gate or queue-mode states.
+      // hammer_milestone_status is a read-only query — no write gate needed.
+      const { projectDir, milestoneId } = parseWorkflowArgs(milestoneStatusSchema, args);
+      const { executeMilestoneStatus } = await getWorkflowToolExecutors();
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executeMilestoneStatus({ milestoneId }, projectDir)),
+      );
+    },
+  );
+
+  // gsd_milestone_status — legacy alias for compatibility.
+  server.tool(
+    "gsd_milestone_status",
+    "Legacy alias for hammer_milestone_status. Read the current status of a milestone from the Hammer database.",
+    milestoneStatusParams,
+    async (args: Record<string, unknown>) => {
       const { projectDir, milestoneId } = parseWorkflowArgs(milestoneStatusSchema, args);
       const { executeMilestoneStatus } = await getWorkflowToolExecutors();
       return adaptExecutorResult(
@@ -1717,8 +2175,24 @@ export function registerWorkflowTools(server: McpToolServer): void {
   );
 
   server.tool(
+    "hammer_journal_query",
+    "Query the structured event journal for Hammer auto-mode iterations.",
+    journalQueryParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir, limit, ...filters } = parseWorkflowArgs(journalQuerySchema, args);
+      const { queryJournal } = await importLocalModule<any>("../../../src/resources/extensions/gsd/journal.js");
+      const entries = queryJournal(projectDir, filters).slice(0, limit ?? 100);
+      if (entries.length === 0) {
+        return { content: [{ type: "text" as const, text: "No matching journal entries found." }] };
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(entries, null, 2) }] };
+    },
+  );
+
+  // gsd_journal_query — legacy alias for compatibility.
+  server.tool(
     "gsd_journal_query",
-    "Query the structured event journal for auto-mode iterations.",
+    "Legacy alias for hammer_journal_query. Query the structured event journal for auto-mode iterations.",
     journalQueryParams,
     async (args: Record<string, unknown>) => {
       const { projectDir, limit, ...filters } = parseWorkflowArgs(journalQuerySchema, args);
@@ -1733,11 +2207,9 @@ export function registerWorkflowTools(server: McpToolServer): void {
 
   // ─── ADR-013 step 3 — memory-store tools for external MCP clients ────────
   //
-  // The same three tools the LLM sees in-process as `capture_thought`,
-  // `memory_query`, and `gsd_graph` (the memory variant). MCP exposes them
-  // under the gsd_* prefix and renames the memory graph to gsd_memory_graph
-  // to avoid collision with the project knowledge graph tool registered as
-  // `gsd_graph` in server.ts.
+  // Canonical tool names are hammer_capture_thought, hammer_memory_query,
+  // hammer_memory_graph. The gsd_* names are retained as legacy aliases for
+  // existing MCP clients — legacy-alias.
 
   const MEMORY_CATEGORY = z.enum([
     "architecture",
@@ -1770,12 +2242,29 @@ export function registerWorkflowTools(server: McpToolServer): void {
   };
 
   server.tool(
-    "gsd_capture_thought",
-    "Record a durable project insight into the GSD memory store. Categories: architecture, convention, gotcha, preference, environment, pattern. Mirrors the in-process capture_thought tool for external MCP clients.",
+    "hammer_capture_thought",
+    "Record a durable project insight into the Hammer memory store. Categories: architecture, convention, gotcha, preference, environment, pattern. Mirrors the in-process capture_thought tool for external MCP clients.",
     captureThoughtParams,
     async (args: Record<string, unknown>) => {
       const { projectDir, ...params } = parseWorkflowArgs(captureThoughtSchema, args);
-      await enforceWorkflowWriteGate("gsd_capture_thought", projectDir);
+      await enforceWorkflowWriteGate("hammer_capture_thought", projectDir);
+      return runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { executeMemoryCapture } = await importLocalModule<any>(
+          "../../../src/resources/extensions/gsd/tools/memory-tools.js",
+        );
+        return executeMemoryCapture(params);
+      });
+    },
+  );
+
+  // gsd_capture_thought — legacy alias for hammer_capture_thought for existing MCP clients.
+  server.tool(
+    "gsd_capture_thought",
+    "Legacy alias for hammer_capture_thought. Record a durable project insight into the Hammer memory store.",
+    captureThoughtParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir, ...params } = parseWorkflowArgs(captureThoughtSchema, args);
+      await enforceWorkflowWriteGate("hammer_capture_thought", projectDir);
       return runSerializedWorkflowDbOperation(projectDir, async () => {
         const { executeMemoryCapture } = await importLocalModule<any>(
           "../../../src/resources/extensions/gsd/tools/memory-tools.js",
@@ -1809,8 +2298,24 @@ export function registerWorkflowTools(server: McpToolServer): void {
   };
 
   server.tool(
+    "hammer_memory_query",
+    "Search the Hammer memory store by keyword. Returns ranked memories with id, category, content, confidence, scope, and tags. Mirrors the in-process memory_query tool for external MCP clients.",
+    memoryQueryParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir, ...params } = parseWorkflowArgs(memoryQuerySchema, args);
+      return runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { executeMemoryQuery } = await importLocalModule<any>(
+          "../../../src/resources/extensions/gsd/tools/memory-tools.js",
+        );
+        return executeMemoryQuery(params);
+      });
+    },
+  );
+
+  // gsd_memory_query — legacy alias for hammer_memory_query for existing MCP clients.
+  server.tool(
     "gsd_memory_query",
-    "Search the GSD memory store by keyword. Returns ranked memories with id, category, content, confidence, scope, and tags. Mirrors the in-process memory_query tool for external MCP clients.",
+    "Legacy alias for hammer_memory_query. Search the Hammer memory store by keyword.",
     memoryQueryParams,
     async (args: Record<string, unknown>) => {
       const { projectDir, ...params } = parseWorkflowArgs(memoryQuerySchema, args);
@@ -1842,8 +2347,24 @@ export function registerWorkflowTools(server: McpToolServer): void {
   };
 
   server.tool(
+    "hammer_memory_graph",
+    "Inspect the relationship graph between memories in the Hammer memory store. mode=query walks edges from a given memoryId. mode=build is a placeholder reserved for future graph rebuilds.",
+    memoryGraphParams,
+    async (args: Record<string, unknown>) => {
+      const { projectDir, ...params } = parseWorkflowArgs(memoryGraphSchema, args);
+      return runSerializedWorkflowDbOperation(projectDir, async () => {
+        const { executeGsdGraph } = await importLocalModule<any>(
+          "../../../src/resources/extensions/gsd/tools/memory-tools.js",
+        );
+        return executeGsdGraph(params);
+      });
+    },
+  );
+
+  // gsd_memory_graph — legacy alias for hammer_memory_graph for existing MCP clients.
+  server.tool(
     "gsd_memory_graph",
-    "Inspect the relationship graph between memories. mode=query walks edges from a given memoryId. mode=build is a placeholder reserved for future graph rebuilds. Distinct from gsd_graph (project knowledge graph) — see ADR-013.",
+    "Legacy alias for hammer_memory_graph. Inspect the relationship graph between Hammer memories.",
     memoryGraphParams,
     async (args: Record<string, unknown>) => {
       const { projectDir, ...params } = parseWorkflowArgs(memoryGraphSchema, args);

@@ -1,10 +1,12 @@
 /**
- * MCP Server — registers GSD orchestration, project-state, and workflow tools.
+ * MCP Server — registers Hammer orchestration, project-state, and workflow tools.
  *
- * Session tools (6): gsd_execute, gsd_status, gsd_result, gsd_cancel, gsd_query, gsd_resolve_blocker
+ * Session tools (6): hammer_execute, hammer_status, hammer_result, hammer_cancel, hammer_query, hammer_resolve_blocker
  * Interactive tools (2): ask_user_questions, secure_env_collect via MCP form elicitation
- * Read-only tools (6): gsd_progress, gsd_roadmap, gsd_history, gsd_doctor, gsd_captures, gsd_knowledge
- * Workflow tools (29): headless-safe planning, metadata persistence, replanning, completion, validation, reassessment, gate result, status, and journal tools
+ * Read-only tools (6): hammer_progress, hammer_roadmap, hammer_history, hammer_doctor, hammer_captures, hammer_knowledge
+ * Workflow tools (29+): headless-safe planning, metadata persistence, replanning, completion, validation, reassessment, gate result, status, and journal tools
+ *
+ * Legacy gsd_* tool names are registered as compatibility aliases for existing MCP clients.
  *
  * Uses dynamic imports for @modelcontextprotocol/sdk because TS Node16
  * cannot resolve the SDK's subpath exports statically (same pattern as
@@ -23,7 +25,7 @@ import { readHistory } from './readers/metrics.js';
 import { readCaptures } from './readers/captures.js';
 import { readKnowledge } from './readers/knowledge.js';
 import { buildGraph, writeGraph, writeSnapshot, graphStatus, graphQuery, graphDiff } from './readers/graph.js';
-import { resolveGsdRoot } from './readers/paths.js';
+import { resolveHammerRoot } from './readers/paths.js';
 import { runDoctorLite } from './readers/doctor-lite.js';
 import { registerWorkflowTools, validateProjectDir } from './workflow-tools.js';
 import { applySecrets, checkExistingEnvKeys, detectDestination, resolveProjectEnvFilePath } from './env-writer.js';
@@ -33,7 +35,7 @@ import { applySecrets, checkExistingEnvKeys, detectDestination, resolveProjectEn
 // ---------------------------------------------------------------------------
 
 const MCP_PKG = '@modelcontextprotocol/sdk';
-const SERVER_NAME = 'gsd';
+const SERVER_NAME = 'hammer'; // Hammer-first identity; legacy 'gsd' server name is no longer advertised
 const SERVER_VERSION = '2.53.0';
 
 /** User-interaction timeout — generous but bounded so elicitation can't hang indefinitely (#4586). */
@@ -137,18 +139,29 @@ function normalizeQuery(query: string | undefined): QueryCategory {
 }
 
 async function readProjectState(projectDir: string, query: string | undefined): Promise<Record<string, unknown>> {
-  const gsdDir = join(resolve(projectDir), '.gsd');
+  const resolved = resolve(projectDir);
+
+  // Probe .hammer first (canonical), then .gsd (legacy import bridge — state-namespace-bridge)
+  const hammerDir = join(resolved, '.hammer');
+  const gsdDir = join(resolved, '.gsd');
+  const stateDir = (await fileExists(hammerDir)) ? hammerDir : gsdDir;
+  const stateRoot = stateDir === hammerDir ? '.hammer' : '.gsd'; // for observability
+
   const category = normalizeQuery(query);
   const wanted = new Set<ProjectStateField>(QUERY_FIELDS[category]);
 
   const result: Record<string, unknown> = {
-    projectDir: resolve(projectDir),
+    projectDir: resolved,
     query: category,
+    stateRoot, // canonical observability: which root was selected and why
+    stateRootReason: stateDir === hammerDir
+      ? 'canonical: .hammer directory found'
+      : 'legacy fallback: .gsd directory used (no .hammer present — legacy import bridge)',
   };
 
   if (wanted.has('state')) {
     try {
-      result.state = await readFile(join(gsdDir, 'STATE.md'), 'utf-8');
+      result.state = await readFile(join(stateDir, 'STATE.md'), 'utf-8');
     } catch {
       result.state = null;
     }
@@ -156,7 +169,7 @@ async function readProjectState(projectDir: string, query: string | undefined): 
 
   if (wanted.has('project')) {
     try {
-      result.project = await readFile(join(gsdDir, 'PROJECT.md'), 'utf-8');
+      result.project = await readFile(join(stateDir, 'PROJECT.md'), 'utf-8');
     } catch {
       result.project = null;
     }
@@ -164,14 +177,14 @@ async function readProjectState(projectDir: string, query: string | undefined): 
 
   if (wanted.has('requirements')) {
     try {
-      result.requirements = await readFile(join(gsdDir, 'REQUIREMENTS.md'), 'utf-8');
+      result.requirements = await readFile(join(stateDir, 'REQUIREMENTS.md'), 'utf-8');
     } catch {
       result.requirements = null;
     }
   }
 
   if (wanted.has('milestones')) {
-    const milestonesDir = join(gsdDir, 'milestones');
+    const milestonesDir = join(stateDir, 'milestones');
     try {
       const entries = await readdir(milestonesDir, { withFileTypes: true });
       const milestones: Array<{ id: string; hasRoadmap: boolean; hasSummary: boolean }> = [];
@@ -535,19 +548,19 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_execute — start a new GSD auto-mode session.
+  // hammer_execute — start a new Hammer auto-mode session.
   //
   // If the JSON-RPC request is aborted while the session is starting (or
   // immediately after), we cancel the session so we don't leak a background
   // RpcClient process. Once the session is running the caller should use
-  // `gsd_cancel` to stop it via sessionId.
+  // `hammer_cancel` to stop it via sessionId.
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_execute',
-    'Start a GSD auto-mode session for a project directory. Returns a sessionId for tracking.',
+    'hammer_execute',
+    'Start a Hammer auto-mode session for a project directory. Returns a sessionId for tracking.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
-      command: z.string().optional().describe('Command to send (default: "/gsd auto")'),
+      command: z.string().optional().describe('Command to send (default: "/hammer auto")'),
       model: z.string().optional().describe('Model ID override'),
       bare: z.boolean().optional().describe('Run in bare mode (skip user config)'),
     },
@@ -562,7 +575,36 @@ export async function createMcpServer(
         // newly-created session rather than leaving an orphaned process.
         if (extra?.signal?.aborted) {
           await sessionManager.cancelSession(sessionId).catch(() => { /* swallow */ });
-          return errorContent('gsd_execute aborted by client before returning');
+          return errorContent('hammer_execute aborted by client before returning');
+        }
+
+        return jsonContent({ sessionId, status: 'started' });
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_execute — legacy alias for hammer_execute for existing MCP clients.
+  server.tool(
+    'gsd_execute',
+    'Legacy alias for hammer_execute. Start a Hammer auto-mode session for a project directory. Returns a sessionId for tracking.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      command: z.string().optional().describe('Command to send (default: "/hammer auto")'),
+      model: z.string().optional().describe('Model ID override'),
+      bare: z.boolean().optional().describe('Run in bare mode (skip user config)'),
+    },
+    async (args: Record<string, unknown>, extra?: McpToolExtra) => {
+      const { projectDir, command, model, bare } = args as {
+        projectDir: string; command?: string; model?: string; bare?: boolean;
+      };
+      try {
+        const sessionId = await sessionManager.startSession(projectDir, { command, model, bare });
+
+        if (extra?.signal?.aborted) {
+          await sessionManager.cancelSession(sessionId).catch(() => { /* swallow */ });
+          return errorContent('gsd_execute (hammer_execute legacy alias) aborted by client before returning');
         }
 
         return jsonContent({ sessionId, status: 'started' });
@@ -573,13 +615,13 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_status — poll session status
+  // hammer_status — poll session status
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_status',
-    'Get the current status of a GSD session including progress, recent events, and pending blockers.',
+    'hammer_status',
+    'Get the current status of a Hammer session including progress, recent events, and pending blockers.',
     {
-      sessionId: z.string().describe('Session ID returned from gsd_execute'),
+      sessionId: z.string().describe('Session ID returned from hammer_execute'),
     },
     async (args: Record<string, unknown>) => {
       const { sessionId } = args as { sessionId: string };
@@ -616,14 +658,67 @@ export async function createMcpServer(
     },
   );
 
+  // gsd_status — legacy alias for hammer_status for existing MCP clients.
+  server.tool(
+    'gsd_status',
+    'Legacy alias for hammer_status. Get the current status of a Hammer session.',
+    {
+      sessionId: z.string().describe('Session ID returned from hammer_execute or gsd_execute'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { sessionId } = args as { sessionId: string };
+      try {
+        const session = sessionManager.getSession(sessionId);
+        if (!session) return errorContent(`Session not found: ${sessionId}`);
+
+        const durationMs = Date.now() - session.startTime;
+        const toolCallCount = session.events.filter(
+          (e) => (e as Record<string, unknown>).type === 'tool_use' ||
+                 (e as Record<string, unknown>).type === 'tool_execution_start'
+        ).length;
+
+        return jsonContent({
+          status: session.status,
+          progress: { eventCount: session.events.length, toolCalls: toolCallCount },
+          recentEvents: session.events.slice(-10),
+          pendingBlocker: session.pendingBlocker
+            ? { id: session.pendingBlocker.id, method: session.pendingBlocker.method, message: session.pendingBlocker.message }
+            : null,
+          cost: session.cost,
+          durationMs,
+        });
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
-  // gsd_result — get accumulated session result
+  // hammer_result — get accumulated session result
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_result',
-    'Get the result of a GSD session. Returns partial results if the session is still running.',
+    'hammer_result',
+    'Get the result of a Hammer session. Returns partial results if the session is still running.',
     {
-      sessionId: z.string().describe('Session ID returned from gsd_execute'),
+      sessionId: z.string().describe('Session ID returned from hammer_execute'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { sessionId } = args as { sessionId: string };
+      try {
+        const result = sessionManager.getResult(sessionId);
+        return jsonContent(result);
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_result — legacy alias for hammer_result for existing MCP clients.
+  server.tool(
+    'gsd_result',
+    'Legacy alias for hammer_result. Get the result of a Hammer session.',
+    {
+      sessionId: z.string().describe('Session ID returned from hammer_execute or gsd_execute'),
     },
     async (args: Record<string, unknown>) => {
       const { sessionId } = args as { sessionId: string };
@@ -637,21 +732,54 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_cancel — cancel a running session
+  // hammer_cancel — cancel a running session
   //
   // Supports two lookup strategies:
-  //   1. sessionId  — the ID returned from gsd_execute (primary)
+  //   1. sessionId  — the ID returned from hammer_execute (primary)
   //   2. projectDir — absolute path to the project directory (fallback)
   //
   // The projectDir fallback handles interactive sessions (started via
-  // `/gsd auto` in the terminal) and post-restart MCP sessions that were
+  // `/hammer auto` in the terminal) and post-restart MCP sessions that were
   // never registered with a sessionId in this server instance.
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_cancel',
-    'Cancel a running GSD session. Aborts the current operation and stops the process. Provide sessionId (from gsd_execute) or projectDir as a fallback for interactive/restarted sessions.',
+    'hammer_cancel',
+    'Cancel a running Hammer session. Aborts the current operation and stops the process. Provide sessionId (from hammer_execute) or projectDir as a fallback for interactive/restarted sessions.',
     {
-      sessionId: z.string().optional().describe('Session ID returned from gsd_execute'),
+      sessionId: z.string().optional().describe('Session ID returned from hammer_execute'),
+      projectDir: z.string().optional().describe('Absolute path to the project directory (fallback when sessionId is unavailable)'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { sessionId, projectDir } = args as { sessionId?: string; projectDir?: string };
+      try {
+        if (!sessionId && !projectDir) {
+          return errorContent('Either sessionId or projectDir must be provided');
+        }
+        if (sessionId) {
+          try {
+            await sessionManager.cancelSession(sessionId);
+          } catch (err) {
+            if (!projectDir || !(err instanceof Error) || !err.message.includes('Session not found')) {
+              throw err;
+            }
+            await sessionManager.cancelSessionByDir(projectDir);
+          }
+        } else if (projectDir) {
+          await sessionManager.cancelSessionByDir(projectDir);
+        }
+        return jsonContent({ cancelled: true });
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_cancel — legacy alias for hammer_cancel for existing MCP clients.
+  server.tool(
+    'gsd_cancel',
+    'Legacy alias for hammer_cancel. Cancel a running Hammer session.',
+    {
+      sessionId: z.string().optional().describe('Session ID returned from hammer_execute or gsd_execute'),
       projectDir: z.string().optional().describe('Absolute path to the project directory (fallback when sessionId is unavailable)'),
     },
     async (args: Record<string, unknown>) => {
@@ -680,16 +808,38 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_query — read project state from filesystem (no session needed).
+  // hammer_query — read project state from filesystem (no session needed).
   //
   // `query` is optional: when omitted the tool returns all fields (STATE.md,
-  // PROJECT.md, requirements, milestone listing). Accepted narrow values:
-  // "state" / "status", "project", "requirements", "milestones", "all".
-  // Unknown values fall back to "all" for forward-compatibility.
+  // PROJECT.md, requirements, milestone listing). Reads .hammer first,
+  // falls back to .gsd for legacy installations (legacy import bridge).
   // -----------------------------------------------------------------------
   server.tool(
+    'hammer_query',
+    'Query Hammer project state from the filesystem. Returns STATE.md, PROJECT.md, requirements, and milestone listing from .hammer (or .gsd for legacy projects). Pass `query` to narrow the response (accepted: "state"/"status", "project", "requirements", "milestones", "all"). Does not require an active session.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      query: z
+        .enum(['all', 'state', 'status', 'project', 'requirements', 'milestones'])
+        .optional()
+        .describe('Narrow the response to a single field (default: "all")'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, query } = args as { projectDir: string; query?: string };
+      try {
+        const validated = validateProjectDir(projectDir);
+        const state = await readProjectState(validated, query);
+        return jsonContent(state);
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_query — legacy alias for hammer_query for existing MCP clients.
+  server.tool(
     'gsd_query',
-    'Query GSD project state from the filesystem. By default returns STATE.md, PROJECT.md, requirements, and milestone listing. Pass `query` to narrow the response (accepted: "state"/"status", "project", "requirements", "milestones", "all"). Does not require an active session.',
+    'Legacy alias for hammer_query. Query Hammer project state from the filesystem. By default returns STATE.md, PROJECT.md, requirements, and milestone listing. Does not require an active session.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
       query: z
@@ -710,13 +860,32 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_resolve_blocker — resolve a pending blocker
+  // hammer_resolve_blocker — resolve a pending blocker
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_resolve_blocker',
-    'Resolve a pending blocker in a GSD session by sending a response to the UI request.',
+    'hammer_resolve_blocker',
+    'Resolve a pending blocker in a Hammer session by sending a response to the UI request.',
     {
-      sessionId: z.string().describe('Session ID returned from gsd_execute'),
+      sessionId: z.string().describe('Session ID returned from hammer_execute'),
+      response: z.string().describe('Response to send for the pending blocker'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { sessionId, response } = args as { sessionId: string; response: string };
+      try {
+        await sessionManager.resolveBlocker(sessionId, response);
+        return jsonContent({ resolved: true });
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_resolve_blocker — legacy alias for hammer_resolve_blocker for existing MCP clients.
+  server.tool(
+    'gsd_resolve_blocker',
+    'Legacy alias for hammer_resolve_blocker. Resolve a pending blocker in a Hammer session.',
+    {
+      sessionId: z.string().describe('Session ID returned from hammer_execute or gsd_execute'),
       response: z.string().describe('Response to send for the pending blocker'),
     },
     async (args: Record<string, unknown>) => {
@@ -814,11 +983,28 @@ export async function createMcpServer(
   // =======================================================================
 
   // -----------------------------------------------------------------------
-  // gsd_progress — structured project progress metrics
+  // hammer_progress — structured project progress metrics
   // -----------------------------------------------------------------------
   server.tool(
+    'hammer_progress',
+    'Get structured project progress: active milestone/slice/task, phase, completion counts, blockers, and next action. No session required — reads directly from .hammer/ (or .gsd/ for legacy projects) on disk.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir } = args as { projectDir: string };
+      try {
+        return jsonContent(readProgress(validateProjectDir(projectDir)));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_progress — legacy alias for hammer_progress for existing MCP clients.
+  server.tool(
     'gsd_progress',
-    'Get structured project progress: active milestone/slice/task, phase, completion counts, blockers, and next action. No session required — reads directly from .gsd/ on disk.',
+    'Legacy alias for hammer_progress. Get structured project progress metrics. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
     },
@@ -833,10 +1019,10 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_roadmap — milestone/slice/task structure with status
+  // hammer_roadmap — milestone/slice/task structure with status
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_roadmap',
+    'hammer_roadmap',
     'Get the full project roadmap structure: milestones with their slices, tasks, status, risk, and dependencies. Optionally filter to a single milestone. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
@@ -852,11 +1038,29 @@ export async function createMcpServer(
     },
   );
 
+  // gsd_roadmap — legacy alias for hammer_roadmap for existing MCP clients.
+  server.tool(
+    'gsd_roadmap',
+    'Legacy alias for hammer_roadmap. Get the full project roadmap structure. No session required.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      milestoneId: z.string().optional().describe('Filter to a specific milestone (e.g. "M001")'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, milestoneId } = args as { projectDir: string; milestoneId?: string };
+      try {
+        return jsonContent(readRoadmap(validateProjectDir(projectDir), milestoneId));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
-  // gsd_history — execution history with cost/token metrics
+  // hammer_history — execution history with cost/token metrics
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_history',
+    'hammer_history',
     'Get execution history with cost, token usage, model, and duration per unit. Returns totals across all units. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
@@ -872,12 +1076,48 @@ export async function createMcpServer(
     },
   );
 
+  // gsd_history — legacy alias for hammer_history for existing MCP clients.
+  server.tool(
+    'gsd_history',
+    'Legacy alias for hammer_history. Get execution history with cost, token usage, and duration. No session required.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      limit: z.number().optional().describe('Max entries to return (most recent first). Default: all.'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, limit } = args as { projectDir: string; limit?: number };
+      try {
+        return jsonContent(readHistory(validateProjectDir(projectDir), limit));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
-  // gsd_doctor — lightweight structural health check
+  // hammer_doctor — lightweight structural health check
   // -----------------------------------------------------------------------
   server.tool(
+    'hammer_doctor',
+    'Run a lightweight structural health check on the .hammer/ directory. Checks for missing files, status inconsistencies, and orphaned state. No session required.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      scope: z.string().optional().describe('Limit checks to a specific milestone (e.g. "M001")'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, scope } = args as { projectDir: string; scope?: string };
+      try {
+        return jsonContent(runDoctorLite(validateProjectDir(projectDir), scope));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_doctor — legacy alias for hammer_doctor for existing MCP clients.
+  server.tool(
     'gsd_doctor',
-    'Run a lightweight structural health check on the .gsd/ directory. Checks for missing files, status inconsistencies, and orphaned state. No session required.',
+    'Legacy alias for hammer_doctor. Run a lightweight structural health check. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
       scope: z.string().optional().describe('Limit checks to a specific milestone (e.g. "M001")'),
@@ -893,10 +1133,10 @@ export async function createMcpServer(
   );
 
   // -----------------------------------------------------------------------
-  // gsd_captures — pending captures and ideas
+  // hammer_captures — pending captures and ideas
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_captures',
+    'hammer_captures',
     'Get captured ideas and thoughts from CAPTURES.md with triage status. Filter by pending, actionable, or all. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
@@ -912,11 +1152,29 @@ export async function createMcpServer(
     },
   );
 
+  // gsd_captures — legacy alias for hammer_captures for existing MCP clients.
+  server.tool(
+    'gsd_captures',
+    'Legacy alias for hammer_captures. Get captured ideas and thoughts from CAPTURES.md. No session required.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      filter: z.enum(['all', 'pending', 'actionable']).optional().describe('Filter captures (default: "all")'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir, filter } = args as { projectDir: string; filter?: 'all' | 'pending' | 'actionable' };
+      try {
+        return jsonContent(readCaptures(validateProjectDir(projectDir), filter ?? 'all'));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
-  // gsd_knowledge — project knowledge base
+  // hammer_knowledge — project knowledge base
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_knowledge',
+    'hammer_knowledge',
     'Get the project knowledge base: rules, patterns, and lessons learned accumulated during development. No session required.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
@@ -931,23 +1189,40 @@ export async function createMcpServer(
     },
   );
 
+  // gsd_knowledge — legacy alias for hammer_knowledge for existing MCP clients.
+  server.tool(
+    'gsd_knowledge',
+    'Legacy alias for hammer_knowledge. Get the project knowledge base. No session required.',
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir } = args as { projectDir: string };
+      try {
+        return jsonContent(readKnowledge(validateProjectDir(projectDir)));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
-  // gsd_graph — knowledge graph for GSD projects
+  // hammer_graph — knowledge graph for Hammer projects
   //
   // Modes:
-  //   build   Parse .gsd/ artifacts and write graph.json atomically.
+  //   build   Parse .hammer/ artifacts and write graph.json atomically.
   //   query   Search the graph for nodes matching a term (BFS, budget-trimmed).
   //   status  Check whether graph.json exists and whether it is stale (>24h).
   //   diff    Compare graph.json with the last build snapshot.
   // -----------------------------------------------------------------------
   server.tool(
-    'gsd_graph',
+    'hammer_graph',
     [
-      'Manage the GSD project knowledge graph. No session required.',
+      'Manage the Hammer project knowledge graph. No session required.',
       '',
       'Modes:',
-      '  build   Parse .gsd/ artifacts (STATE.md, milestone ROADMAPs, slice PLANs,',
-      '          KNOWLEDGE.md) and write .gsd/graphs/graph.json atomically.',
+      '  build   Parse .hammer/ artifacts (STATE.md, milestone ROADMAPs, slice PLANs,',
+      '          KNOWLEDGE.md) and write .hammer/graphs/graph.json atomically.',
       '  query   Search graph nodes by term (BFS from seed matches, budget-trimmed).',
       '          Returns matching nodes and reachable edges within the token budget.',
       '  status  Show whether graph.json exists, its age, node/edge counts, and',
@@ -975,15 +1250,15 @@ export async function createMcpServer(
 
       try {
         const projectDir = validateProjectDir(rawProjectDir);
-        const gsdRoot = resolveGsdRoot(projectDir);
+        const hammerRoot = resolveHammerRoot(projectDir);
 
         switch (mode) {
           case 'build': {
             if (snapshot) {
-              await writeSnapshot(gsdRoot).catch(() => { /* best-effort */ });
+              await writeSnapshot(hammerRoot).catch(() => { /* best-effort */ });
             }
             const graph = await buildGraph(projectDir);
-            await writeGraph(gsdRoot, graph);
+            await writeGraph(hammerRoot, graph);
             return jsonContent({
               built: true,
               nodeCount: graph.nodes.length,
@@ -1002,6 +1277,67 @@ export async function createMcpServer(
             return jsonContent(result);
           }
 
+          case 'diff': {
+            const result = await graphDiff(projectDir);
+            return jsonContent(result);
+          }
+        }
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // gsd_graph — legacy alias for hammer_graph for existing MCP clients.
+  server.tool(
+    'gsd_graph',
+    [
+      'Legacy alias for hammer_graph. Manage the Hammer project knowledge graph. No session required.',
+    ].join('\n'),
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      mode: z.enum(['build', 'query', 'status', 'diff']).describe(
+        'Operation: build | query | status | diff',
+      ),
+      term: z.string().optional().describe('Search term for query mode (case-insensitive)'),
+      budget: z.number().optional().describe('Token budget for query mode (default: 4000)'),
+      snapshot: z.boolean().optional().describe('Write snapshot before build (for future diff)'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir: rawProjectDir, mode, term, budget, snapshot } = args as {
+        projectDir: string;
+        mode: 'build' | 'query' | 'status' | 'diff';
+        term?: string;
+        budget?: number;
+        snapshot?: boolean;
+      };
+
+      try {
+        const projectDir = validateProjectDir(rawProjectDir);
+        const hammerRoot = resolveHammerRoot(projectDir);
+
+        switch (mode) {
+          case 'build': {
+            if (snapshot) {
+              await writeSnapshot(hammerRoot).catch(() => { /* best-effort */ });
+            }
+            const graph = await buildGraph(projectDir);
+            await writeGraph(hammerRoot, graph);
+            return jsonContent({
+              built: true,
+              nodeCount: graph.nodes.length,
+              edgeCount: graph.edges.length,
+              builtAt: graph.builtAt,
+            });
+          }
+          case 'query': {
+            const result = await graphQuery(projectDir, term ?? '', budget);
+            return jsonContent(result);
+          }
+          case 'status': {
+            const result = await graphStatus(projectDir);
+            return jsonContent(result);
+          }
           case 'diff': {
             const result = await graphDiff(projectDir);
             return jsonContent(result);

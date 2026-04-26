@@ -1,7 +1,7 @@
 {
   "name": "@gsd-build/mcp-server",
   "version": "2.78.1",
-  "description": "MCP server exposing GSD orchestration tools for Claude Code, Cursor, and other MCP clients",
+  "description": "MCP server exposing Hammer orchestration tools for Claude Code, Cursor, and other MCP clients",
   "license": "MIT",
   "gsd": {
     "linkable": true,
@@ -26,6 +26,7 @@
     }
   },
   "bin": {
+    "hammer-mcp-server": "./dist/cli.js",
     "gsd-mcp-server": "./dist/cli.js"
   },
   "scripts": {
