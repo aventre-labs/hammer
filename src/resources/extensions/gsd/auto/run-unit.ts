@@ -17,6 +17,7 @@ import {
 import { debugLog } from "../debug-logger.js";
 import { logWarning, logError } from "../workflow-logger.js";
 import { resolveAutoSupervisorConfig } from "../preferences.js";
+import { adjustToolSet } from "../model-router.js";
 
 // Tracks the latest session-switch attempt so a late timeout settlement from an
 // older runUnit() call cannot clear the guard for a newer one.
@@ -109,6 +110,26 @@ export async function runUnit(
           isTransient: false,
         },
       };
+    }
+
+    try {
+      const runtimePi = pi as ExtensionAPI & {
+        getActiveTools?: () => string[];
+        setActiveTools?: (toolNames: string[]) => void;
+      };
+      if (typeof runtimePi.getActiveTools === "function" && typeof runtimePi.setActiveTools === "function") {
+        const activeToolNames = runtimePi.getActiveTools();
+        const { toolNames, removedTools } = adjustToolSet(
+          activeToolNames,
+          s.currentUnitModel.api,
+          s.currentUnitModel.provider,
+        );
+        if (removedTools.length > 0 || toolNames.length !== activeToolNames.length) {
+          runtimePi.setActiveTools(toolNames);
+        }
+      }
+    } catch (err) {
+      logWarning("engine", "Failed to reapply provider tool filtering after session creation", { error: String(err) });
     }
   }
 
