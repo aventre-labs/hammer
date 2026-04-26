@@ -97,8 +97,12 @@ export function parseCliArgs(argv: string[]): CliFlags {
   return flags
 }
 
-export function buildHeadlessAutoArgs(flags: Pick<CliFlags, 'messages' | 'model'>): string[] {
-  return flags.model ? ['--model', flags.model, ...flags.messages] : [...flags.messages]
+export function buildHeadlessAutoArgs(flags: Pick<CliFlags, 'messages' | 'model' | 'tools'>): string[] {
+  return [
+    ...(flags.model ? ['--model', flags.model] : []),
+    ...(flags.tools && flags.tools.length > 0 ? ['--tools', flags.tools.join(',')] : []),
+    ...flags.messages,
+  ]
 }
 
 export { getProjectSessionsDir } from './project-sessions.js'

@@ -80,6 +80,7 @@ export interface HeadlessOptions {
   answers?: string       // path to answers JSON file
   eventFilter?: Set<string>  // filter JSONL output to specific event types
   resumeSession?: string // session ID to resume (--resume <id>)
+  tools?: string[]       // restrict available tools in the RPC child
   bare?: boolean         // --bare: suppress CLAUDE.md/AGENTS.md, user skills, project preferences
 }
 
@@ -218,6 +219,8 @@ export function parseHeadlessArgs(argv: string[]): HeadlessOptions {
         }
       } else if (arg === '--resume' && i + 1 < args.length) {
         options.resumeSession = args[++i]
+      } else if (arg === '--tools' && i + 1 < args.length) {
+        options.tools = args[++i].split(',').map((s) => s.trim()).filter(Boolean)
       } else if (arg === '--bare') {
         options.bare = true
       }
@@ -401,6 +404,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   }
   // Signal headless mode to the extension (skips UAT human pause, etc.)
   clientOptions.env = { ...(clientOptions.env as Record<string, string> || {}), GSD_HEADLESS: '1' } // GSD_HEADLESS is a legacy alias for compatibility — bootstrap-migration
+  // Propagate --tools to the child process so headless auto can run with a
+  // bounded tool surface after Hammer registers canonical tools plus legacy aliases.
+  if (options.tools && options.tools.length > 0) {
+    clientOptions.args = [...((clientOptions.args as string[]) || []), '--tools', options.tools.join(',')]
+  }
   // Propagate --bare to the child process
   if (options.bare) {
     clientOptions.args = [...((clientOptions.args as string[]) || []), '--bare']
