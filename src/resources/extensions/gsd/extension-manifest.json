@@ -8,8 +8,8 @@
   "provides": {
     "tools": [
       "bash", "write", "read", "edit",
-      "gsd_decision_save", "gsd_summary_save",
-      "gsd_requirement_update", "gsd_milestone_generate_id"
+      "hammer_decision_save", "hammer_summary_save",
+      "hammer_requirement_update", "hammer_milestone_generate_id"
     ],
     "commands": ["hammer", "kill", "worktree", "exit"],
     "hooks": [

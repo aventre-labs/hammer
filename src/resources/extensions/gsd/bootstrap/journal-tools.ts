@@ -5,13 +5,13 @@ import { queryJournal } from "../journal.js";
 import { logWarning } from "../workflow-logger.js";
 
 export function registerJournalTools(pi: ExtensionAPI): void {
-  pi.registerTool({
-    name: "gsd_journal_query",
+  const journalQueryTool = {
+    name: "hammer_journal_query",
     label: "Query Journal",
     description:
       "Query the structured event journal for auto-mode iterations. " +
       "Returns matching journal entries filtered by flow ID, unit ID, rule name, event type, or time range.",
-    promptSnippet: "Query the GSD event journal with filters (flowId, unitId, rule, eventType, time range, limit)",
+    promptSnippet: "Query the Hammer event journal with filters (flowId, unitId, rule, eventType, time range, limit)",
     promptGuidelines: [
       "Filter by flowId to trace all events from a single auto-mode iteration.",
       "Filter by unitId to reconstruct the causal chain for a specific milestone/slice/task.",
@@ -26,7 +26,8 @@ export function registerJournalTools(pi: ExtensionAPI): void {
       before: Type.Optional(Type.String({ description: "ISO-8601 upper bound (inclusive)" })),
       limit: Type.Optional(Type.Number({ description: "Maximum entries to return (default: 100)", default: 100 })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- params shape varies by filter combination
+    async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       try {
         const filters: Record<string, string | undefined> = {};
         if (params.flowId !== undefined) filters.flowId = params.flowId;
@@ -42,22 +43,35 @@ export function registerJournalTools(pi: ExtensionAPI): void {
         if (limited.length === 0) {
           return {
             content: [{ type: "text" as const, text: "No matching journal entries found." }],
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             details: { operation: "journal_query", count: 0 } as any,
           };
         }
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(limited, null, 2) }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           details: { operation: "journal_query", count: limited.length } as any,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logWarning("tool", `gsd_journal_query tool failed: ${msg}`);
+        logWarning("tool", `hammer_journal_query tool failed: ${msg}`);
         return {
           content: [{ type: "text" as const, text: `Error querying journal: ${msg}` }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           details: { operation: "journal_query", error: msg } as any,
         };
       }
     },
+  };
+
+  pi.registerTool(journalQueryTool);
+
+  // legacy alias for compatibility — legacy-alias
+  pi.registerTool({
+    ...journalQueryTool,
+    name: "gsd_journal_query",
+    description: journalQueryTool.description + " (alias for hammer_journal_query — prefer the canonical name)",
+    promptGuidelines: ["Alias for hammer_journal_query — prefer the canonical name."],
   });
 }

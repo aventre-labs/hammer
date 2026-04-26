@@ -22,10 +22,10 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
     label: "Capture Thought",
     description:
       "Record a durable piece of project knowledge (decision, convention, gotcha, pattern, " +
-      "preference, or environment detail) into the GSD memory store. Use sparingly — one memory " +
+      "preference, or environment detail) into the Hammer memory store. Use sparingly — one memory " +
       "per genuinely reusable insight, not per task.",
     promptSnippet:
-      "Capture a durable project insight into the GSD memory store (categories: architecture, convention, gotcha, pattern, preference, environment)",
+      "Capture a durable project insight into the Hammer memory store (categories: architecture, convention, gotcha, pattern, preference, environment)",
     promptGuidelines: [
       "Use capture_thought for insights that will remain useful across future sessions.",
       "Do NOT capture one-off bug fixes, temporary state, secrets, or task-specific details.",
@@ -75,10 +75,10 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
     name: "memory_query",
     label: "Query Memory",
     description:
-      "Search the GSD memory store for relevant memories. Phase 1 uses keyword matching ranked " +
+      "Search the Hammer memory store for relevant memories. Phase 1 uses keyword matching ranked " +
       "by confidence and reinforcement; future phases add semantic (embedding) retrieval.",
     promptSnippet:
-      "Search the GSD memory store by keyword; returns ranked memories with id, category, and content",
+      "Search the Hammer memory store by keyword; returns ranked memories with id, category, and content",
     promptGuidelines: [
       "Use memory_query when you need durable project context that may not be in the current prompt.",
       "Provide a short keyword-style query — not a full question.",
@@ -120,11 +120,11 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
     },
   });
 
-  // ─── gsd_graph ──────────────────────────────────────────────────────────
+  // ─── hammer_graph ──────────────────────────────────────────────────────────
 
-  pi.registerTool({
-    name: "gsd_graph",
-    label: "GSD Knowledge Graph",
+  const graphTool = {
+    name: "hammer_graph",
+    label: "Hammer Knowledge Graph",
     description:
       "Inspect the relationship graph between memories. mode=query walks supersedes edges from a " +
       "given memoryId; mode=build is a placeholder that future phases will use to rebuild graph " +
@@ -148,16 +148,25 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
         Type.Literal("supersedes"),
       ], { description: "Only include edges with this relation type" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const ok = await ensureDbOpen();
       if (!ok) {
         return {
-          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
-          details: { operation: "gsd_graph", error: "db_unavailable" },
+          content: [{ type: "text" as const, text: "Error: Hammer database is not available." }],
+          details: { operation: "hammer_graph", error: "db_unavailable" },
           isError: true,
         };
       }
       return executeGsdGraph(params as Parameters<typeof executeGsdGraph>[0]);
     },
+  };
+
+  pi.registerTool(graphTool);
+  // legacy alias for compatibility — legacy-alias
+  pi.registerTool({
+    ...graphTool,
+    name: "gsd_graph",
+    description: graphTool.description + " (alias for hammer_graph — prefer the canonical name)",
+    promptGuidelines: ["Alias for hammer_graph — prefer the canonical name."],
   });
 }

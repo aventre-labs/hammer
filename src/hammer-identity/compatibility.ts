@@ -218,6 +218,17 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ['"pi-extension-gsd"'] as const,
   },
   {
+    id: "tool-registration-legacy-alias-shims",
+    category: "legacy-alias",
+    description: "Bootstrap tool registration files that explicitly register gsd_* as legacy aliases for hammer_* canonical tools, including alias call arguments, section headers, internal log labels, and promptGuideline/description lines that explain the alias relationship.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/bootstrap/(?:db-tools|memory-tools|query-tools|exec-tools|journal-tools)\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "All gsd_* tokens in these files are explicit legacy alias registrations (alias call arguments), section headers documenting the alias mapping, or internal telemetry labels. The canonical tool names are all hammer_*, and gsd_* is registered via registerAlias() as a backwards-compatibility shim. The .gsd/ path strings in descriptions refer to the actual state directory that still uses this name pending the state namespace rename.",
+    allowedUntil: "Remove when gsd_* alias registrations are retired and these bootstrap files contain only hammer_* names.",
+    examples: ["registerAlias(pi, decisionSaveTool, \"gsd_decision_save\", \"hammer_decision_save\"); // legacy alias for compatibility — legacy-alias"] as const,
+  },
+  {
     id: "marked-downstream-follow-up",
     category: "downstream-follow-up",
     description: "Explicit TODO/FIXME notes for IAM, prompt, workflow, or package rename tasks planned later in S01.",
