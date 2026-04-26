@@ -1,6 +1,6 @@
 // GSD Extension — Regression test for #4996: ensurePreconditions phantom dir guard
 // Verifies that ensurePreconditions does not create milestone directories for
-// forward-referenced slice unit IDs when the milestone has no DB row and no content files.
+// forward-referenced slice unit IDs when the milestone has no DB row.
 
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -44,7 +44,7 @@ describe("ensurePreconditions phantom-dir guard (#4996)", () => {
     try { rmSync(base, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it("(a) slice unit ID for unknown milestone does NOT create dirs when no DB row and no content files", () => {
+  it("(a) slice unit ID for unknown milestone does NOT create dirs when no DB row exists", () => {
     base = makeBase();
     const state = makeMinimalState();
 
@@ -67,19 +67,18 @@ describe("ensurePreconditions phantom-dir guard (#4996)", () => {
     assert.ok(existsSync(milestoneDir), "M003 dir must be created when DB row exists");
   });
 
-  it("(c) slice unit ID for milestone with CONTEXT.md content file DOES create dirs", () => {
+  it("(c) slice unit ID for existing milestone dir with CONTEXT.md content file uses normal scaffolding", () => {
     base = makeBase();
     const mid = "M003";
-    const milestonesPath = join(base, ".gsd", "milestones");
-    mkdirSync(milestonesPath, { recursive: true });
-    writeFileSync(join(milestonesPath, `${mid}-CONTEXT.md`), "# Context\n");
+    const milestoneDir = join(base, ".gsd", "milestones", mid);
+    mkdirSync(milestoneDir, { recursive: true });
+    writeFileSync(join(milestoneDir, `${mid}-CONTEXT.md`), "# Context\n");
     const state = makeMinimalState();
 
     ensurePreconditions("execute-task", "M003/S01", base, state);
 
-    const milestoneDir = join(milestonesPath, mid);
     const slicesDir = join(milestoneDir, "slices");
-    assert.ok(existsSync(slicesDir), "content-file fallback should allow slice scaffolding");
+    assert.ok(existsSync(slicesDir), "existing milestone dir should allow slice scaffolding");
   });
 
   it("(d) milestone-only unit ID (no slice) still creates dir even with no DB row", () => {

@@ -21,10 +21,11 @@ export function nextMilestoneIdReserved(
   uniqueEnabled: boolean,
   basePath?: string,
 ): string {
+  const reservedIds = getReservedMilestoneIds();
   const allIds = [
     ...new Set([
       ...existingIds,
-      ...getReservedMilestoneIds(),
+      ...reservedIds,
       ...getDatabaseMilestoneIds(),
     ]),
   ];
@@ -32,6 +33,7 @@ export function nextMilestoneIdReserved(
   if (basePath) {
     const sorted = [...allIds].sort(milestoneIdSort);
     for (const candidate of sorted) {
+      if (reservedIds.has(candidate)) continue;
       if (isReusableGhostMilestone(basePath, candidate)) {
         reserveMilestoneId(candidate);
         return candidate;

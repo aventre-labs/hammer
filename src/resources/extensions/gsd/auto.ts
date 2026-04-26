@@ -37,7 +37,6 @@ import {
   resolveTasksDir,
   resolveTaskFile,
   milestonesDir,
-  buildMilestoneFileName,
   buildTaskFileName,
 } from "./paths.js";
 import { invalidateAllCaches } from "./cache.js";
@@ -1809,14 +1808,6 @@ const widgetStateAccessors: WidgetStateAccessors = {
 
 // ─── Preconditions ────────────────────────────────────────────────────────────
 
-function hasMilestoneContentFile(base: string, mid: string): boolean {
-  const suffixes = ["CONTEXT", "CONTEXT-DRAFT", "ROADMAP", "SUMMARY"];
-  return suffixes.some((suffix) => {
-    if (resolveMilestoneFile(base, mid, suffix)) return true;
-    return existsSync(join(milestonesDir(base), buildMilestoneFileName(mid, suffix)));
-  });
-}
-
 /**
  * Ensure directories, branches, and other prerequisites exist before
  * dispatching a unit. The LLM should never need to mkdir or git checkout.
@@ -1832,14 +1823,13 @@ export function ensurePreconditions(
   const mDir = resolveMilestonePath(base, mid);
   if (!mDir) {
     // Fix #4996: When dispatching a slice unit against an unrecognised milestone,
-    // only create the directory if the milestone has a DB row or a content file.
+    // only create the directory if the milestone has a DB row.
     // Without this guard, forward-referenced unit IDs (e.g. from REQUIREMENTS.md)
     // silently scaffold empty stub directories that later skew nextMilestoneId.
     if (sid !== undefined) {
       const hasDbRow = isDbAvailable() && getMilestone(mid) != null;
-      const hasContent = hasMilestoneContentFile(base, mid);
-      if (!hasDbRow && !hasContent) {
-        logWarning("engine", `ensurePreconditions: skipping mkdir for unrecognised milestone ${mid} referenced by slice unit ${unitId} — no DB row and no content files exist`, { file: "auto.ts" });
+      if (!hasDbRow) {
+        logWarning("engine", `ensurePreconditions: skipping mkdir for unrecognised milestone ${mid} referenced by slice unit ${unitId} — no DB row exists`, { file: "auto.ts" });
         return;
       }
     }

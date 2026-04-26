@@ -5,9 +5,10 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, mkdirSync, existsSync, rmSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { isReusableGhostMilestone } from "../state.ts";
 import { nextMilestoneIdReserved } from "../milestone-id-reservation.ts";
@@ -15,11 +16,46 @@ import { clearReservedMilestoneIds, findMilestoneIds } from "../milestone-ids.ts
 import { invalidateAllCaches } from "../cache.ts";
 import { closeDatabase, openDatabase } from "../gsd-db.ts";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const GUIDED_FLOW_PATH = join(__dirname, "..", "guided-flow.ts");
+
+function getShowHeadlessBody(): string {
+  const source = readFileSync(GUIDED_FLOW_PATH, "utf-8");
+  const fnStart = source.indexOf("export async function showHeadlessMilestoneCreation");
+  assert.ok(fnStart > -1, "showHeadlessMilestoneCreation must exist in guided-flow.ts");
+  const nextExport = source.indexOf("\nexport ", fnStart + 1);
+  return source.slice(fnStart, nextExport === -1 ? source.length : nextExport);
+}
+
 function makeBase(prefix = "gsd-deferred-dir-"): string {
   const base = mkdtempSync(join(tmpdir(), prefix));
   mkdirSync(join(base, ".gsd", "milestones"), { recursive: true });
   return base;
 }
+
+describe("showHeadlessMilestoneCreation source guard (#4996)", () => {
+  it("does not call mkdirSync in the headless milestone creation path", () => {
+    const body = getShowHeadlessBody();
+    assert.doesNotMatch(
+      body,
+      /\bmkdirSync\s*\(/,
+      "showHeadlessMilestoneCreation must not pre-create milestone directories",
+    );
+  });
+
+  it("does not call mkdir or mkdirp before dispatchWorkflow", () => {
+    const body = getShowHeadlessBody();
+    const dispatchIdx = body.indexOf("dispatchWorkflow");
+    assert.ok(dispatchIdx > -1, "dispatchWorkflow must be present");
+
+    const beforeDispatch = body.slice(0, dispatchIdx);
+    assert.doesNotMatch(
+      beforeDispatch,
+      /\b(?:mkdir|mkdirp)\s*\(/,
+      "showHeadlessMilestoneCreation must defer directory creation until artifact write",
+    );
+  });
+});
 
 describe("deferred milestone dir creation (#4996)", () => {
   let base: string;

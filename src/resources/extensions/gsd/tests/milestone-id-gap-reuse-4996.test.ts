@@ -137,4 +137,16 @@ describe("primary regression: M003/M004 stubs returned as next ID (#4996)", () =
     const nextId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
     assert.equal(nextId, "M003", "ID reservation should fall back to max+1 when no ghost is reusable");
   });
+
+  it("does not return an already-reserved reusable ghost twice", () => {
+    base = makeBase();
+    openDatabase(join(base, ".gsd", "gsd.db"));
+    stubDir(base, "M001");
+
+    const firstId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
+    const secondId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
+
+    assert.equal(firstId, "M001", "first reservation should reuse the ghost");
+    assert.equal(secondId, "M002", "second reservation must skip the already-reserved ghost");
+  });
 });

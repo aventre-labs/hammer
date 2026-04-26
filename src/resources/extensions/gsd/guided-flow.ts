@@ -46,6 +46,7 @@ import { showConfirm } from "../shared/tui.js";
 import { debugLog } from "./debug-logger.js";
 import { findMilestoneIds, clearReservedMilestoneIds } from "./milestone-ids.js";
 import { nextMilestoneIdReserved } from "./milestone-id-reservation.js";
+export { nextMilestoneIdReserved } from "./milestone-id-reservation.js";
 import { parkMilestone, discardMilestone } from "./milestone-actions.js";
 import { selectAndApplyModel } from "./auto-model-selection.js";
 import { DISCUSS_TOOLS_ALLOWLIST } from "./constants.js";
@@ -1029,6 +1030,8 @@ export async function showDiscuss(
         fastPathInstruction: "",
       }), "gsd-discuss", ctx, "discuss-milestone");
     } else if (choice === "skip_milestone") {
+      const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+      await ensureDbOpen(basePath);
       const milestoneIds = findMilestoneIds(basePath);
       const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
       const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
