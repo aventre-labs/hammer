@@ -1,0 +1,131 @@
+export type HammerLegacyCompatibilityCategory =
+  | "legacy-alias"
+  | "bootstrap-migration"
+  | "historical-docs"
+  | "internal-implementation-path"
+  | "downstream-follow-up";
+
+export interface HammerLegacyCompatibilityCategoryDetails {
+  readonly label: string;
+  readonly description: string;
+}
+
+export interface HammerIdentityCompatibilityRule {
+  readonly id: string;
+  readonly category: HammerLegacyCompatibilityCategory;
+  readonly description: string;
+  readonly pathPattern: string;
+  readonly linePattern: string;
+  readonly rationale: string;
+  readonly allowedUntil: string;
+  readonly examples: readonly string[];
+}
+
+export const HAMMER_LEGACY_COMPATIBILITY_CATEGORIES = {
+  "legacy-alias": {
+    label: "Legacy alias",
+    description:
+      "Explicit backwards-compatible command, env var, state path, or tool aliases that remain accepted while Hammer is canonical.",
+  },
+  "bootstrap-migration": {
+    label: "Bootstrap migration",
+    description:
+      "Startup and state bootstrap code that may read or import old GSD state before writing canonical Hammer state.",
+  },
+  "historical-docs": {
+    label: "Historical docs",
+    description:
+      "Archived or migration-oriented prose that names the old product identity as history rather than current UI.",
+  },
+  "internal-implementation-path": {
+    label: "Internal implementation path",
+    description:
+      "Repository-internal paths or private runtime wiring that still contain legacy directory names while the substrate is renamed.",
+  },
+  "downstream-follow-up": {
+    label: "Downstream follow-up",
+    description:
+      "Deliberately marked IAM, prompt, workflow, or package-surface references owned by later S01 tasks.",
+  },
+} as const satisfies Record<HammerLegacyCompatibilityCategory, HammerLegacyCompatibilityCategoryDetails>;
+
+const LEGACY_TOKEN_PATTERN = String.raw`(?:Get Shit Done|GSD_[A-Z0-9_]+|gsd_[A-Za-z0-9_]+|\.gsd(?:-id)?|/gsd\b|@gsd(?:[-/][A-Za-z0-9_.-]+)?|gsd(?:-[A-Za-z0-9_.-]+)?\b|GSD\b)`;
+
+export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
+  {
+    id: "identity-contract-self-reference",
+    category: "internal-implementation-path",
+    description: "The identity contract and scanner map may name legacy GSD spellings so they can be detected and classified.",
+    pathPattern: String.raw`(?:^|/)src/hammer-identity/(?:index|compatibility)\.ts$|(?:^|/)scripts/check-hammer-identity\.mjs$|(?:^|/)src/tests/hammer-identity-[^/]+\.test\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "The scanner cannot guard against old names unless the contract enumerates them. This allowance is constrained to the contract, scanner, and their tests.",
+    allowedUntil: "Permanent source-of-truth exception.",
+    examples: ["const LEGACY_TOKEN_PATTERN = ...", "assert.match(report, /GSD/)"] as const,
+  },
+  {
+    id: "explicit-legacy-alias-marker",
+    category: "legacy-alias",
+    description: "Lines that explicitly mark an old GSD spelling as a legacy alias or compatibility shim.",
+    pathPattern: String.raw`.*`,
+    linePattern: String.raw`(?:(?:alias|compat(?:ible|ibility)?|deprecated|backward[- ]compatible).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:alias|compat(?:ible|ibility)?|deprecated|backward[- ]compatible))`,
+    rationale:
+      "Aliases must be deliberate and locally documented; bare visible product strings should stay unclassified so the scanner catches regressions.",
+    allowedUntil: "Remove when legacy command/env/state aliases are retired.",
+    examples: ["const alias = \"/gsd\"; // legacy alias for /hammer"] as const,
+  },
+  {
+    id: "bootstrap-state-migration",
+    category: "bootstrap-migration",
+    description: "Startup/bootstrap code may mention old state locations or env vars while importing existing local state into Hammer paths.",
+    pathPattern: String.raw`(?:^|/)src/(?:loader|app-paths|resource-loader|init-resources|project-state|preferences|config|rtk|bundled-extension-paths|extension-discovery|extension-registry)\.ts$|(?:^|/)src/resources/extensions/gsd/bootstrap/`,
+    linePattern: String.raw`(?:(?:bootstrap|migrat|fallback|import|upgrade|first launch|state|home|agent|session|artifact).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:bootstrap|migrat|fallback|import|upgrade|first launch|state|home|agent|session|artifact))`,
+    rationale:
+      "Existing installations need a bounded bridge from old state into canonical Hammer state without making GSD product language visible.",
+    allowedUntil: "After state migration has shipped and telemetry shows old state imports are no longer needed.",
+    examples: ["// migrate legacy .gsd state into .hammer on first launch"] as const,
+  },
+  {
+    id: "historical-or-migration-docs",
+    category: "historical-docs",
+    description: "Historical or migration documents may name the former product identity when clearly presented as history.",
+    pathPattern: String.raw`(?:^|/)(?:CHANGELOG(?:\.md)?|docs/(?:history|migration|archive|legacy)[^/]*|pkg/docs/(?:history|migration|archive|legacy)[^/]*)`,
+    linePattern: String.raw`(?:(?:histor(?:y|ical)|formerly|legacy|migration|migrated|renamed|archive).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:histor(?:y|ical)|formerly|legacy|migration|migrated|renamed|archive))`,
+    rationale:
+      "Historical context is useful, but current help and runtime docs must use Hammer language unless they are explicitly migration-oriented.",
+    allowedUntil: "Permanent for archive/migration docs only.",
+    examples: ["Historically this command was named /gsd before the Hammer rename."] as const,
+  },
+  {
+    id: "private-extension-path-reference",
+    category: "internal-implementation-path",
+    description: "Private repository/runtime path references may contain the existing extension directory name until that tree is physically renamed.",
+    pathPattern: String.raw`.*`,
+    linePattern: String.raw`(?:src/)?resources/extensions/gsd(?:/|\b)|(?:^|["'\x60])(?:\.?/)?\.gsd/(?:agent|sessions|milestones|journal|activity|workflow-defs|preferences|captures|backlog|reports|gsd\.db)|GSD_(?:WORKFLOW_PATH|BUNDLED_EXTENSION_PATHS|PKG_ROOT|CODING_AGENT_DIR|BIN_PATH|VERSION|FIRST_RUN_BANNER)\b`,
+    rationale:
+      "These strings are implementation addresses or private process wiring, not user-facing product identity. Public commands and help remain out of scope for this rule.",
+    allowedUntil: "Remove each path/env allowance as the implementation tree is renamed.",
+    examples: ["const entry = \"src/resources/extensions/gsd/index.ts\""] as const,
+  },
+  {
+    id: "marked-downstream-follow-up",
+    category: "downstream-follow-up",
+    description: "Explicit TODO/FIXME notes for IAM, prompt, workflow, or package rename tasks planned later in S01.",
+    pathPattern: String.raw`.*`,
+    linePattern: String.raw`(?:(?:TODO|FIXME|follow-up|downstream).{0,160}(?:IAM|prompt|workflow|package).{0,160}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,160}(?:TODO|FIXME|follow-up|downstream).{0,160}(?:IAM|prompt|workflow|package))`,
+    rationale:
+      "Downstream tasks need a temporary, searchable handoff marker, but the line must say why it is deferred.",
+    allowedUntil: "End of the S01 slice.",
+    examples: ["// TODO(S01 prompt follow-up): replace GSD wording in prompt fixtures"] as const,
+  },
+] as const satisfies readonly HammerIdentityCompatibilityRule[];
+
+export type HammerIdentityCompatibilityRuleId = typeof HAMMER_LEGACY_COMPATIBILITY_RULES[number]["id"];
+
+export function getHammerCompatibilityRuleIdsByCategory(
+  category: HammerLegacyCompatibilityCategory,
+): HammerIdentityCompatibilityRuleId[] {
+  return HAMMER_LEGACY_COMPATIBILITY_RULES
+    .filter((rule) => rule.category === category)
+    .map((rule) => rule.id);
+}

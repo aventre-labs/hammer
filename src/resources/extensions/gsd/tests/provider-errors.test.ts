@@ -398,10 +398,12 @@ test("pauseAutoForProviderError falls back to indefinite pause when not rate lim
 // ── resumeAutoAfterProviderDelay ────────────────────────────────────────────
 
 test("resumeAutoAfterProviderDelay restarts paused auto-mode from the recorded base path", async () => {
-  const startCalls: Array<{ base: string; verboseMode: boolean; step?: boolean }> = [];
+  const commandCtx = { ui: { notify() {} }, newSession: async () => ({ cancelled: false }) } as any;
+  const eventCtx = { ui: { notify() {} } } as any;
+  const startCalls: Array<{ ctx: unknown; base: string; verboseMode: boolean; step?: boolean }> = [];
   const result = await resumeAutoAfterProviderDelay(
     {} as any,
-    { ui: { notify() {} } } as any,
+    eventCtx,
     {
       getSnapshot: () => ({
         active: false,
@@ -409,16 +411,17 @@ test("resumeAutoAfterProviderDelay restarts paused auto-mode from the recorded b
         stepMode: true,
         basePath: "/tmp/project",
       }),
+      getCommandContext: () => commandCtx,
       resetTransientRetryState: () => {},
-      startAuto: async (_ctx, _pi, base, verboseMode, options) => {
-        startCalls.push({ base, verboseMode, step: options?.step });
+      startAuto: async (ctx, _pi, base, verboseMode, options) => {
+        startCalls.push({ ctx, base, verboseMode, step: options?.step });
       },
     },
   );
 
   assert.equal(result, "resumed");
   assert.deepEqual(startCalls, [
-    { base: "/tmp/project", verboseMode: false, step: true },
+    { ctx: commandCtx, base: "/tmp/project", verboseMode: false, step: true },
   ]);
 });
 
@@ -434,6 +437,7 @@ test("resumeAutoAfterProviderDelay does not double-start when auto-mode is alrea
         stepMode: false,
         basePath: "/tmp/project",
       }),
+      getCommandContext: () => null,
       resetTransientRetryState: () => {},
       startAuto: async () => {
         startCalls += 1;
@@ -443,6 +447,46 @@ test("resumeAutoAfterProviderDelay does not double-start when auto-mode is alrea
 
   assert.equal(result, "already-active");
   assert.equal(startCalls, 0);
+});
+
+test("resumeAutoAfterProviderDelay leaves auto paused when no command context is available", async () => {
+  const notifications: Array<{ message: string; level: string }> = [];
+  const calls: string[] = [];
+
+  const result = await resumeAutoAfterProviderDelay(
+    {} as any,
+    {
+      ui: {
+        notify(message: string, level?: string) {
+          notifications.push({ message, level: level ?? "info" });
+        },
+      },
+    } as any,
+    {
+      getSnapshot: () => ({
+        active: false,
+        paused: true,
+        stepMode: false,
+        basePath: "/tmp/project",
+      }),
+      getCommandContext: () => null,
+      resetTransientRetryState: () => {
+        calls.push("reset-transient");
+      },
+      startAuto: async () => {
+        calls.push("start-auto");
+      },
+    },
+  );
+
+  assert.equal(result, "missing-command-context");
+  assert.deepEqual(calls, []);
+  assert.deepEqual(notifications, [
+    {
+      message: "Provider error recovery delay elapsed, but no command context is available to create a fresh session. Leaving auto-mode paused; run /gsd auto to resume.",
+      level: "warning",
+    },
+  ]);
 });
 
 test("resumeAutoAfterProviderDelay leaves auto paused when no base path is available", async () => {
@@ -465,6 +509,7 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no base path is avail
         stepMode: false,
         basePath: "",
       }),
+      getCommandContext: () => null,
       resetTransientRetryState: () => {},
       startAuto: async () => {
         startCalls += 1;
@@ -495,6 +540,7 @@ test("resumeAutoAfterProviderDelay resets provider retry state without clearing 
         stepMode: false,
         basePath: "/tmp/project",
       }),
+      getCommandContext: () => ({ ui: { notify() {} }, newSession: async () => ({ cancelled: false }) } as any),
       resetTransientRetryState: () => {
         calls.push("reset-transient");
       },

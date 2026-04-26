@@ -94,7 +94,14 @@ export function isInteractiveHeadlessTool(toolName: string | undefined): boolean
   return INTERACTIVE_HEADLESS_TOOLS.has(String(toolName ?? ''))
 }
 
-export function shouldArmHeadlessIdleTimeout(toolCallCount: number, interactiveToolCount: number): boolean {
+const TERMINAL_ONLY_COMMANDS = new Set(['auto', 'next'])
+
+export function shouldArmHeadlessIdleTimeout(
+  toolCallCount: number,
+  interactiveToolCount: number,
+  command?: string,
+): boolean {
+  if (command && TERMINAL_ONLY_COMMANDS.has(command)) return false
   return toolCallCount > 0 && interactiveToolCount === 0
 }
 

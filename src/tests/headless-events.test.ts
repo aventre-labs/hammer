@@ -221,3 +221,15 @@ test('shouldArmHeadlessIdleTimeout: stays disarmed before any tool call has star
   assert.equal(shouldArmHeadlessIdleTimeout(0, 0), false)
   assert.equal(shouldArmHeadlessIdleTimeout(0, 1), false)
 })
+
+test('shouldArmHeadlessIdleTimeout: auto and next wait for terminal notifications, not idle fallback', () => {
+  assert.equal(shouldArmHeadlessIdleTimeout(1, 0, 'auto'), false)
+  assert.equal(shouldArmHeadlessIdleTimeout(10, 0, 'auto'), false)
+  assert.equal(shouldArmHeadlessIdleTimeout(1, 0, 'next'), false)
+  assert.equal(shouldArmHeadlessIdleTimeout(10, 0, 'next'), false)
+})
+
+test('shouldArmHeadlessIdleTimeout: non-terminal-only commands keep idle fallback', () => {
+  assert.equal(shouldArmHeadlessIdleTimeout(1, 0, 'plan'), true)
+  assert.equal(shouldArmHeadlessIdleTimeout(1, 0, 'discuss'), true)
+})

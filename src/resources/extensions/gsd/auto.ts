@@ -511,6 +511,10 @@ export function isAutoPaused(): boolean {
   return s.paused;
 }
 
+export function getAutoCommandContext(): ExtensionCommandContext | null {
+  return typeof s.cmdCtx?.newSession === "function" ? s.cmdCtx : null;
+}
+
 export function setActiveEngineId(id: string | null): void {
   s.activeEngineId = id;
 }

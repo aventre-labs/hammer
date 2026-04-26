@@ -4,13 +4,19 @@ import type {
   ExtensionContext,
 } from "@gsd/pi-coding-agent";
 
-import { getAutoDashboardData, startAuto, type AutoDashboardData } from "../auto.js";
+import {
+  getAutoCommandContext,
+  getAutoDashboardData,
+  startAuto,
+  type AutoDashboardData,
+} from "../auto.js";
 import { resetTransientRetryState } from "./agent-end-recovery.js";
 
 type AutoResumeSnapshot = Pick<AutoDashboardData, "active" | "paused" | "stepMode" | "basePath">;
 
 export interface ProviderErrorResumeDeps {
   getSnapshot(): AutoResumeSnapshot;
+  getCommandContext(): ExtensionCommandContext | null;
   resetTransientRetryState(): void;
   startAuto(
     ctx: ExtensionCommandContext,
@@ -23,15 +29,20 @@ export interface ProviderErrorResumeDeps {
 
 const defaultDeps: ProviderErrorResumeDeps = {
   getSnapshot: () => getAutoDashboardData(),
+  getCommandContext: () => getAutoCommandContext(),
   resetTransientRetryState,
   startAuto,
 };
+
+function hasSessionControl(ctx: ExtensionContext): ctx is ExtensionCommandContext {
+  return typeof (ctx as Partial<ExtensionCommandContext>).newSession === "function";
+}
 
 export async function resumeAutoAfterProviderDelay(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   deps: ProviderErrorResumeDeps = defaultDeps,
-): Promise<"resumed" | "already-active" | "not-paused" | "missing-base"> {
+): Promise<"resumed" | "already-active" | "not-paused" | "missing-base" | "missing-command-context"> {
   const snapshot = deps.getSnapshot();
 
   if (snapshot.active) return "already-active";
@@ -45,13 +56,22 @@ export async function resumeAutoAfterProviderDelay(
     return "missing-base";
   }
 
+  const commandCtx = hasSessionControl(ctx) ? ctx : deps.getCommandContext();
+  if (!commandCtx) {
+    ctx.ui.notify(
+      "Provider error recovery delay elapsed, but no command context is available to create a fresh session. Leaving auto-mode paused; run /gsd auto to resume.",
+      "warning",
+    );
+    return "missing-command-context";
+  }
+
   // Reset provider-error retry state before restarting. Session-creation
   // timeout state intentionally survives delayed resumes so the bounded
   // auto-resume limit cannot be reset into an infinite pause/resume loop.
   deps.resetTransientRetryState();
 
   await deps.startAuto(
-    ctx as ExtensionCommandContext,
+    commandCtx,
     pi,
     snapshot.basePath,
     false,

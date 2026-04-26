@@ -505,7 +505,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
-    if (shouldArmHeadlessIdleTimeout(toolCallCount, interactiveToolCallIds.size)) {
+    if (shouldArmHeadlessIdleTimeout(toolCallCount, interactiveToolCallIds.size, options.command)) {
       idleTimer = setTimeout(() => {
         completed = true
         resolveCompletion()
