@@ -199,6 +199,7 @@ export interface MemoryQueryParams {
   scope?: string;
   tag?: string;
   include_superseded?: boolean;
+  reinforce_hits?: boolean;
   trinityLayer?: unknown;
   trinityLens?: { ity?: unknown; pathy?: unknown } | null;
 }

@@ -189,8 +189,9 @@ export function normalizeTrinityProvenance(
 
 export function normalizeTrinityValidation(value: unknown): TrinityValidation {
   const raw = isPlainObject(value) ? value : {};
-  const hasExplicitState = typeof raw.state === "string";
-  const stateRaw = hasExplicitState ? raw.state.trim().toLowerCase() : DEFAULT_VALIDATION.state;
+  const rawState = raw.state;
+  const hasExplicitState = typeof rawState === "string";
+  const stateRaw = hasExplicitState ? rawState.trim().toLowerCase() : DEFAULT_VALIDATION.state;
   const state = (VALID_TRINITY_VALIDATION_STATES as readonly string[]).includes(stateRaw)
     ? (stateRaw as TrinityValidationState)
     : DEFAULT_VALIDATION.state;
