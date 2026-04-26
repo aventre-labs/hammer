@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -554,6 +554,36 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         last_ts TEXT NOT NULL,
         event_count INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (trace_id, turn_id)
+      )
+    `);
+
+    // v23 — IAM awareness kernel tables
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS omega_runs (
+        id TEXT PRIMARY KEY,
+        query TEXT NOT NULL,
+        persona TEXT,
+        runes_applied TEXT NOT NULL DEFAULT '[]',
+        stages_requested TEXT NOT NULL DEFAULT '[]',
+        stage_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'running',
+        artifact_dir TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        error_message TEXT
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS savesuccess_results (
+        id TEXT PRIMARY KEY,
+        target_path TEXT NOT NULL,
+        run_id TEXT,
+        s REAL, a REAL, v REAL, e REAL,
+        s2 REAL, u REAL, c REAL, c2 REAL, e2 REAL, s3 REAL,
+        success INTEGER NOT NULL DEFAULT 0,
+        blind_spots TEXT NOT NULL DEFAULT '[]',
+        validated_at TEXT NOT NULL
       )
     `);
 
@@ -1228,6 +1258,41 @@ function migrateSchema(db: DbAdapter): void {
       ensureColumn(db, "assessments", "scope", "ALTER TABLE assessments ADD COLUMN scope TEXT NOT NULL DEFAULT ''");
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 22,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 23) {
+      // v23 — IAM awareness kernel: omega_runs and savesuccess_results tables
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS omega_runs (
+          id TEXT PRIMARY KEY,
+          query TEXT NOT NULL,
+          persona TEXT,
+          runes_applied TEXT NOT NULL DEFAULT '[]',
+          stages_requested TEXT NOT NULL DEFAULT '[]',
+          stage_count INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'running',
+          artifact_dir TEXT,
+          created_at TEXT NOT NULL,
+          completed_at TEXT,
+          error_message TEXT
+        )
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS savesuccess_results (
+          id TEXT PRIMARY KEY,
+          target_path TEXT NOT NULL,
+          run_id TEXT,
+          s REAL, a REAL, v REAL, e REAL,
+          s2 REAL, u REAL, c REAL, c2 REAL, e2 REAL, s3 REAL,
+          success INTEGER NOT NULL DEFAULT 0,
+          blind_spots TEXT NOT NULL DEFAULT '[]',
+          validated_at TEXT NOT NULL
+        )
+      `);
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 23,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -3957,4 +4022,126 @@ export function supersedeLowestRankedMemories(limit: number, now: string): void 
        LIMIT :limit
      )`,
   ).run({ ":now": now, ":limit": limit });
+}
+
+// ---------------------------------------------------------------------------
+// v23 — IAM awareness kernel row helpers
+// ---------------------------------------------------------------------------
+
+export interface OmegaRunRow {
+  id: string;
+  query: string;
+  persona: string | null;
+  runes_applied: string;
+  stages_requested: string;
+  stage_count: number;
+  status: string;
+  artifact_dir: string | null;
+  created_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+export function insertOmegaRun(row: OmegaRunRow): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `INSERT INTO omega_runs
+       (id, query, persona, runes_applied, stages_requested, stage_count,
+        status, artifact_dir, created_at, completed_at, error_message)
+     VALUES
+       (:id, :query, :persona, :runes_applied, :stages_requested, :stage_count,
+        :status, :artifact_dir, :created_at, :completed_at, :error_message)`,
+  ).run({
+    ":id": row.id,
+    ":query": row.query,
+    ":persona": row.persona,
+    ":runes_applied": row.runes_applied,
+    ":stages_requested": row.stages_requested,
+    ":stage_count": row.stage_count,
+    ":status": row.status,
+    ":artifact_dir": row.artifact_dir,
+    ":created_at": row.created_at,
+    ":completed_at": row.completed_at,
+    ":error_message": row.error_message,
+  });
+}
+
+export function updateOmegaRunStatus(
+  id: string,
+  status: string,
+  completedAt?: string,
+  errorMessage?: string,
+  artifactDir?: string,
+): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE omega_runs
+     SET status = :status,
+         completed_at = COALESCE(:completed_at, completed_at),
+         error_message = COALESCE(:error_message, error_message),
+         artifact_dir = COALESCE(:artifact_dir, artifact_dir)
+     WHERE id = :id`,
+  ).run({
+    ":id": id,
+    ":status": status,
+    ":completed_at": completedAt ?? null,
+    ":error_message": errorMessage ?? null,
+    ":artifact_dir": artifactDir ?? null,
+  });
+}
+
+export function getOmegaRun(id: string): OmegaRunRow | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM omega_runs WHERE id = :id`,
+  ).get({ ":id": id });
+  return (row as unknown as OmegaRunRow) ?? null;
+}
+
+export interface SavesuccessResultRow {
+  id: string;
+  target_path: string;
+  run_id: string | null;
+  s: number | null;
+  a: number | null;
+  v: number | null;
+  e: number | null;
+  s2: number | null;
+  u: number | null;
+  c: number | null;
+  c2: number | null;
+  e2: number | null;
+  s3: number | null;
+  success: number;
+  blind_spots: string;
+  validated_at: string;
+}
+
+export function insertSavesuccessResult(row: SavesuccessResultRow): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `INSERT INTO savesuccess_results
+       (id, target_path, run_id, s, a, v, e, s2, u, c, c2, e2, s3,
+        success, blind_spots, validated_at)
+     VALUES
+       (:id, :target_path, :run_id, :s, :a, :v, :e, :s2, :u, :c, :c2, :e2, :s3,
+        :success, :blind_spots, :validated_at)`,
+  ).run({
+    ":id": row.id,
+    ":target_path": row.target_path,
+    ":run_id": row.run_id,
+    ":s": row.s,
+    ":a": row.a,
+    ":v": row.v,
+    ":e": row.e,
+    ":s2": row.s2,
+    ":u": row.u,
+    ":c": row.c,
+    ":c2": row.c2,
+    ":e2": row.e2,
+    ":s3": row.s3,
+    ":success": row.success,
+    ":blind_spots": row.blind_spots,
+    ":validated_at": row.validated_at,
+  });
 }
