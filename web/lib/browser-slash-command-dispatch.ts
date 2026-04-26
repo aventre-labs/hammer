@@ -13,7 +13,28 @@ export type BrowserSlashCommandSurface =
   | "logout"
   | "session"
   | "export"
-  // GSD subcommand surfaces (S02)
+  // Hammer subcommand surfaces (canonical)
+  | "hammer-status"
+  | "hammer-visualize"
+  | "hammer-forensics"
+  | "hammer-doctor"
+  | "hammer-skill-health"
+  | "hammer-knowledge"
+  | "hammer-capture"
+  | "hammer-triage"
+  | "hammer-quick"
+  | "hammer-history"
+  | "hammer-undo"
+  | "hammer-inspect"
+  | "hammer-prefs"
+  | "hammer-config"
+  | "hammer-hooks"
+  | "hammer-mode"
+  | "hammer-steer"
+  | "hammer-export"
+  | "hammer-cleanup"
+  | "hammer-queue"
+  // GSD subcommand surfaces — legacy alias for hammer-* (S02) — legacy-alias
   | "gsd-status"
   | "gsd-visualize"
   | "gsd-forensics"
@@ -111,7 +132,135 @@ const SURFACE_COMMANDS = new Map<string, BrowserSlashCommandSurface>([
   ["export", "export"],
 ])
 
-// --- GSD subcommand dispatch (S02) ---
+// --- Hammer subcommand dispatch (canonical) ---
+
+const HAMMER_SURFACE_SUBCOMMANDS = new Map<string, BrowserSlashCommandSurface>([
+  ["status", "hammer-status"],
+  ["visualize", "hammer-visualize"],
+  ["forensics", "hammer-forensics"],
+  ["doctor", "hammer-doctor"],
+  ["skill-health", "hammer-skill-health"],
+  ["knowledge", "hammer-knowledge"],
+  ["capture", "hammer-capture"],
+  ["triage", "hammer-triage"],
+  ["quick", "hammer-quick"],
+  ["history", "hammer-history"],
+  ["undo", "hammer-undo"],
+  ["inspect", "hammer-inspect"],
+  ["model", "model"],
+  ["prefs", "hammer-prefs"],
+  ["config", "hammer-config"],
+  ["hooks", "hammer-hooks"],
+  ["mode", "hammer-mode"],
+  ["steer", "hammer-steer"],
+  ["export", "hammer-export"],
+  ["cleanup", "hammer-cleanup"],
+  ["queue", "hammer-queue"],
+])
+
+const HAMMER_PASSTHROUGH_SUBCOMMANDS = new Set<string>([
+  "auto",
+  "next",
+  "stop",
+  "pause",
+  "skip",
+  "discuss",
+  "run-hook",
+  "migrate",
+  "remote",
+])
+
+export const HAMMER_HELP_TEXT = `Available /hammer subcommands:
+
+Workflow:    next · auto · stop · pause · skip · queue · quick · capture · triage
+Diagnostics: status · visualize · forensics · doctor · skill-health · inspect
+Context:     knowledge · history · undo · discuss
+Settings:    model · prefs · config · hooks · mode · steer
+Advanced:    export · cleanup · run-hook · migrate · remote
+
+Type /hammer <subcommand> to run. Use /hammer help for this message.`
+
+function dispatchHammerSubcommand(
+  input: string,
+  args: string,
+  options: BrowserSlashCommandDispatchOptions,
+): BrowserSlashCommandDispatchResult {
+  const trimmedArgs = args.trim()
+  const spaceIndex = trimmedArgs.search(/\s/)
+  const subcommand = spaceIndex === -1 ? trimmedArgs : trimmedArgs.slice(0, spaceIndex)
+  const subArgs = spaceIndex === -1 ? "" : trimmedArgs.slice(spaceIndex + 1).trim()
+
+  // Bare `/hammer` — equivalent to `/hammer next`, pass through to bridge
+  if (!subcommand) {
+    return {
+      kind: "prompt",
+      input,
+      slashCommandName: "hammer",
+      command: {
+        type: getPromptCommandType(options),
+        message: input,
+      },
+    }
+  }
+
+  // `/hammer help` — render inline help locally
+  if (subcommand === "help") {
+    return {
+      kind: "local",
+      input,
+      commandName: "hammer",
+      action: "gsd_help",
+    }
+  }
+
+  // `/hammer visualize` — navigate to the visualizer view directly
+  if (subcommand === "visualize") {
+    return {
+      kind: "view-navigate",
+      input,
+      commandName: "hammer",
+      view: "visualize",
+    }
+  }
+
+  // Surface-routed subcommands — open browser-native UI
+  const surface = HAMMER_SURFACE_SUBCOMMANDS.get(subcommand)
+  if (surface) {
+    return {
+      kind: "surface",
+      input,
+      commandName: "hammer",
+      surface,
+      args: subArgs,
+    }
+  }
+
+  // Bridge-passthrough subcommands — let the extension handle them
+  if (HAMMER_PASSTHROUGH_SUBCOMMANDS.has(subcommand)) {
+    return {
+      kind: "prompt",
+      input,
+      slashCommandName: "hammer",
+      command: {
+        type: getPromptCommandType(options),
+        message: input,
+      },
+    }
+  }
+
+  // Unknown subcommand — pass through; extension handler will show "Unknown"
+  return {
+    kind: "prompt",
+    input,
+    slashCommandName: "hammer",
+    command: {
+      type: getPromptCommandType(options),
+      message: input,
+    },
+  }
+}
+
+// --- GSD subcommand dispatch — legacy alias for /hammer — legacy-alias ---
 
 const GSD_SURFACE_SUBCOMMANDS = new Map<string, BrowserSlashCommandSurface>([
   ["status", "gsd-status"],
@@ -149,6 +298,7 @@ const GSD_PASSTHROUGH_SUBCOMMANDS = new Set<string>([
   "remote",
 ])
 
+/** @deprecated Use HAMMER_HELP_TEXT — legacy alias for /hammer — legacy-alias */
 export const GSD_HELP_TEXT = `Available /gsd subcommands:
 
 Workflow:    next · auto · stop · pause · skip · queue · quick · capture · triage
@@ -169,7 +319,7 @@ function dispatchGSDSubcommand(
   const subcommand = spaceIndex === -1 ? trimmedArgs : trimmedArgs.slice(0, spaceIndex)
   const subArgs = spaceIndex === -1 ? "" : trimmedArgs.slice(spaceIndex + 1).trim()
 
-  // Bare `/gsd` — equivalent to `/gsd next`, pass through to bridge
+  // Bare `/gsd` — equivalent to `/gsd next`, pass through to bridge — legacy alias for /hammer — legacy-alias
   if (!subcommand) {
     return {
       kind: "prompt",
@@ -342,8 +492,14 @@ export function dispatchBrowserSlashCommand(
     }
   }
 
-  // GSD subcommand dispatch — must precede SURFACE_COMMANDS to avoid
-  // `/gsd export` colliding with the built-in `/export` surface.
+  // Hammer subcommand dispatch — canonical path; must precede SURFACE_COMMANDS to avoid
+  // `/hammer export` colliding with the built-in `/export` surface.
+  if (parsed.name === "hammer") {
+    return dispatchHammerSubcommand(trimmed, parsed.args, options)
+  }
+
+  // GSD subcommand dispatch — legacy alias for /hammer; must precede SURFACE_COMMANDS to avoid
+  // `/gsd export` colliding with the built-in `/export` surface. — legacy-alias
   if (parsed.name === "gsd") {
     return dispatchGSDSubcommand(trimmed, parsed.args, options)
   }

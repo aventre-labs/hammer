@@ -2,7 +2,7 @@
  * Headless Context Loading — stdin reading, file context, and project bootstrapping
  *
  * Handles loading context from files or stdin for headless new-milestone,
- * and bootstraps the .gsd/ directory structure when needed.
+ * and bootstraps the .hammer/ directory structure when needed.
  */
 
 import { readFileSync, mkdirSync } from 'node:fs'
@@ -49,11 +49,17 @@ export async function loadContext(options: ContextOptions): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Bootstrap .gsd/ directory structure for headless new-milestone.
+ * Bootstrap .hammer/ directory structure for headless new-milestone.
  * Mirrors the bootstrap logic from guided-flow.ts showSmartEntry().
+ * Canonical path is .hammer/; .gsd/ is a legacy import bridge — bootstrap-migration.
  */
-export function bootstrapGsdProject(basePath: string): void {
-  const gsdDir = join(basePath, '.gsd')
-  mkdirSync(join(gsdDir, 'milestones'), { recursive: true })
-  mkdirSync(join(gsdDir, 'runtime'), { recursive: true })
+export function bootstrapHammerProject(basePath: string): void {
+  const hammerDir = join(basePath, '.hammer')
+  mkdirSync(join(hammerDir, 'milestones'), { recursive: true })
+  mkdirSync(join(hammerDir, 'runtime'), { recursive: true })
 }
+
+/**
+ * @deprecated Use bootstrapHammerProject instead. Legacy alias — bootstrap-migration.
+ */
+export const bootstrapGsdProject = bootstrapHammerProject

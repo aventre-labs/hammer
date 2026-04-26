@@ -41,7 +41,28 @@ export type CommandSurfaceSection =
   | "workspace"
   | "integrations"
   | "experimental"
-  // GSD subcommand surfaces (S02)
+  // Hammer subcommand surfaces (canonical)
+  | "hammer-status"
+  | "hammer-visualize"
+  | "hammer-forensics"
+  | "hammer-doctor"
+  | "hammer-skill-health"
+  | "hammer-knowledge"
+  | "hammer-capture"
+  | "hammer-triage"
+  | "hammer-quick"
+  | "hammer-history"
+  | "hammer-undo"
+  | "hammer-inspect"
+  | "hammer-prefs"
+  | "hammer-config"
+  | "hammer-hooks"
+  | "hammer-mode"
+  | "hammer-steer"
+  | "hammer-export"
+  | "hammer-cleanup"
+  | "hammer-queue"
+  // GSD subcommand surfaces — legacy alias for hammer-* — legacy-alias
   | "gsd-status"
   | "gsd-visualize"
   | "gsd-forensics"
@@ -347,6 +368,7 @@ export type CommandSurfaceTarget =
   | { kind: "fork"; entryId?: string }
   | { kind: "session"; outputPath?: string }
   | { kind: "compact"; customInstructions: string }
+  | { kind: "hammer"; surface: string; subcommand: string; args: string }
   | { kind: "gsd"; surface: string; subcommand: string; args: string }
 
 // ─── Diagnostics panel state ──────────────────────────────────────────────────
@@ -671,7 +693,28 @@ export function commandSurfaceSectionForRequest(request: CommandSurfaceOpenReque
       return "session"
     case "compact":
       return "compact"
-    // GSD subcommand surfaces (S02)
+    // Hammer subcommand surfaces (canonical)
+    case "hammer-status": return "hammer-status"
+    case "hammer-visualize": return "hammer-visualize"
+    case "hammer-forensics": return "hammer-forensics"
+    case "hammer-doctor": return "hammer-doctor"
+    case "hammer-skill-health": return "hammer-skill-health"
+    case "hammer-knowledge": return "hammer-knowledge"
+    case "hammer-capture": return "hammer-capture"
+    case "hammer-triage": return "hammer-triage"
+    case "hammer-quick": return "hammer-quick"
+    case "hammer-history": return "hammer-history"
+    case "hammer-undo": return "hammer-undo"
+    case "hammer-inspect": return "hammer-inspect"
+    case "hammer-prefs": return "hammer-prefs"
+    case "hammer-config": return "hammer-config"
+    case "hammer-hooks": return "hammer-hooks"
+    case "hammer-mode": return "hammer-mode"
+    case "hammer-steer": return "hammer-steer"
+    case "hammer-export": return "hammer-export"
+    case "hammer-cleanup": return "hammer-cleanup"
+    case "hammer-queue": return "hammer-queue"
+    // GSD subcommand surfaces (S02) — legacy alias for hammer-* — legacy-alias
     case "gsd-status": return "gsd-status"
     case "gsd-visualize": return "gsd-visualize"
     case "gsd-forensics": return "gsd-forensics"
@@ -818,7 +861,13 @@ export function buildCommandSurfaceTarget(request: CommandSurfaceOpenRequest): C
     return buildCompactTarget(request)
   }
 
-  // GSD subcommand surfaces — generic target (S02)
+  // Hammer subcommand surfaces — canonical target
+  if (request.surface?.startsWith("hammer-")) {
+    const subcommand = request.surface.slice(7) // "hammer-forensics" -> "forensics"
+    return { kind: "hammer", surface: request.surface, subcommand, args: request.args ?? "" }
+  }
+
+  // GSD subcommand surfaces — generic target (S02) — legacy alias for hammer-* — legacy-alias
   if (request.surface?.startsWith("gsd-")) {
     const subcommand = request.surface.slice(4) // "gsd-forensics" -> "forensics"
     return { kind: "gsd", surface: request.surface, subcommand, args: request.args ?? "" }

@@ -1,7 +1,7 @@
 /**
- * Headless Orchestrator — `gsd headless`
+ * Headless Orchestrator — `hammer headless`
  *
- * Runs any /gsd subcommand without a TUI by spawning a child process in
+ * Runs any /hammer subcommand without a TUI by spawning a child process in
  * RPC mode, auto-responding to extension UI requests, and streaming
  * progress to stderr.
  *
@@ -56,7 +56,7 @@ import type { ExtensionUIRequest, ProgressContext } from './headless-ui.js'
 
 import {
   loadContext,
-  bootstrapGsdProject,
+  bootstrapHammerProject,
 } from './headless-context.js'
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     }
   }
 
-  // For new-milestone, load context and bootstrap .gsd/ before spawning RPC child
+  // For new-milestone, load context and bootstrap .hammer/ before spawning RPC child
   if (isNewMilestone) {
     if (!options.context && !options.contextText) {
       process.stderr.write('[headless] Error: new-milestone requires --context <file> or --context-text <text>\n')
@@ -322,28 +322,33 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
       process.exit(1)
     }
 
-    // Bootstrap .gsd/ if needed
-    const gsdDir = join(process.cwd(), '.gsd')
-    if (!existsSync(gsdDir)) {
+    // Bootstrap .hammer/ if needed (falls back to .gsd/ legacy import bridge — bootstrap-migration)
+    const hammerDir = join(process.cwd(), '.hammer')
+    const legacyGsdDir = join(process.cwd(), '.gsd') // legacy import bridge — bootstrap-migration
+    const stateDir = existsSync(hammerDir) ? hammerDir : existsSync(legacyGsdDir) ? legacyGsdDir : hammerDir
+    if (!existsSync(stateDir)) {
       if (!options.json) {
-        process.stderr.write('[headless] Bootstrapping .gsd/ project structure...\n')
+        process.stderr.write('[headless] Bootstrapping .hammer/ project structure...\n')
       }
-      bootstrapGsdProject(process.cwd())
+      bootstrapHammerProject(process.cwd())
     }
 
     // Write context to temp file for the RPC child to read
-    const runtimeDir = join(gsdDir, 'runtime')
+    const runtimeDir = join(stateDir, 'runtime')
     mkdirSync(runtimeDir, { recursive: true })
     writeFileSync(join(runtimeDir, 'headless-context.md'), contextContent, 'utf-8')
   }
 
-  // Validate .gsd/ directory (skip for new-milestone since we just bootstrapped it)
-  const gsdDir = join(process.cwd(), '.gsd')
-  if (!isNewMilestone && !existsSync(gsdDir)) {
-    process.stderr.write('[headless] Error: No .gsd/ directory found in current directory.\n')
-    process.stderr.write("[headless] Run 'gsd' interactively first to initialize a project.\n")
+  // Validate .hammer/ or legacy .gsd/ directory (skip for new-milestone since we just bootstrapped it)
+  const hammerDir = join(process.cwd(), '.hammer')
+  const legacyGsdDir = join(process.cwd(), '.gsd') // legacy import bridge — bootstrap-migration
+  if (!isNewMilestone && !existsSync(hammerDir) && !existsSync(legacyGsdDir)) {
+    process.stderr.write('[headless] Error: No .hammer/ directory found in current directory.\n')
+    process.stderr.write("[headless] Run 'hammer' interactively first to initialize a project.\n")
     process.exit(1)
   }
+  // Keep a gsdDir alias for downstream code that still references it (legacy compat — bootstrap-migration)
+  const gsdDir = existsSync(hammerDir) ? hammerDir : legacyGsdDir
 
   // Query: read-only state snapshot, no RPC child needed
   if (options.command === 'query') {
@@ -353,7 +358,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   }
 
   // Doctor: read-only health check, no RPC child needed (#4904 live-regression).
-  // The interactive `/gsd doctor` command lives in the GSD extension; this CLI
+  // The interactive `/hammer doctor` command lives in the Hammer extension; this CLI
   // path lets non-interactive callers (CI, recovery scripts, the live-regression
   // suite) get the same diagnostic without a TTY.
   if (options.command === 'doctor') {
@@ -377,9 +382,9 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   }
 
   // Resolve CLI path for the child process
-  const cliPath = process.env.GSD_BIN_PATH || process.argv[1]
+  const cliPath = process.env.HAMMER_BIN_PATH || process.env.GSD_BIN_PATH || process.argv[1] // GSD_BIN_PATH is a legacy alias for compatibility — bootstrap-migration
   if (!cliPath) {
-    process.stderr.write('[headless] Error: Cannot determine CLI path. Set GSD_BIN_PATH or run via gsd.\n')
+    process.stderr.write('[headless] Error: Cannot determine CLI path. Set HAMMER_BIN_PATH or run via hammer.\n')
     process.exit(1)
   }
 
@@ -394,8 +399,8 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   if (injector) {
     clientOptions.env = injector.getSecretEnvVars()
   }
-  // Signal headless mode to the GSD extension (skips UAT human pause, etc.)
-  clientOptions.env = { ...(clientOptions.env as Record<string, string> || {}), GSD_HEADLESS: '1' }
+  // Signal headless mode to the extension (skips UAT human pause, etc.)
+  clientOptions.env = { ...(clientOptions.env as Record<string, string> || {}), GSD_HEADLESS: '1' } // GSD_HEADLESS is a legacy alias for compatibility — bootstrap-migration
   // Propagate --bare to the child process
   if (options.bare) {
     clientOptions.args = [...((clientOptions.args as string[]) || []), '--bare']
@@ -822,7 +827,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // v2 protocol negotiation — attempt init for structured completion events
   let v2Enabled = false
   try {
-    await client.init({ clientId: 'gsd-headless' })
+    await client.init({ clientId: 'hammer-headless' })
     v2Enabled = true
   } catch {
     process.stderr.write('[headless] Warning: v2 init failed, falling back to v1 string-matching\n')
@@ -892,11 +897,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   }
 
   if (!options.json) {
-    process.stderr.write(`[headless] Running /gsd ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}...\n`)
+    process.stderr.write(`[headless] Running /hammer ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}...\n`)
   }
 
-  // Send the command
-  const command = `/gsd ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}`
+  // Send the command — canonical /hammer prefix; /gsd is a legacy alias for compatibility — legacy-alias
+  const command = `/hammer ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}`
   try {
     await client.prompt(command)
   } catch (err) {
@@ -909,7 +914,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     await completionPromise
   }
 
-  // Auto-mode chaining: if --auto and milestone creation succeeded, send /gsd auto
+  // Auto-mode chaining: if --auto and milestone creation succeeded, send /hammer auto
   if (isNewMilestone && options.auto && milestoneReady && !blocked && exitCode === EXIT_SUCCESS) {
     if (!options.json) {
       process.stderr.write('[headless] Milestone ready — chaining into auto-mode...\n')
@@ -926,7 +931,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     })
 
     try {
-      await client.prompt('/gsd auto')
+      await client.prompt('/hammer auto') // canonical /hammer; /gsd is a legacy alias — legacy-alias
     } catch (err) {
       process.stderr.write(`[headless] Error: Failed to start auto-mode: ${err instanceof Error ? err.message : String(err)}\n`)
       exitCode = EXIT_ERROR

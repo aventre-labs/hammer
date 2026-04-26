@@ -144,19 +144,23 @@ test("registered GSD command roots stay on the prompt/extension path", async () 
   const registeredRoots = await collectRegisteredGsdCommandRoots()
   assert.deepEqual(
     registeredRoots,
-    ["exit", "gsd", "kill", "worktree", "wt"],
-    "browser parity contract only expects the current GSD command roots",
+    ["exit", "gsd", "hammer", "kill", "worktree", "wt"],
+    "browser parity contract expects hammer (canonical) and gsd (legacy alias) command roots",
   )
 
-  // Non-gsd roots are extension commands that pass through to the bridge.
-  // Derived dynamically so adding a new registration fails this assertion loudly.
-  const nonGsdRoots = registeredRoots.filter((r) => r !== "gsd")
-  assert.equal(nonGsdRoots.length, 4, "expected exactly 4 non-gsd passthrough roots; update this count when adding registrations")
-  for (const root of nonGsdRoots) {
+  // Non-hammer/gsd roots are extension commands that pass through to the bridge.
+  const nonHammerGsdRoots = registeredRoots.filter((r) => r !== "hammer" && r !== "gsd")
+  assert.equal(nonHammerGsdRoots.length, 4, "expected exactly 4 non-hammer/gsd passthrough roots; update this count when adding registrations")
+  for (const root of nonHammerGsdRoots) {
     assertPromptPassthrough(`/${root}`)
   }
 
-  // Bare /gsd passes through to bridge (equivalent to /gsd next)
+  // Bare /hammer passes through to bridge (equivalent to /hammer next)
+  const bareHammer = dispatchBrowserSlashCommand("/hammer")
+  assert.equal(bareHammer.kind, "prompt", "bare /hammer should pass through to bridge")
+  assert.equal(bareHammer.command.message, "/hammer", "bare /hammer should preserve exact input")
+
+  // Bare /gsd also passes through to bridge — legacy alias — legacy-alias
   const bareGsd = dispatchBrowserSlashCommand("/gsd")
   assert.equal(bareGsd.kind, "prompt", "bare /gsd should pass through to bridge")
   assert.equal(bareGsd.command.message, "/gsd", "bare /gsd should preserve exact input")
@@ -188,6 +192,50 @@ test("current GSD command family samples dispatch to correct outcomes after S02"
     const idle = dispatchBrowserSlashCommand("/gsd status", { isStreaming: false })
     assert.equal(idle.kind, "surface")
     assert.equal(idle.surface, "gsd-status")
+  })
+})
+
+test("canonical /hammer command family dispatches to hammer-* surfaces", async (t) => {
+  await t.test("/hammer (bare) passes through to bridge", () => {
+    assertPromptPassthrough("/hammer")
+  })
+
+  await t.test("/hammer status dispatches to hammer-status surface", () => {
+    const outcome = dispatchBrowserSlashCommand("/hammer status")
+    assert.equal(outcome.kind, "surface", "/hammer status should dispatch to surface")
+    assert.equal(outcome.surface, "hammer-status")
+    assert.equal(outcome.commandName, "hammer")
+  })
+
+  await t.test("/hammer status dispatches to hammer surface regardless of streaming state", () => {
+    const streaming = dispatchBrowserSlashCommand("/hammer status", { isStreaming: true })
+    assert.equal(streaming.kind, "surface", "/hammer status should be surface even when streaming")
+    assert.equal(streaming.surface, "hammer-status")
+
+    const idle = dispatchBrowserSlashCommand("/hammer status", { isStreaming: false })
+    assert.equal(idle.kind, "surface")
+    assert.equal(idle.surface, "hammer-status")
+  })
+
+  await t.test("/hammer auto passes through to bridge", () => {
+    assertPromptPassthrough("/hammer auto")
+  })
+
+  await t.test("/hammer next passes through to bridge", () => {
+    assertPromptPassthrough("/hammer next")
+  })
+
+  await t.test("/hammer help dispatches to local gsd_help action", () => {
+    const outcome = dispatchBrowserSlashCommand("/hammer help")
+    assert.equal(outcome.kind, "local")
+    assert.equal(outcome.action, "gsd_help")
+  })
+
+  await t.test("/hammer visualize navigates to visualize view", () => {
+    const outcome = dispatchBrowserSlashCommand("/hammer visualize")
+    assert.equal(outcome.kind, "view-navigate")
+    assert.equal(outcome.view, "visualize")
+    assert.equal(outcome.commandName, "hammer")
   })
 })
 
@@ -346,6 +394,139 @@ test("every GSD surface dispatches through the contract wiring end-to-end", asyn
       assert.ok(state.selectedTarget, `surface state should have a non-null selectedTarget for gsd-${subcommand}`)
       assert.equal(state.selectedTarget.kind, "gsd", `target kind should be "gsd" for gsd-${subcommand}`)
       assert.equal(state.selectedTarget.subcommand, subcommand, `target subcommand should be "${subcommand}"`)
+    })
+  }
+})
+
+// --- /hammer canonical dispatch ---
+
+const EXPECTED_HAMMER_OUTCOMES = new Map<string, "surface" | "prompt" | "local" | "view-navigate">([
+  // Surface commands (19)
+  ["status", "surface"],
+  ["visualize", "view-navigate"],
+  ["forensics", "surface"],
+  ["doctor", "surface"],
+  ["skill-health", "surface"],
+  ["knowledge", "surface"],
+  ["capture", "surface"],
+  ["triage", "surface"],
+  ["quick", "surface"],
+  ["history", "surface"],
+  ["undo", "surface"],
+  ["inspect", "surface"],
+  ["prefs", "surface"],
+  ["config", "surface"],
+  ["hooks", "surface"],
+  ["mode", "surface"],
+  ["steer", "surface"],
+  ["export", "surface"],
+  ["cleanup", "surface"],
+  ["queue", "surface"],
+  // Bridge passthrough (9)
+  ["auto", "prompt"],
+  ["next", "prompt"],
+  ["stop", "prompt"],
+  ["pause", "prompt"],
+  ["skip", "prompt"],
+  ["discuss", "prompt"],
+  ["run-hook", "prompt"],
+  ["migrate", "prompt"],
+  ["remote", "prompt"],
+  // Inline help
+  ["help", "local"],
+])
+
+test("every /hammer subcommand has an explicit browser dispatch outcome", async (t) => {
+  assert.equal(
+    EXPECTED_HAMMER_OUTCOMES.size,
+    30,
+    "EXPECTED_HAMMER_OUTCOMES must cover all 30 Hammer subcommands (19 surface + 1 view-navigate + 9 passthrough + 1 help)",
+  )
+
+  for (const [subcommand, expectedKind] of EXPECTED_HAMMER_OUTCOMES) {
+    await t.test(`/hammer ${subcommand} -> ${expectedKind}`, () => {
+      const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`)
+      assert.equal(
+        outcome.kind,
+        expectedKind,
+        `/hammer ${subcommand} should dispatch to ${expectedKind}, got ${outcome.kind}`,
+      )
+    })
+
+    if (expectedKind === "surface") {
+      await t.test(`/hammer ${subcommand} opens hammer-${subcommand} surface`, () => {
+        const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`) as any
+        assert.equal(outcome.surface, `hammer-${subcommand}`, `/hammer ${subcommand} should open the hammer-${subcommand} surface`)
+        assert.equal(outcome.commandName, "hammer")
+      })
+    }
+
+    if (expectedKind === "prompt") {
+      await t.test(`/hammer ${subcommand} preserves exact input text`, () => {
+        const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`) as any
+        assert.equal(outcome.command.message, `/hammer ${subcommand}`, `/hammer ${subcommand} should preserve exact input text for bridge delivery`)
+      })
+    }
+
+    if (expectedKind === "local") {
+      await t.test(`/hammer ${subcommand} dispatches to gsd_help action`, () => {
+        const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`) as any
+        assert.equal(outcome.action, "gsd_help", `/hammer ${subcommand} should dispatch to gsd_help action`)
+      })
+    }
+
+    if (expectedKind === "view-navigate") {
+      await t.test(`/hammer ${subcommand} navigates to the ${subcommand} view`, () => {
+        const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`) as any
+        assert.equal(outcome.view, subcommand, `/hammer ${subcommand} should navigate to the ${subcommand} view`)
+      })
+    }
+  }
+})
+
+test("Hammer dispatch negative tests — /hammer status is Hammer surface, /gsd status is legacy alias surface", async (t) => {
+  await t.test("/hammer status routes to hammer-status (canonical Hammer surface)", () => {
+    const outcome = dispatchBrowserSlashCommand("/hammer status")
+    assert.equal(outcome.kind, "surface", "/hammer status must route to surface kind, not generic prompt path")
+    assert.equal(outcome.surface, "hammer-status", "/hammer status must use canonical hammer-status surface")
+    assert.equal(outcome.commandName, "hammer", "/hammer status target kind must be hammer")
+  })
+
+  await t.test("/gsd status routes to gsd-status (legacy alias surface, not canonical hammer path)", () => {
+    // /gsd is an explicit legacy alias — it still routes, but to gsd-* surfaces — legacy-alias
+    const outcome = dispatchBrowserSlashCommand("/gsd status")
+    assert.equal(outcome.kind, "surface", "/gsd status must route to surface, not generic prompt path")
+    assert.equal(outcome.surface, "gsd-status", "/gsd status uses gsd-status legacy surface, not hammer-status")
+  })
+
+  await t.test("/hammer status and /gsd status use different surface names (they are distinct, not conflated)", () => {
+    const hammerOutcome = dispatchBrowserSlashCommand("/hammer status") as any
+    const gsdOutcome = dispatchBrowserSlashCommand("/gsd status") as any
+    assert.notEqual(hammerOutcome.surface, gsdOutcome.surface, "/hammer and /gsd status surfaces must be distinct")
+    assert.equal(hammerOutcome.surface, "hammer-status")
+    assert.equal(gsdOutcome.surface, "gsd-status")
+  })
+})
+
+test("every /hammer surface dispatches through the contract wiring end-to-end", async (t) => {
+  const hammerSurfaces = [...EXPECTED_HAMMER_OUTCOMES.entries()].filter(([, kind]) => kind === "surface")
+
+  assert.equal(hammerSurfaces.length, 19, "should have exactly 19 Hammer surface subcommands")
+
+  for (const [subcommand] of hammerSurfaces) {
+    await t.test(`/hammer ${subcommand} -> dispatch -> open request -> surface state`, () => {
+      const outcome = dispatchBrowserSlashCommand(`/hammer ${subcommand}`)
+      assert.equal(outcome.kind, "surface")
+
+      const openRequest = surfaceOutcomeToOpenRequest(outcome, {})
+      const state = openCommandSurfaceState(createInitialCommandSurfaceState(), openRequest)
+
+      assert.equal(state.open, true, `surface state should be open for hammer-${subcommand}`)
+      assert.ok(state.section, `surface state should have a non-null section for hammer-${subcommand}`)
+      assert.equal(state.section, `hammer-${subcommand}`, `section should match hammer-${subcommand}`)
+      assert.ok(state.selectedTarget, `surface state should have a non-null selectedTarget for hammer-${subcommand}`)
+      assert.equal(state.selectedTarget.kind, "hammer", `target kind should be "hammer" for hammer-${subcommand}`)
+      assert.equal((state.selectedTarget as any).subcommand, subcommand, `target subcommand should be "${subcommand}"`)
     })
   }
 })

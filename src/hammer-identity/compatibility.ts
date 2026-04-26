@@ -229,6 +229,28 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["registerAlias(pi, decisionSaveTool, \"gsd_decision_save\", \"hammer_decision_save\"); // legacy alias for compatibility — legacy-alias"] as const,
   },
   {
+    id: "headless-legacy-command-bridge",
+    category: "legacy-alias",
+    description: "headless.ts, headless-context.ts, headless-query.ts, and headless-ui.ts retain explicit /gsd fallback references, .gsd/ bootstrap bridges, GSD_AGENT_DIR/GSD_BIN_PATH/GSD_HEADLESS env var aliases, GSDState type import, gsd_* tool prefix detection, and gsd-headless client-id as documented legacy compatibility shims.",
+    pathPattern: String.raw`(?:^|/)src/headless(?:-context|-events|-query|-ui|-[a-z]+)?\.ts$`,
+    linePattern: String.raw`(?:(?:legacy|compat|bridge|fallback|alias|bootstrap|migration|private-extension-path-reference).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:legacy|compat|bridge|fallback|alias|bootstrap|migration|private-extension-path-reference)|GSD_BIN_PATH|GSD_HEADLESS|GSD_AGENT_DIR|gsd-headless|GSDState|gsd_|\.gsd)`,
+    rationale:
+      "The headless orchestrator retains .gsd/ detection, GSD_BIN_PATH, GSD_HEADLESS, GSD_AGENT_DIR, GSDState type import, gsd_* prefix detection in headless-ui.ts, and gsd-headless client-id as explicit bootstrap-migration and legacy-alias bridges. Every occurrence is annotated inline with its bridge category.",
+    allowedUntil: "Remove when GSD_BIN_PATH, GSD_HEADLESS, GSD_AGENT_DIR, GSDState, gsd-headless, and .gsd/ bootstrap bridges are retired.",
+    examples: ["const cliPath = process.env.HAMMER_BIN_PATH || process.env.GSD_BIN_PATH || ... // GSD_BIN_PATH is a legacy alias — bootstrap-migration"] as const,
+  },
+  {
+    id: "browser-dispatch-legacy-gsd-alias",
+    category: "legacy-alias",
+    description: "browser-slash-command-dispatch.ts and command-surface-contract.ts retain /gsd dispatch, gsd-* surface names, and GSD_HELP_TEXT as explicit documented legacy aliases for the canonical /hammer path.",
+    pathPattern: String.raw`(?:^|/)web/lib/(?:browser-slash-command-dispatch|command-surface-contract)\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "The browser dispatch layer exposes /gsd as a legacy alias for /hammer. The gsd-* surface names remain until S02 renames the extension surfaces. Every occurrence is annotated inline as a legacy alias.",
+    allowedUntil: "Remove when /gsd legacy alias and gsd-* surface names are retired in the browser dispatch layer.",
+    examples: ["// GSD subcommand dispatch — legacy alias for /hammer — legacy-alias"] as const,
+  },
+  {
     id: "marked-downstream-follow-up",
     category: "downstream-follow-up",
     description: "Explicit TODO/FIXME notes for IAM, prompt, workflow, or package rename tasks planned later in S01.",

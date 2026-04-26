@@ -1,5 +1,5 @@
 /**
- * Headless Query — `gsd headless query`
+ * Headless Query — `hammer headless query`
  *
  * Single read-only command that returns the full project snapshot as JSON
  * to stdout, without spawning an LLM session. Instant (~50ms).
@@ -25,7 +25,7 @@ const jiti = createJiti(fileURLToPath(import.meta.url), { interopDefault: true, 
 const { existsSync } = await import('node:fs')
 
 /**
- * Resolve the GSD extensions root for headless-query. Prefers the synced
+ * Resolve the Hammer extensions root for headless-query. Prefers the synced
  * agent directory (so headless-query loads the same extension copy as
  * interactive/auto modes — #3471) and falls back to the bundled source
  * resource for source-tree dev workflows.
@@ -34,7 +34,9 @@ const { existsSync } = await import('node:fs')
  * #3471 contract can be exercised in tests without spawning a subprocess.
  */
 export function resolveGsdAgentExtensionsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return join(env.GSD_AGENT_DIR || join(homedir(), '.gsd', 'agent'), 'extensions', 'gsd')
+  // HAMMER_AGENT_DIR is canonical; GSD_AGENT_DIR is a legacy alias — bootstrap-migration
+  const agentBase = env.HAMMER_AGENT_DIR || env.GSD_AGENT_DIR || join(homedir(), '.hammer', 'agent') // GSD_AGENT_DIR is a legacy alias — bootstrap-migration
+  return join(agentBase, 'extensions', 'gsd') // internal extension dir path — private-extension-path-reference
 }
 
 /**
@@ -57,7 +59,7 @@ const useAgentDir = existsSync(join(agentExtensionsDir, 'state.ts'))
 const gsdExtensionPath = (...segments: string[]) =>
   useAgentDir
     ? join(agentExtensionsDir, ...segments)
-    : resolveBundledSourceResource(import.meta.url, 'extensions', 'gsd', ...segments)
+    : resolveBundledSourceResource(import.meta.url, 'extensions', 'gsd', ...segments) // internal extension dir path — private-extension-path-reference
 
 async function loadExtensionModules() {
   const stateModule = await jiti.import(gsdExtensionPath('state.ts'), {}) as any
