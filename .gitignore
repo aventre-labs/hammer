@@ -87,3 +87,7 @@ bun.lock
 
 # ── GSD baseline (auto-generated) ──
 .mcp.json
+
+# ── Hammer baseline (auto-generated) ──
+.hammer
+.hammer-id

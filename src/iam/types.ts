@@ -170,7 +170,8 @@ export interface IAMError {
     | "savesuccess-blind-spot"
     | "persistence-failed"
     | "invalid-stage-sequence"
-    | "unknown-rune";
+    | "unknown-rune"
+    | "executor-not-wired";
   stage?: OmegaStageName;
   runeName?: RuneName;
   target?: string;
@@ -204,4 +205,40 @@ export interface OmegaRunConfig {
   persona?: OmegaPersona;
   runes?: RuneName[];
   stages?: OmegaStageName[];
+}
+
+// ---------------------------------------------------------------------------
+// IAM public tool layer — pure executor contracts
+// ---------------------------------------------------------------------------
+
+export interface GraphNode {
+  id: string;
+  category: string;
+  content: string;
+  confidence: number;
+}
+
+export interface GraphEdge {
+  fromId: string;
+  toId: string;
+  relation: string;
+}
+
+export type IAMToolOutput =
+  | { kind: "memory-list"; memories: Array<{ id: string; content: string; score: number; category: string }> }
+  | { kind: "memory-created"; id: string; content: string; category: string }
+  | { kind: "rune-contract"; rune: RuneContract }
+  | { kind: "rune-list"; runes: RuneContract[] }
+  | { kind: "savesuccess-report"; scorecard: SavesuccessScorecard; report: string; success: boolean }
+  | { kind: "knowledge-map"; categories: Record<string, number>; total: number }
+  | { kind: "graph-walk"; nodes: GraphNode[]; edges: GraphEdge[] }
+  | { kind: "check-result"; tools: string[]; kernelVersion: string; dbAvailable: boolean }
+  | { kind: "spiral-deferred"; reason: string; guidance: string };
+
+export interface IAMToolAdapters {
+  queryMemories: (query: string, k?: number, category?: string) => Array<{ id: string; content: string; score: number; category: string }>;
+  getActiveMemories: (limit?: number) => Array<{ id: string; content: string; confidence: number; category: string }>;
+  createMemory: (fields: { category: string; content: string; confidence?: number; source_unit_type?: string; structuredFields?: Record<string, unknown> | null }) => string | null;
+  traverseGraph: (startId: string, depth?: number) => { nodes: Array<{ id: string; category: string; content: string; confidence: number }>; edges: Array<{ fromId: string; toId: string; relation: string }> };
+  isDbAvailable: () => boolean;
 }

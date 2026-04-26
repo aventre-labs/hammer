@@ -3,8 +3,8 @@
  *
  * IAM persistence layer — injected-callback pattern.
  *
- * This file has ZERO direct imports from src/resources/extensions/gsd/ or any
- * other extension-tree path. All DB access and atomic-write operations are
+ * This file has ZERO direct imports from the extension tree. All DB access
+ * and atomic-write operations are
  * received as injected adapters so that src/iam/ remains a pure, independently
  * testable library.
  *
