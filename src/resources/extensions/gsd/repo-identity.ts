@@ -11,8 +11,48 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import {
+  HAMMER_STATE_DIR_NAME,
+  HAMMER_GLOBAL_HOME_DIR_NAME,
+  HAMMER_HOME_ENV,
+  HAMMER_STATE_DIR_ENV,
+  HAMMER_PROJECT_ID_ENV,
+  HAMMER_PROJECT_MARKER_FILE,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+// ─── State Root Resolution ───────────────────────────────────────────────────
+
+/**
+ * Resolve the canonical Hammer home directory.
+ *
+ * Priority: HAMMER_HOME > GSD_HOME (legacy import bridge) > ~/.hammer
+ * When GSD_HOME is used, a diagnostic is emitted and HAMMER_HOME is back-filled
+ * so downstream code only reads the canonical env var.
+ *
+ * — bootstrap-migration
+ */
+function resolveHammerHome(): string {
+  const canonical = process.env[HAMMER_HOME_ENV];
+  if (canonical) return canonical;
+
+  const legacyHome = process.env[HAMMER_LEGACY_ENV_ALIASES.home]; // GSD_HOME — legacy import bridge
+  if (legacyHome) {
+    process.env[HAMMER_HOME_ENV] = legacyHome; // back-fill canonical — bootstrap-migration
+    process.stderr.write(
+      `[hammer] Using legacy ${HAMMER_LEGACY_ENV_ALIASES.home} for home directory; ` +
+      `set ${HAMMER_HOME_ENV} to suppress this diagnostic — bootstrap-migration compatibility rule applied.\n`
+    );
+    return legacyHome;
+  }
+
+  const defaultHome = join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+  process.env[HAMMER_HOME_ENV] = defaultHome;
+  process.env[HAMMER_LEGACY_ENV_ALIASES.home] ??= defaultHome; // legacy alias for compatibility — bootstrap-migration
+  return defaultHome;
+}
+
+const hammerHome = resolveHammerHome();
 
 // ─── Repo Metadata ───────────────────────────────────────────────────────────
 
@@ -104,16 +144,15 @@ export function readRepoMeta(externalPath: string): RepoMeta | null {
  * Returns true when ALL of:
  *   1. basePath is inside a git repo (git rev-parse succeeds)
  *   2. The resolved git root is a proper ancestor of basePath
- *   3. There is no *project* `.gsd` directory at the git root or any
- *      intermediate ancestor (the parent project has not been
- *      initialised with GSD)
+ *   3. There is no *project* state directory (`.hammer` canonical, or `.gsd` legacy import bridge)
+ *      at the git root or any intermediate ancestor
  *
  * When true, the caller should run `git init` at basePath so that
  * `repoIdentity()` produces a hash unique to this directory, preventing
  * cross-project state leaks (#1639).
  *
- * When the git root already has a project `.gsd`, the directory is a
- * legitimate subdirectory of an existing GSD project — `cd src/ && /gsd`
+ * When the git root already has a project state dir, the directory is a
+ * legitimate subdirectory of an existing Hammer project — `cd src/ && /hammer`
  * should still load the parent project's milestones.
  */
 export function isInheritedRepo(basePath: string): boolean {
@@ -123,17 +162,14 @@ export function isInheritedRepo(basePath: string): boolean {
     const normalizedRoot = canonicalizeExistingPath(root);
     if (normalizedBase === normalizedRoot) return false; // basePath IS the root
 
-    // The git root is a proper ancestor. Check whether it already has .gsd
-    // (i.e. the parent project was initialised with GSD).
-    if (isProjectGsd(join(root, ".gsd"))) return false;
+    // The git root is a proper ancestor. Check whether it already has a state dir.
+    // Probe .hammer first (canonical), then .gsd (legacy import bridge — state-namespace-bridge).
+    if (isProjectGsd(join(root, HAMMER_STATE_DIR_NAME)) || isProjectGsd(join(root, ".gsd"))) return false; // legacy import bridge — state-namespace-bridge
 
-    // Walk up from basePath's parent to the git root checking for .gsd.
-    // Start at dirname(normalizedBase), NOT normalizedBase itself — finding
-    // .gsd at basePath means GSD state is set up for THIS project, which
-    // says nothing about whether the git repo is inherited from an ancestor.
+    // Walk up from basePath's parent to the git root checking for state dirs.
     let dir = dirname(normalizedBase);
     while (dir !== normalizedRoot && dir !== dirname(dir)) {
-      if (isProjectGsd(join(dir, ".gsd"))) return false;
+      if (isProjectGsd(join(dir, HAMMER_STATE_DIR_NAME)) || isProjectGsd(join(dir, ".gsd"))) return false; // legacy import bridge — state-namespace-bridge
       dir = dirname(dir);
     }
 
@@ -144,16 +180,19 @@ export function isInheritedRepo(basePath: string): boolean {
 }
 
 /**
- * Distinguish a *project* `.gsd` from the global `~/.gsd` state directory.
+ * Distinguish a *project* state directory (`.hammer` or legacy `.gsd`) from
+ * the global Hammer home directory.
  *
- * A project `.gsd` is either:
+ * A project state directory is either:
  *   - A symlink to an external state directory (normal post-migration layout)
- *   - A legacy real directory that is NOT the global GSD home
+ *   - A legacy real directory that is NOT the global Hammer/GSD home
  *
  * When the user's home directory is itself a git repo (e.g. dotfile managers),
- * `~/.gsd` exists but is the global state directory — not a project `.gsd`.
- * Treating it as a project `.gsd` would cause isInheritedRepo() to wrongly
- * conclude that subdirectories are part of the home "project" (#2393).
+ * `~/.hammer` or `~/.gsd` exists but is the global state directory — not a
+ * project state dir. Treating it as a project dir would cause isInheritedRepo()
+ * to wrongly conclude that subdirectories are part of the home "project" (#2393).
+ *
+ * Probes .hammer first (canonical), then .gsd (legacy import bridge — state-namespace-bridge).
  */
 function isProjectGsd(gsdPath: string): boolean {
   if (!existsSync(gsdPath)) return false;
@@ -161,21 +200,21 @@ function isProjectGsd(gsdPath: string): boolean {
   try {
     const stat = lstatSync(gsdPath);
 
-    // Symlinks are always project .gsd (created by ensureGsdSymlink).
+    // Symlinks are always project state dirs (created by ensureGsdSymlink or ensureHammerSymlink).
     if (stat.isSymbolicLink()) return true;
 
-    // For real directories, check that this isn't the global GSD home.
-    // Recompute gsdHome dynamically so env overrides (GSD_HOME) are
-    // picked up at call time, not just at module load time.
+    // For real directories, check that this isn't the global home.
     if (stat.isDirectory()) {
-      const currentGsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-      const normalizedGsdPath = canonicalizeExistingPath(gsdPath);
+      const currentHammerHome = process.env[HAMMER_HOME_ENV] || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+      const currentGsdHome = process.env[HAMMER_LEGACY_ENV_ALIASES.home] || join(homedir(), ".gsd"); // legacy import bridge — state-namespace-bridge
+      const normalizedPath = canonicalizeExistingPath(gsdPath);
+      const normalizedHammerHome = canonicalizeExistingPath(currentHammerHome);
       const normalizedGsdHome = canonicalizeExistingPath(currentGsdHome);
-      if (normalizedGsdPath === normalizedGsdHome) return false;
+      if (normalizedPath === normalizedHammerHome || normalizedPath === normalizedGsdHome) return false;
       return true;
     }
   } catch {
-    // lstat failed — treat as no .gsd present
+    // lstat failed — treat as no state dir present
   }
 
   return false;
@@ -261,7 +300,7 @@ function resolveGitRoot(basePath: string): string {
 }
 
 /**
- * Validate a GSD_PROJECT_ID value.
+ * Validate a HAMMER_PROJECT_ID (or legacy GSD_PROJECT_ID) value.
  *
  * Must contain only alphanumeric characters, hyphens, and underscores.
  * Call this once at startup so the user gets immediate feedback on bad values.
@@ -273,22 +312,21 @@ export function validateProjectId(id: string): boolean {
 /**
  * Compute a stable identity for a repository.
  *
- * If `GSD_PROJECT_ID` is set, returns it directly (validation is expected
- * to have already happened at startup via `validateProjectId`).
+ * Priority: HAMMER_PROJECT_ID > GSD_PROJECT_ID (legacy import bridge) > hash.
+ * When GSD_PROJECT_ID is used, HAMMER_PROJECT_ID is back-filled for downstream
+ * code that only reads the canonical env var.
  *
- * For repos with a remote URL, returns SHA-256 of the remote URL only —
- * this makes the identity stable across directory moves/renames (#2750).
- *
- * For local-only repos (no remote), includes the git root in the hash.
- * Local repos use a `.gsd-id` marker file for recovery after moves.
- *
- * Deterministic: same repo always produces the same hash regardless of
- * which worktree the caller is inside.
+ * — bootstrap-migration
  */
 export function repoIdentity(basePath: string): string {
-  const projectId = process.env.GSD_PROJECT_ID;
+  const projectId = process.env[HAMMER_PROJECT_ID_ENV]; // HAMMER_PROJECT_ID
   if (projectId) {
     return projectId;
+  }
+  const legacyProjectId = process.env[HAMMER_LEGACY_ENV_ALIASES.projectId]; // GSD_PROJECT_ID — legacy import bridge
+  if (legacyProjectId) {
+    process.env[HAMMER_PROJECT_ID_ENV] = legacyProjectId; // back-fill canonical — bootstrap-migration
+    return legacyProjectId;
   }
   const remoteUrl = getRemoteUrl(basePath);
   if (remoteUrl) {
@@ -305,23 +343,37 @@ export function repoIdentity(basePath: string): string {
 // ─── External State Directory ───────────────────────────────────────────────
 
 /**
- * Compute the external GSD state directory for a repository.
+ * Resolve the external Hammer state directory base.
  *
- * Returns `$GSD_STATE_DIR/projects/<hash>` if `GSD_STATE_DIR` is set,
- * otherwise `~/.gsd/projects/<hash>`.
+ * Priority: HAMMER_STATE_DIR > GSD_STATE_DIR (legacy import bridge) > hammerHome.
+ * — state-namespace-bridge
+ */
+function resolveExternalBase(): string {
+  const canonical = process.env[HAMMER_STATE_DIR_ENV];
+  if (canonical) return canonical;
+  const legacy = process.env[HAMMER_LEGACY_ENV_ALIASES.stateDir]; // GSD_STATE_DIR — legacy import bridge
+  if (legacy) return legacy;
+  return hammerHome;
+}
+
+/**
+ * Compute the external Hammer state directory for a repository.
+ *
+ * Returns `$HAMMER_STATE_DIR/projects/<hash>` if `HAMMER_STATE_DIR` is set,
+ * otherwise `$GSD_STATE_DIR/projects/<hash>` (legacy import bridge — state-namespace-bridge),
+ * otherwise `~/.hammer/projects/<hash>`.
  */
 export function externalGsdRoot(basePath: string): string {
-  const base = process.env.GSD_STATE_DIR || gsdHome;
+  const base = resolveExternalBase();
   return join(base, "projects", repoIdentity(basePath));
 }
 
 /**
  * Resolve the root directory that stores project-scoped external state.
- * Honors GSD_STATE_DIR override before falling back to GSD_HOME.
+ * Honors HAMMER_STATE_DIR > GSD_STATE_DIR (legacy import bridge) > HAMMER_HOME.
  */
 export function externalProjectsRoot(): string {
-  const base = process.env.GSD_STATE_DIR || gsdHome;
-  return join(base, "projects");
+  return join(resolveExternalBase(), "projects");
 }
 
 // ─── Numbered Variant Cleanup ────────────────────────────────────────────────
@@ -337,16 +389,20 @@ export function externalProjectsRoot(): string {
  *
  * This helper scans the project root for entries matching `.gsd <digits>` and
  * removes them. It is called early in `ensureGsdSymlink()` so that the
- * canonical `.gsd` path is always the one in use.
+ * canonical `.gsd` path is always the one in use — state-namespace-bridge
+ *
+ * @legacy-compat — cleans up legacy .gsd numbered variants — state-namespace-bridge
  */
 const GSD_NUMBERED_VARIANT_RE = /^\.gsd \d+$/;
+/** Cleans up .hammer numbered variants (macOS APFS collision pattern). */
+const HAMMER_NUMBERED_VARIANT_RE = /^\.hammer \d+$/;
 
 export function cleanNumberedGsdVariants(projectPath: string): string[] {
   const removed: string[] = [];
   try {
     const entries = readdirSync(projectPath);
     for (const entry of entries) {
-      if (GSD_NUMBERED_VARIANT_RE.test(entry)) {
+      if (GSD_NUMBERED_VARIANT_RE.test(entry) || HAMMER_NUMBERED_VARIANT_RE.test(entry)) {
         const fullPath = join(projectPath, entry);
         try {
           rmSync(fullPath, { recursive: true, force: true });
@@ -362,22 +418,28 @@ export function cleanNumberedGsdVariants(projectPath: string): string[] {
   return removed;
 }
 
-// ─── .gsd-id Marker ─────────────────────────────────────────────────────────
+// ─── .hammer-id Marker (canonical) and .gsd-id Marker (legacy import bridge) ──
 
 /**
- * Write a `.gsd-id` marker file in the project root.
+ * Write the canonical `.hammer-id` marker file in the project root.
  *
  * This file records the identity hash used for the external state directory.
  * For local-only repos (no remote), this marker survives directory moves and
  * enables automatic recovery of orphaned state (#2750).
  *
- * The marker is gitignored by ensureGitignore(). Non-fatal: failure to write
- * the marker must never block project setup.
+ * Also writes the legacy `.gsd-id` marker for backward compatibility
+ * with tools that still read the old filename (legacy import bridge — state-namespace-bridge).
+ * Non-fatal: failure to write the marker must never block project setup.
  */
 function writeGsdIdMarker(projectPath: string, identity: string): void {
+  // Write canonical .hammer-id marker
+  _writeMarkerFile(join(projectPath, HAMMER_PROJECT_MARKER_FILE), identity);
+  // Write legacy .gsd-id for backwards compatibility — legacy import bridge — state-namespace-bridge
+  _writeMarkerFile(join(projectPath, ".gsd-id"), identity); // legacy import bridge — state-namespace-bridge
+}
+
+function _writeMarkerFile(markerPath: string, identity: string): void {
   try {
-    const markerPath = join(projectPath, ".gsd-id");
-    // Only write if content differs to avoid unnecessary disk writes.
     if (existsSync(markerPath)) {
       try {
         if (readFileSync(markerPath, "utf-8").trim() === identity) return;
@@ -390,12 +452,21 @@ function writeGsdIdMarker(projectPath: string, identity: string): void {
 }
 
 /**
- * Read the `.gsd-id` marker from the project root.
- * Returns the identity hash, or null if the marker doesn't exist or is unreadable.
+ * Read the project marker to recover identity.
+ *
+ * Probe order: .hammer-id (canonical) → .gsd-id (legacy import bridge — state-namespace-bridge).
+ * Returns the identity hash, or null if neither marker exists or is readable.
  */
 function readGsdIdMarker(projectPath: string): string | null {
+  // Try canonical .hammer-id first
+  const canonical = _readMarkerFile(join(projectPath, HAMMER_PROJECT_MARKER_FILE));
+  if (canonical) return canonical;
+  // Fall back to legacy .gsd-id — legacy import bridge — state-namespace-bridge
+  return _readMarkerFile(join(projectPath, ".gsd-id")); // legacy import bridge — state-namespace-bridge
+}
+
+function _readMarkerFile(markerPath: string): string | null {
   try {
-    const markerPath = join(projectPath, ".gsd-id");
     if (!existsSync(markerPath)) return null;
     const content = readFileSync(markerPath, "utf-8").trim();
     return /^[a-zA-Z0-9_-]+$/.test(content) ? content : null;
@@ -423,8 +494,9 @@ function hasProjectState(externalPath: string): boolean {
  * Resolve the external state directory, with recovery for relocated projects.
  *
  * For local-only repos where the computed identity produces an empty state dir,
- * checks the `.gsd-id` marker for the original identity hash and recovers
- * the old state directory if it still exists and contains data (#2750).
+ * checks the `.hammer-id` / `.gsd-id` (legacy import bridge) markers for the
+ * original identity hash and recovers the old state directory if it still
+ * exists and contains data (#2750).
  *
  * Returns the resolved external path (may differ from the computed identity).
  */
@@ -437,16 +509,14 @@ function resolveExternalPathWithRecovery(projectPath: string): string {
     return computedPath;
   }
 
-  // Check for .gsd-id marker from a previous location.
+  // Check for .hammer-id / .gsd-id (legacy import bridge — state-namespace-bridge) marker.
   const markerId = readGsdIdMarker(projectPath);
   if (markerId && markerId !== computedId) {
     // The marker points to a different identity — the repo was likely moved.
-    const base = process.env.GSD_STATE_DIR || gsdHome;
+    const base = resolveExternalBase();
     const markerPath = join(base, "projects", markerId);
     if (hasProjectState(markerPath)) {
       // Recover: use the old state directory and update the marker to the new identity.
-      // Move the state from the old hash dir to the new one so future lookups work
-      // without the marker.
       try {
         mkdirSync(computedPath, { recursive: true });
         const entries = readdirSync(markerPath);
@@ -454,7 +524,6 @@ function resolveExternalPathWithRecovery(projectPath: string): string {
           try {
             const src = join(markerPath, entry);
             const dst = join(computedPath, entry);
-            // Use rename for same-filesystem (fast) or fall back to copy.
             try {
               renameSync(src, dst);
             } catch {
@@ -477,24 +546,25 @@ function resolveExternalPathWithRecovery(projectPath: string): string {
 // ─── Symlink Management ─────────────────────────────────────────────────────
 
 /**
- * Ensure the `<project>/.gsd` symlink points to the external state directory.
+ * Ensure the project state directory symlink points to the external state directory.
  *
- * 1. Clean up any macOS numbered collision variants (`.gsd 2`, `.gsd 3`, etc.)
- * 2. Resolve external dir (with relocation recovery via `.gsd-id` marker)
+ * For new projects: creates `<project>/.hammer → external` (canonical).
+ * For legacy projects: if `.hammer` is absent and `.gsd` exists, keeps `.gsd` pointing
+ *   to external state while emitting a migration diagnostic (legacy import bridge).
+ *
+ * Algorithm:
+ * 1. Clean up any macOS numbered collision variants (`.gsd 2`, `.hammer 2`, etc.)
+ * 2. Resolve external dir (with relocation recovery via `.hammer-id`/`.gsd-id` markers)
  * 3. mkdir -p the external dir
- * 4. If `<project>/.gsd` doesn't exist → create symlink
- * 5. If `<project>/.gsd` is already the correct symlink → no-op
- * 6. If `<project>/.gsd` is a real directory → return as-is (migration handles later)
- * 7. Write `.gsd-id` marker for future relocation recovery
+ * 4. Prefer `.hammer` as canonical symlink target; fall back to `.gsd` (legacy import bridge)
+ * 5. Write `.hammer-id` and `.gsd-id` markers for future relocation recovery
  *
  * Returns the resolved external path.
  */
 export function ensureGsdSymlink(projectPath: string): string {
   const result = ensureGsdSymlinkCore(projectPath);
 
-  // Write .gsd-id marker so future relocations can recover this state (#2750).
-  // Only write for the project root (not subdirectories or worktrees that
-  // delegate to a parent .gsd).
+  // Write canonical .hammer-id marker and legacy .gsd-id (state-namespace-bridge).
   if (!isInsideWorktree(projectPath)) {
     writeGsdIdMarker(projectPath, repoIdentity(projectPath));
   }
@@ -504,39 +574,50 @@ export function ensureGsdSymlink(projectPath: string): string {
 
 function ensureGsdSymlinkCore(projectPath: string): string {
   const externalPath = resolveExternalPathWithRecovery(projectPath);
-  const localGsd = join(projectPath, ".gsd");
   const inWorktree = isInsideWorktree(projectPath);
 
-  // Guard: Never create a symlink at ~/.gsd — that's the user-level GSD home,
-  // not a project .gsd. This can happen if resolveProjectRoot() or
-  // escapeStaleWorktree() returned ~ as the project root (#1676).
-  const localGsdNormalized = localGsd.replaceAll("\\", "/");
-  const gsdHomePath = gsdHome.replaceAll("\\", "/");
-  if (localGsdNormalized === gsdHomePath) {
-    return localGsd;
+  // Determine which local state path to use.
+  // Canonical: .hammer (new projects, or where .hammer already exists)
+  // Legacy bridge: .gsd (only when .hammer absent and .gsd already present)
+  // — state-namespace-bridge
+  const localHammer = join(projectPath, HAMMER_STATE_DIR_NAME); // .hammer
+  const localGsd = join(projectPath, ".gsd"); // legacy import bridge — state-namespace-bridge
+
+  // Guard: Never create a symlink at ~/.hammer or ~/.gsd — those are the user-level
+  // homes, not project state dirs. This can happen if resolveProjectRoot() returned
+  // ~ as the project root (#1676).
+  const externalBase = resolveExternalBase();
+  const localHammerNorm = localHammer.replaceAll("\\", "/");
+  const externalBaseNorm = externalBase.replaceAll("\\", "/");
+  if (localHammerNorm === externalBaseNorm) {
+    return localHammer;
   }
 
-  // Guard: If projectPath is a plain subdirectory (not a worktree) of a git
-  // repo that already has a .gsd at the git root, do not create a duplicate
-  // symlink in the subdirectory — that causes `.gsd 2` collision variants on
-  // macOS (#2380). Worktrees are excluded because they legitimately need their
-  // own .gsd symlink pointing at the shared external state dir.
+  // Guard: subdirectory of a git repo that already has a state dir at the git root.
   if (!inWorktree) {
     try {
       const gitRoot = resolveGitRoot(projectPath);
       const normalizedProject = canonicalizeExistingPath(projectPath);
       const normalizedRoot = canonicalizeExistingPath(gitRoot);
       if (normalizedProject !== normalizedRoot) {
-        const rootGsd = join(gitRoot, ".gsd");
+        // Check .hammer first, then .gsd (legacy import bridge — state-namespace-bridge)
+        const rootHammer = join(gitRoot, HAMMER_STATE_DIR_NAME);
+        if (existsSync(rootHammer)) {
+          try {
+            const rootStat = lstatSync(rootHammer);
+            if (rootStat.isSymbolicLink() || rootStat.isDirectory()) {
+              return rootStat.isSymbolicLink() ? realpathSync(rootHammer) : rootHammer;
+            }
+          } catch { /* fall through */ }
+        }
+        const rootGsd = join(gitRoot, ".gsd"); // legacy import bridge — state-namespace-bridge
         if (existsSync(rootGsd)) {
           try {
             const rootStat = lstatSync(rootGsd);
             if (rootStat.isSymbolicLink() || rootStat.isDirectory()) {
               return rootStat.isSymbolicLink() ? realpathSync(rootGsd) : rootGsd;
             }
-          } catch {
-            // Fall through to normal logic if we can't stat root .gsd
-          }
+          } catch { /* fall through */ }
         }
       }
     } catch {
@@ -544,61 +625,64 @@ function ensureGsdSymlinkCore(projectPath: string): string {
     }
   }
 
-  // Clean up macOS numbered collision variants (.gsd 2, .gsd 3, etc.) before
-  // any existence checks — otherwise they accumulate and confuse state (#2205).
+  // Clean up macOS numbered collision variants for both .hammer and .gsd.
   cleanNumberedGsdVariants(projectPath);
+
+  // Determine which local path to operate on.
+  // Canonical .hammer takes priority; .gsd only used as legacy bridge.
+  const localPath = (() => {
+    if (existsSync(localHammer)) return localHammer; // canonical already exists
+    if (existsSync(localGsd)) {
+      // Legacy .gsd exists — emit migration diagnostic and use it as bridge
+      // — state-namespace-bridge
+      process.stderr.write(
+        `[hammer] Project has legacy .gsd state at ${localGsd}; ` +
+        `new projects use .hammer — state-namespace-bridge compatibility rule applied.\n`
+      );
+      return localGsd;
+    }
+    return localHammer; // neither exists — create canonical .hammer
+  })();
 
   // Ensure external directory exists
   mkdirSync(externalPath, { recursive: true });
 
-  // Write repo metadata once so cleanup commands can identify this directory later.
+  // Write repo metadata
   writeRepoMeta(externalPath, getRemoteUrl(projectPath), resolveGitRoot(projectPath));
 
   const replaceWithSymlink = (): string => {
-    rmSync(localGsd, { recursive: true, force: true });
-    // Defensive: remove any residual entry (e.g. dangling symlink) before creating.
-    try { unlinkSync(localGsd); } catch { /* already gone */ }
-    symlinkSync(externalPath, localGsd, "junction");
+    rmSync(localPath, { recursive: true, force: true });
+    try { unlinkSync(localPath); } catch { /* already gone */ }
+    symlinkSync(externalPath, localPath, "junction");
     return externalPath;
   };
 
-  // Check for dangling symlinks (e.g. after relocation recovery removed the old
-  // state dir). existsSync follows symlinks, so it returns false for dangling ones.
-  // lstatSync does NOT follow, so we can detect the dangling symlink and replace it.
-  if (!existsSync(localGsd)) {
+  // Handle dangling symlinks
+  if (!existsSync(localPath)) {
     try {
-      const stat = lstatSync(localGsd);
+      const stat = lstatSync(localPath);
       if (stat.isSymbolicLink()) {
-        // Dangling symlink — replace with correct one (#2750).
         return replaceWithSymlink();
       }
     } catch {
-      // lstat also failed — nothing exists at this path
+      // nothing at this path
     }
-    // Nothing exists yet — create symlink.
-    // Defensive: remove any residual entry to avoid EEXIST race (#2750).
-    try { unlinkSync(localGsd); } catch { /* nothing to remove */ }
-    symlinkSync(externalPath, localGsd, "junction");
+    try { unlinkSync(localPath); } catch { /* nothing to remove */ }
+    symlinkSync(externalPath, localPath, "junction");
     return externalPath;
   }
 
   try {
-    const stat = lstatSync(localGsd);
+    const stat = lstatSync(localPath);
 
     if (stat.isSymbolicLink()) {
-      // Already a symlink — verify it points to the right place
-      const target = realpathSync(localGsd);
+      const target = realpathSync(localPath);
       if (target === externalPath) {
         return externalPath; // correct symlink, no-op
       }
-      // In a worktree, mismatched symlinks are always stale. Heal them so
-      // the worktree points at the same external state dir as the main repo.
       if (inWorktree) {
         return replaceWithSymlink();
       }
-      // After identity hash change (e.g. upgrade from path-based to remote-only
-      // hash, or relocation recovery), migrate data from old target to new path
-      // and update the symlink (#2750).
       if (!hasProjectState(externalPath) && hasProjectState(target)) {
         try {
           mkdirSync(externalPath, { recursive: true });
@@ -613,26 +697,20 @@ function ensureGsdSymlinkCore(projectPath: string): string {
           try { rmSync(target, { recursive: true, force: true }); } catch { /* non-fatal */ }
           return replaceWithSymlink();
         } catch {
-          // Migration failed — preserve old symlink
           return target;
         }
       }
-      // Outside worktrees, preserve custom overrides or legacy symlinks.
       return target;
     }
 
     if (stat.isDirectory()) {
-      // Real directory in the main repo — migration will handle this later.
-      // In worktrees, keep the directory in place and let syncGsdStateToWorktree
-      // refresh its contents. Replacing a git-tracked .gsd directory with a
-      // symlink makes git think tracked planning files were deleted.
-      return localGsd;
+      return localPath;
     }
   } catch {
     // lstat failed — path exists but we can't stat it
   }
 
-  return localGsd;
+  return localPath;
 }
 
 // ─── Worktree Detection ─────────────────────────────────────────────────────

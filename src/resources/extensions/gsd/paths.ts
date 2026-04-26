@@ -290,15 +290,19 @@ export function _clearGsdRootCache(): void {
 }
 
 /**
- * Resolve the `.gsd` directory for a given project base path.
+ * Resolve the project state directory for a given project base path.
  *
- * Probe order:
- *   1. basePath/.gsd         — fast path (common case)
- *   2. git rev-parse root    — handles cwd-is-a-subdirectory
- *   3. Walk up from basePath — handles moved .gsd in an ancestor (bounded by git root)
- *   4. basePath/.gsd         — creation fallback (init scenario)
+ * Probe order (Hammer-first):
+ *   1. basePath/.hammer        — canonical Hammer state directory (fast path)
+ *   2. basePath/.gsd           — legacy import bridge: consumed but diagnostics emitted
+ *   3. git rev-parse root      — handles cwd-is-a-subdirectory
+ *   4. Walk up from basePath   — handles moved state dir in an ancestor (bounded by git root)
+ *   5. basePath/.hammer        — creation fallback (init scenario, creates Hammer path)
  *
  * Result is cached per basePath for the process lifetime.
+ *
+ * @emits stderr diagnostic when falling back to a legacy .gsd path so callers
+ *   can surface the information without scanning files or exposing secrets.
  */
 export function gsdRoot(basePath: string): string {
   const cached = gsdRootCache.get(basePath);
@@ -310,7 +314,7 @@ export function gsdRoot(basePath: string): string {
 }
 
 /**
- * Detect if a path is inside a .gsd/worktrees/<name>/ structure.
+ * Detect if a path is inside a .gsd/worktrees/<name>/ structure (legacy import bridge).
  *
  * GSD auto-worktrees live at <project>/.gsd/worktrees/<milestoneId>/.
  * When gsdRoot() is called with such a path, we must NOT walk up to the
@@ -318,6 +322,8 @@ export function gsdRoot(basePath: string): string {
  *
  * Matches both forward-slash and platform-native separators to handle
  * Windows paths (path.sep = '\\') and normalized Unix paths.
+ *
+ * @legacy-compat — this function exists to bridge legacy .gsd/worktrees worktree layouts.
  */
 function isInsideGsdWorktree(p: string): boolean {
   // Match /.gsd/worktrees/<name> where <name> is the final segment or
@@ -342,16 +348,27 @@ function isInsideGsdWorktree(p: string): boolean {
 }
 
 function probeGsdRoot(rawBasePath: string): string {
-  // 1. Fast path — check the input path directly
-  const local = join(rawBasePath, ".gsd");
-  if (existsSync(local)) return local;
+  // 1. Fast path — check for canonical Hammer state directory first
+  const hammerLocal = join(rawBasePath, ".hammer");
+  if (existsSync(hammerLocal)) return hammerLocal;
 
-  // 1b. Worktree guard (#2594) — if basePath is inside a .gsd/worktrees/<name>/
-  //     structure, return the worktree-local .gsd path immediately. Without this,
-  //     the git-root probe (step 2) or walk-up (step 3) escapes to the project
-  //     root's .gsd, causing ensurePreconditions() and deriveState() to read/write
-  //     state in the wrong location.
-  if (isInsideGsdWorktree(rawBasePath)) return local;
+  // 1b. Legacy import bridge: probe .gsd before going to git root or walk-up.
+  //     Emits a bounded diagnostic so operators can track migration progress.
+  //     — state-namespace-bridge
+  const legacyGsdLocal = join(rawBasePath, ".gsd");
+  if (existsSync(legacyGsdLocal)) {
+    process.stderr.write(
+      `[hammer] Legacy .gsd state detected at ${legacyGsdLocal}; ` +
+      `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
+    );
+    return legacyGsdLocal;
+  }
+
+  // 1c. Worktree guard (#2594) — if basePath is inside a .gsd/worktrees/<name>/
+  //     structure (legacy import bridge), return the worktree-local .gsd path
+  //     immediately. Without this, the git-root probe or walk-up escapes to the
+  //     project root's .gsd.
+  if (isInsideGsdWorktree(rawBasePath)) return legacyGsdLocal;
 
   // Resolve symlinks so path comparisons work correctly across platforms
   // (e.g. macOS /var → /private/var). Use rawBasePath as fallback if not resolvable.
@@ -359,11 +376,9 @@ function probeGsdRoot(rawBasePath: string): string {
   try { basePath = realpathSync.native(rawBasePath); } catch { basePath = rawBasePath; }
 
   // Also check the resolved path for the worktree pattern (macOS /tmp → /private/tmp)
-  if (basePath !== rawBasePath && isInsideGsdWorktree(basePath)) return local;
+  if (basePath !== rawBasePath && isInsideGsdWorktree(basePath)) return legacyGsdLocal;
 
   // 2. Git root anchor — used as both probe target and walk-up boundary
-  //    Only walk if we're inside a git project — prevents escaping into
-  //    unrelated filesystem territory when running outside any repo.
   let gitRoot: string | null = null;
   try {
     const out = spawnSync("git", ["rev-parse", "--show-toplevel"], {
@@ -377,24 +392,45 @@ function probeGsdRoot(rawBasePath: string): string {
   } catch { /* git not available */ }
 
   if (gitRoot) {
-    const candidate = join(gitRoot, ".gsd");
-    if (existsSync(candidate)) return candidate;
+    // Probe canonical .hammer first, then legacy .gsd — state-namespace-bridge
+    const hammerCandidate = join(gitRoot, ".hammer");
+    if (existsSync(hammerCandidate)) return hammerCandidate;
+
+    const legacyGsdCandidate = join(gitRoot, ".gsd");
+    if (existsSync(legacyGsdCandidate)) {
+      process.stderr.write(
+        `[hammer] Legacy .gsd state detected at ${legacyGsdCandidate}; ` +
+        `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
+      );
+      return legacyGsdCandidate;
+    }
   }
 
   // 3. Walk up from basePath to the git root (only if we are in a subdirectory)
   if (gitRoot && basePath !== gitRoot) {
     let cur = dirname(basePath);
     while (cur !== basePath) {
-      const candidate = join(cur, ".gsd");
-      if (existsSync(candidate)) return candidate;
+      // Probe canonical Hammer first, then legacy GSD — state-namespace-bridge
+      const hammerCand = join(cur, ".hammer");
+      if (existsSync(hammerCand)) return hammerCand;
+
+      const legacyGsdCand = join(cur, ".gsd");
+      if (existsSync(legacyGsdCand)) {
+        process.stderr.write(
+          `[hammer] Legacy .gsd state detected at ${legacyGsdCand}; ` +
+          `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
+        );
+        return legacyGsdCand;
+      }
+
       if (cur === gitRoot) break;
       basePath = cur;
       cur = dirname(cur);
     }
   }
 
-  // 4. Fallback for init/creation
-  return local;
+  // 4. Fallback for init/creation — use canonical .hammer path
+  return hammerLocal;
 }
 export function milestonesDir(basePath: string): string {
   return join(gsdRoot(basePath), "milestones");

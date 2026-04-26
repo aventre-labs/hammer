@@ -130,6 +130,50 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["// migrate legacy .gsd state into .hammer on first launch"] as const,
   },
   {
+    id: "state-namespace-bridge",
+    category: "bootstrap-migration",
+    description: "Path resolvers and repo-identity functions that bridge legacy .gsd paths to canonical .hammer paths during the state namespace cutover.",
+    pathPattern: String.raw`(?:^|/)src/(?:app-paths|resources/extensions/gsd/(?:paths|repo-identity|detection|gitignore|migrate-external))\.ts$`,
+    linePattern: String.raw`(?:(?:legacy|compat|bridge|fallback|migrat|import|probe|detect|exist|symlink|ext(?:ernal)?|worktree|recovery|marker|cleanup|collision|variant).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:legacy|compat|bridge|fallback|migrat|import|probe|detect|exist|symlink|ext(?:ernal)?|worktree|recovery|marker|cleanup|collision|variant))`,
+    rationale:
+      "The state path layer must retain explicit .gsd detection and bridge functions while new projects use .hammer. Each occurrence in these files is a deliberate compatibility bridge, not an unclassified regression.",
+    allowedUntil: "Remove once .gsd import support is fully retired and all users have migrated to .hammer.",
+    examples: ["const legacyGsdPath = join(basePath, '.gsd'); // legacy import bridge — state-namespace-bridge"] as const,
+  },
+  {
+    id: "gitignore-baseline-legacy-patterns",
+    category: "bootstrap-migration",
+    description: "The gitignore baseline array and runtime patterns array include .gsd entries to maintain backwards compatibility for projects that still have .gsd state.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/gitignore\.ts$`,
+    linePattern: String.raw`\.gsd`,
+    rationale:
+      "Projects that haven't migrated from .gsd to .hammer still need their .gsd state directory ignored by git. The array also contains new .hammer entries; the .gsd entries are explicit legacy bridge items.",
+    allowedUntil: "Remove .gsd entries from baseline once all users have migrated to .hammer.",
+    examples: ['"  .gsd", // legacy import bridge — gitignore-baseline-legacy-patterns'] as const,
+  },
+  {
+    id: "state-internal-type-names",
+    category: "internal-implementation-path",
+    description: "Internal TypeScript type names, constant names, section headers, and inline doc comments in the state path layer that carry legacy GSD naming.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/(?:paths|detection|repo-identity|migrate-external|gitignore)\.ts$`,
+    linePattern: String.raw`(?:GSD_ROOT_FILES|GSDRootFileKey|LEGACY_GSD_ROOT_FILES|GSD_RUNTIME_PATTERNS|GSD_NUMBERED_VARIANT_RE|v2-gsd|v2-gsd-empty|V2 GSD|GSD Detection|GSD External State|GSD Paths|GSD bootstrappers|GSD Root Discovery|gsd\.db|first time GSD|\.gsd\/milestones|\.gsd\/ tree|\.gsd\/ path|paths under \.gsd|project root|canonical \.gsd|project's \.gsd|~/\.gsd\/|GSD_HOME is used|GSD_PROJECT_ID is used|back-fill|numbered|digit)`,
+    rationale:
+      "These are internal TypeScript identifiers, section headers, and inline doc-comments describing the bridge behavior. None are user-visible product strings.",
+    allowedUntil: "Rename when downstream callers are migrated to hammer-prefixed type names.",
+    examples: ["export const GSD_ROOT_FILES = {", "state: 'v2-gsd'"] as const,
+  },
+  {
+    id: "migrate-external-legacy-bridge",
+    category: "bootstrap-migration",
+    description: "The migrate-external.ts module explicitly migrates legacy .gsd real directories to the external state store. All .gsd references in this file are intentional migration logic.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/migrate-external\.ts$`,
+    linePattern: LEGACY_TOKEN_PATTERN,
+    rationale:
+      "This module exists specifically to migrate old .gsd state. Every .gsd reference is a deliberate migration-phase bridge; there is no user-visible product identity here.",
+    allowedUntil: "Remove once .gsd-to-.hammer migration is complete and the module is retired.",
+    examples: ["const localGsd = join(basePath, '.gsd'); // migration target — migrate-external-legacy-bridge"] as const,
+  },
+  {
     id: "historical-or-migration-docs",
     category: "historical-docs",
     description: "Historical or migration documents may name the former product identity when clearly presented as history.",

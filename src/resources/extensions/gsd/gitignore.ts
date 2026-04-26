@@ -12,19 +12,48 @@ import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { nativeRmCached, nativeLsFiles } from "./native-git-bridge.js";
 import { gsdRoot } from "./paths.js";
 import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
+import {
+  HAMMER_STATE_DIR_NAME,
+  HAMMER_PROJECT_MARKER_FILE,
+  HAMMER_HOME_ENV,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
 /**
- * GSD runtime patterns for git index cleanup.
+ * Hammer and legacy GSD runtime patterns for git index cleanup.
  *
  * CANONICAL SOURCE OF TRUTH: This array is the authoritative list of runtime
  * ignore patterns. Other modules (RUNTIME_EXCLUSION_PATHS in git-service.ts,
  * SKIP_* arrays in worktree-manager.ts, criticalPatterns in doctor-runtime-checks.ts)
  * must stay synchronized with this list.
  *
+ * Includes both .hammer/ (canonical) and .gsd/ (legacy import bridge — gitignore-baseline-legacy-patterns)
+ * patterns so both layouts are kept out of git regardless of which state dir is in use.
+ *
  * With external state (symlink), these are a no-op in most cases,
  * but retained for backwards compatibility during migration.
  */
 const GSD_RUNTIME_PATTERNS = [
+  // Canonical Hammer runtime state
+  ".hammer/activity/",
+  ".hammer/audit/",
+  ".hammer/forensics/",
+  ".hammer/runtime/",
+  ".hammer/worktrees/",
+  ".hammer/parallel/",
+  ".hammer/auto.lock",
+  ".hammer/metrics.json",
+  ".hammer/completed-units*.json",
+  ".hammer/state-manifest.json",
+  ".hammer/STATE.md",
+  ".hammer/gsd.db*",
+  ".hammer/journal/",
+  ".hammer/doctor-history.jsonl",
+  ".hammer/event-log.jsonl",
+  ".hammer/DISCUSSION-MANIFEST.json",
+  ".hammer/milestones/**/*-CONTINUE.md",
+  ".hammer/milestones/**/continue.md",
+  // Legacy .gsd runtime state — gitignore-baseline-legacy-patterns
   ".gsd/activity/",
   ".gsd/audit/",
   ".gsd/forensics/",
@@ -33,7 +62,7 @@ const GSD_RUNTIME_PATTERNS = [
   ".gsd/parallel/",
   ".gsd/auto.lock",
   ".gsd/metrics.json",
-  ".gsd/completed-units*.json", // covers completed-units.json and archived completed-units-{MID}.json
+  ".gsd/completed-units*.json",
   ".gsd/state-manifest.json",
   ".gsd/STATE.md",
   ".gsd/gsd.db*",
@@ -46,7 +75,10 @@ const GSD_RUNTIME_PATTERNS = [
 ] as const;
 
 const BASELINE_PATTERNS = [
-  // ── GSD state directory (symlink to external storage) ──
+  // ── Hammer state directory (canonical) ──
+  ".hammer",
+  ".hammer-id",
+  // ── GSD state directory (legacy import bridge — gitignore-baseline-legacy-patterns) ──
   ".gsd",
   ".gsd-id",
   ".mcp.json",
@@ -95,80 +127,80 @@ const BASELINE_PATTERNS = [
 ];
 
 /**
- * Check whether `.gsd` is covered by the project's `.gitignore`.
+ * Check whether `.hammer` (canonical) or `.gsd` (legacy import bridge) is
+ * covered by the project's `.gitignore`.
  *
  * Uses `git check-ignore` for accurate evaluation — this respects nested
  * .gitignore files, global gitignore, and negation patterns. Returns true
- * only when git would actually ignore `.gsd/`.
+ * when either state directory path is ignored.
  *
  * Returns false (not ignored) if:
  *   - No `.gitignore` exists
- *   - `.gsd` is not listed in any active ignore rule
+ *   - Neither state path is listed in any active ignore rule
  *   - Not a git repo or git is unavailable
  */
 export function isGsdGitignored(basePath: string): boolean {
-  // Check both `.gsd` and `.gsd/` because `.gsd/` in .gitignore (trailing
-  // slash = directory-only pattern) only matches the directory form. Using
-  // both paths covers all gitignore pattern variants.
-  for (const path of [".gsd", ".gsd/"]) {
+  // Check both canonical .hammer paths and legacy .gsd paths (state-namespace-bridge)
+  const pathsToCheck = [
+    ".hammer", ".hammer/",
+    ".gsd", ".gsd/",     // legacy import bridge — gitignore-baseline-legacy-patterns
+  ];
+  for (const path of pathsToCheck) {
     try {
-      // git check-ignore exits 0 when the path IS ignored, 1 when it is NOT.
       execFileSync("git", ["check-ignore", "-q", path], {
         cwd: basePath,
         stdio: "pipe",
         env: GIT_NO_PROMPT_ENV,
       });
-      return true; // exit 0 → .gsd is ignored
+      return true; // exit 0 → path is ignored
     } catch {
-      // exit 1 → this form is NOT ignored, try the other
+      // exit 1 → this form is NOT ignored, try the next
     }
   }
-  return false; // neither form is ignored (or git unavailable)
+  return false;
 }
 
 /**
- * Check whether `.gsd/` contains files tracked by git.
- * If so, the project intentionally keeps `.gsd/` in version control
- * and we must NOT add `.gsd` to `.gitignore` or attempt migration.
+ * Check whether a project state directory (`.hammer` canonical, or `.gsd` legacy import bridge)
+ * contains files tracked by git.
+ * If so, the project intentionally keeps state in version control
+ * and we must NOT add state dir to `.gitignore` or attempt migration.
  *
- * Returns true if git tracks at least one file under `.gsd/`.
+ * Returns true if git tracks at least one file under the state dir.
  * Returns false (safe to ignore) if:
  *   - Not a git repo
- *   - `.gsd/` is a symlink (external state, should be ignored)
- *   - `.gsd/` doesn't exist
- *   - No tracked files found under `.gsd/`
+ *   - State dir is a symlink (external state, should be ignored)
+ *   - State dir doesn't exist
+ *   - No tracked files found under the state dir
  */
 export function hasGitTrackedGsdFiles(basePath: string): boolean {
-  const localGsd = join(basePath, ".gsd");
+  // Check canonical .hammer first, then legacy .gsd (state-namespace-bridge)
+  for (const dirName of [HAMMER_STATE_DIR_NAME, ".gsd"]) { // .gsd — legacy import bridge — gitignore-baseline-legacy-patterns
+    const localDir = join(basePath, dirName);
+    if (!existsSync(localDir)) continue;
+    try {
+      if (lstatSync(localDir).isSymbolicLink()) continue; // symlink — no tracked files concern
+    } catch {
+      continue;
+    }
 
-  // If .gsd doesn't exist or is already a symlink, no tracked files concern
-  if (!existsSync(localGsd)) return false;
-  try {
-    if (lstatSync(localGsd).isSymbolicLink()) return false;
-  } catch {
-    return false;
+    try {
+      const tracked = nativeLsFiles(basePath, dirName);
+      if (tracked.length > 0) return true;
+
+      // Verify git is reachable before trusting the empty result
+      execFileSync("git", ["rev-parse", "--git-dir"], {
+        cwd: basePath,
+        stdio: "pipe",
+        env: GIT_NO_PROMPT_ENV,
+      });
+    } catch {
+      // git unavailable, index locked, or repo corrupt — fail safe
+      return true;
+    }
   }
 
-  // Check if git tracks any files under .gsd/
-  try {
-    const tracked = nativeLsFiles(basePath, ".gsd");
-    if (tracked.length > 0) return true;
-
-    // nativeLsFiles swallows git failures and returns []. An empty result
-    // could mean "nothing tracked" OR "git failed silently". Verify git is
-    // reachable before trusting the empty result — if it isn't, fail safe
-    // by assuming files ARE tracked to prevent data loss.
-    execFileSync("git", ["rev-parse", "--git-dir"], {
-      cwd: basePath,
-      stdio: "pipe",
-      env: GIT_NO_PROMPT_ENV,
-    });
-
-    return false;
-  } catch {
-    // git unavailable, index locked, or repo corrupt — fail safe
-    return true;
-  }
+  return false;
 }
 
 /**
@@ -176,10 +208,9 @@ export function hasGitTrackedGsdFiles(basePath: string): boolean {
  * Creates the file if missing; appends missing patterns.
  * Returns true if the file was created or modified, false if already complete.
  *
- * **Safety check:** If `.gsd/` contains git-tracked files (i.e., the project
- * intentionally keeps `.gsd/` in version control), the `.gsd` ignore pattern
- * is excluded to prevent data loss. Only the `.gsd` pattern is affected —
- * all other baseline patterns are still applied normally.
+ * **Safety check:** If the project state directory (`.hammer` or `.gsd`) contains
+ * git-tracked files (i.e., the project intentionally keeps state in version
+ * control), the state dir ignore patterns are excluded to prevent data loss.
  */
 export function ensureGitignore(
   basePath: string,
@@ -203,11 +234,11 @@ export function ensureGitignore(
       .filter((l) => l && !l.startsWith("#")),
   );
 
-  // Determine which patterns to apply. If .gsd/ has tracked files,
-  // exclude the ".gsd" pattern to prevent deleting tracked state.
-  const gsdIsTracked = hasGitTrackedGsdFiles(basePath);
-  const patternsToApply = gsdIsTracked
-    ? BASELINE_PATTERNS.filter((p) => p !== ".gsd")
+  // Determine which patterns to apply. If any state dir has tracked files,
+  // exclude that specific state dir's patterns to prevent deleting tracked state.
+  const stateIsTracked = hasGitTrackedGsdFiles(basePath);
+  const patternsToApply = stateIsTracked
+    ? BASELINE_PATTERNS.filter((p) => p !== ".hammer" && p !== ".gsd")
     : BASELINE_PATTERNS;
 
   // Find patterns not yet present
@@ -218,7 +249,7 @@ export function ensureGitignore(
   // Build the block to append
   const block = [
     "",
-    "# ── GSD baseline (auto-generated) ──",
+    "# ── Hammer baseline (auto-generated) ──",
     ...missing,
     "",
   ].join("\n");
@@ -258,16 +289,17 @@ export function untrackRuntimeFiles(basePath: string): void {
 }
 
 /**
- * Ensure basePath/.gsd/PREFERENCES.md exists as an empty template.
+ * Ensure basePath/[state-dir]/PREFERENCES.md exists as an empty template.
  * Creates the file with frontmatter only if it doesn't exist.
  * Returns true if created, false if already exists.
  *
- * Checks both uppercase (canonical) and lowercase (legacy) to avoid
- * creating a duplicate when a lowercase file already exists.
+ * Uses the canonical Hammer state directory (from gsdRoot, which probes
+ * .hammer first), then checks legacy .gsd paths to avoid creating duplicates.
  */
 export function ensurePreferences(basePath: string): boolean {
-  const preferencesPath = join(gsdRoot(basePath), "PREFERENCES.md");
-  const legacyPath = join(gsdRoot(basePath), "preferences.md");
+  const stateRoot = gsdRoot(basePath); // .hammer or .gsd depending on what exists
+  const preferencesPath = join(stateRoot, "PREFERENCES.md");
+  const legacyPath = join(stateRoot, "preferences.md");
 
   if (existsSync(preferencesPath) || existsSync(legacyPath)) {
     return false;
@@ -285,15 +317,15 @@ skill_discovery: {}
 auto_supervisor: {}
 ---
 
-# GSD Skill Preferences
+# Hammer Skill Preferences
 
 Project-specific guidance for skill selection and execution preferences.
 
-See \`~/.gsd/agent/extensions/gsd/docs/preferences-reference.md\` for full field documentation and examples.
+See \`~/.hammer/agent/extensions/gsd/docs/preferences-reference.md\` for full field documentation and examples.
 
 ## Fields
 
-- \`always_use_skills\`: Skills that must be available during all GSD operations
+- \`always_use_skills\`: Skills that must be available during all Hammer operations
 - \`prefer_skills\`: Skills to prioritize when multiple options exist
 - \`avoid_skills\`: Skills to minimize or avoid (with lower priority than prefer)
 - \`skill_rules\`: Context-specific rules (e.g., "use tool X for Y type of work")

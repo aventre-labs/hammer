@@ -10,8 +10,18 @@ import { existsSync, openSync, readSync, closeSync, readdirSync, readFileSync, s
 import { dirname, join, parse as parsePath } from "node:path";
 import { homedir } from "node:os";
 import { gsdRoot } from "./paths.js";
+import {
+  HAMMER_HOME_ENV,
+  HAMMER_GLOBAL_HOME_DIR_NAME,
+  HAMMER_STATE_DIR_NAME,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+// Canonical Hammer home — probes HAMMER_HOME, then GSD_HOME (legacy import bridge — state-namespace-bridge)
+const hammerHome =
+  process.env[HAMMER_HOME_ENV] ||
+  process.env[HAMMER_LEGACY_ENV_ALIASES.home] || // GSD_HOME — legacy import bridge — state-namespace-bridge
+  join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -242,7 +252,8 @@ const TEST_MARKERS = [
 /** Directories skipped during bounded recursive project scans. */
 const RECURSIVE_SCAN_IGNORED_DIRS = new Set([
   ".git",
-  ".gsd",
+  ".gsd",    // legacy import bridge — state-namespace-bridge
+  ".hammer", // canonical Hammer state directory
   ".planning",
   ".plans",
   ".claude",
@@ -716,32 +727,56 @@ function detectVerificationCommands(
 // ─── Global Setup Detection ─────────────────────────────────────────────────────
 
 /**
- * Check if global GSD setup exists (has ~/.gsd/ with preferences).
+ * Check if global Hammer setup exists (has ~/.hammer/ with preferences).
+ * Falls back to ~/.gsd/ for legacy import bridge (state-namespace-bridge).
  */
 export function hasGlobalSetup(): boolean {
-  return (
-    existsSync(join(gsdHome, "PREFERENCES.md")) ||
-    existsSync(join(gsdHome, "preferences.md"))
-  );
+  // Probe canonical Hammer home first
+  if (
+    existsSync(join(hammerHome, "PREFERENCES.md")) ||
+    existsSync(join(hammerHome, "preferences.md"))
+  ) {
+    return true;
+  }
+  // Legacy import bridge: fall back to ~/.gsd — state-namespace-bridge
+  const legacyGsdHome = join(homedir(), ".gsd");
+  if (hammerHome !== legacyGsdHome) {
+    return (
+      existsSync(join(legacyGsdHome, "PREFERENCES.md")) ||
+      existsSync(join(legacyGsdHome, "preferences.md"))
+    );
+  }
+  return false;
 }
 
 /**
- * Check if this is the very first time GSD has been used on this machine.
- * Returns true if ~/.gsd/ doesn't exist or has no preferences or auth.
+ * Check if this is the very first time Hammer has been used on this machine.
+ * Returns true if ~/.hammer/ doesn't exist or has no preferences or auth.
+ * Also checks legacy ~/.gsd/ as a legacy import bridge (state-namespace-bridge).
  */
 export function isFirstEverLaunch(): boolean {
-  if (!existsSync(gsdHome)) return true;
-
-  // If we have preferences, not first launch
-  if (
-    existsSync(join(gsdHome, "PREFERENCES.md")) ||
-    existsSync(join(gsdHome, "preferences.md"))
-  ) {
-    return false;
+  // Not first launch if Hammer home has setup
+  if (existsSync(hammerHome)) {
+    if (
+      existsSync(join(hammerHome, "PREFERENCES.md")) ||
+      existsSync(join(hammerHome, "preferences.md"))
+    ) {
+      return false;
+    }
+    if (existsSync(join(hammerHome, "agent", "auth.json"))) return false;
   }
 
-  // If we have auth.json, not first launch (onboarding.ts already ran)
-  if (existsSync(join(gsdHome, "agent", "auth.json"))) return false;
+  // Legacy import bridge: check ~/.gsd for existing setup — state-namespace-bridge
+  const legacyGsdHome = join(homedir(), ".gsd");
+  if (hammerHome !== legacyGsdHome && existsSync(legacyGsdHome)) {
+    if (
+      existsSync(join(legacyGsdHome, "PREFERENCES.md")) ||
+      existsSync(join(legacyGsdHome, "preferences.md"))
+    ) {
+      return false;
+    }
+    if (existsSync(join(legacyGsdHome, "agent", "auth.json"))) return false;
+  }
 
   // Check legacy path too
   const legacyPath = join(homedir(), ".pi", "agent", "gsd-preferences.md");
@@ -1154,10 +1189,11 @@ export function hasProjectFileInAncestor(
 }
 
 /**
- * Check whether a project's `.gsd/` directory contains the bootstrap artifacts
- * (`PREFERENCES.md` or `milestones/`) that indicate a completed init run.
+ * Check whether a project's state directory (`.hammer` canonical, or `.gsd` legacy import bridge)
+ * contains the bootstrap artifacts (`PREFERENCES.md` or `milestones/`) that indicate
+ * a completed init run.
  *
- * A zombie `.gsd/` state — symlink exists but neither artifact is present —
+ * A zombie state dir — symlink exists but neither artifact is present —
  * must be treated as "needs init wizard". The previous guard checked only
  * `existsSync(gsdRoot(basePath))`, which accepted zombie states and skipped
  * the wizard (#2942).
