@@ -15,6 +15,7 @@ import {
   filterToolsForProvider,
   adjustToolSet,
   GROQ_MAX_TOOLS,
+  PROVIDER_TOOL_SOFT_CAP,
 } from "../model-router.js";
 
 import {
@@ -207,6 +208,13 @@ describe("GROQ_MAX_TOOLS", () => {
   });
 });
 
+describe("PROVIDER_TOOL_SOFT_CAP", () => {
+  test("keeps headroom below provider hard limit", () => {
+    assert.equal(PROVIDER_TOOL_SOFT_CAP, 120);
+    assert.ok(PROVIDER_TOOL_SOFT_CAP < GROQ_MAX_TOOLS);
+  });
+});
+
 // ─── Provider tool-count cap (#4376 / #tool-cap-128) ───────────────────────
 
 describe("filterToolsForProvider — 128-tool cap", () => {
@@ -217,47 +225,55 @@ describe("filterToolsForProvider — 128-tool cap", () => {
   test("caps to 128 for non-groq providers too", () => {
     const toolNames = Array.from({ length: 200 }, (_, i) => `tool_${i}`);
     const { compatible, filtered } = filterToolsForProvider(toolNames, "openai-completions", "openai");
-    assert.equal(compatible.length, 128);
-    assert.equal(filtered.length, 72);
+    assert.equal(compatible.length, PROVIDER_TOOL_SOFT_CAP);
+    assert.equal(filtered.length, 80);
   });
 
   test("does not cap when <= 128 tools with groq provider", () => {
-    const toolNames = Array.from({ length: 128 }, (_, i) => `tool_${i}`);
+    const toolNames = Array.from({ length: PROVIDER_TOOL_SOFT_CAP }, (_, i) => `tool_${i}`);
     const { compatible, filtered } = filterToolsForProvider(toolNames, "openai-completions", "groq");
-    assert.equal(compatible.length, 128);
+    assert.equal(compatible.length, PROVIDER_TOOL_SOFT_CAP);
     assert.equal(filtered.length, 0);
   });
 
   test("caps to 128 when >128 tools with any tool-calling provider", () => {
     const toolNames = Array.from({ length: 200 }, (_, i) => `tool_${i}`);
     const { compatible, filtered } = filterToolsForProvider(toolNames, "openai-completions", "groq");
-    assert.equal(compatible.length, 128);
-    assert.equal(filtered.length, 72);
+    assert.equal(compatible.length, PROVIDER_TOOL_SOFT_CAP);
+    assert.equal(filtered.length, 80);
   });
 
   test("trims legacy gsd_* aliases before canonical tools", () => {
     const canonical = Array.from({ length: 100 }, (_, i) => `hammer_tool_${i}`);
     const legacy = Array.from({ length: 100 }, (_, i) => `gsd_tool_${i}`);
     const { compatible, filtered } = filterToolsForProvider([...legacy, ...canonical], "openai-completions", "openai");
-    assert.equal(compatible.length, 128);
+    assert.equal(compatible.length, PROVIDER_TOOL_SOFT_CAP);
     assert.equal(compatible.filter((name) => name.startsWith("hammer_")).length, 100);
-    assert.equal(compatible.filter((name) => name.startsWith("gsd_")).length, 28);
-    assert.equal(filtered.filter((name) => name.startsWith("gsd_")).length, 72);
+    assert.equal(compatible.filter((name) => name.startsWith("gsd_")).length, 20);
+    assert.equal(filtered.filter((name) => name.startsWith("gsd_")).length, 80);
+  });
+
+  test("keeps essential completion tools before non-essential canonical tools", () => {
+    const nonEssential = Array.from({ length: 130 }, (_, i) => `hammer_extra_${i}`);
+    const toolNames = [...nonEssential, "hammer_task_complete", "hammer_summary_save"];
+    const { compatible } = filterToolsForProvider(toolNames, "openai-completions", "openai");
+    assert.ok(compatible.includes("hammer_task_complete"));
+    assert.ok(compatible.includes("hammer_summary_save"));
   });
 
   test("keeps canonical-order tools when no aliases are present", () => {
     const toolNames = Array.from({ length: 200 }, (_, i) => `tool_${i}`);
     const { compatible } = filterToolsForProvider(toolNames, "openai-completions", "groq");
     assert.equal(compatible[0], "tool_0");
-    assert.equal(compatible[127], "tool_127");
+    assert.equal(compatible[PROVIDER_TOOL_SOFT_CAP - 1], `tool_${PROVIDER_TOOL_SOFT_CAP - 1}`);
   });
 
   test("trimmed tools appear in filtered list", () => {
     const toolNames = Array.from({ length: 130 }, (_, i) => `tool_${i}`);
     const { filtered } = filterToolsForProvider(toolNames, "openai-completions", "groq");
-    assert.equal(filtered.length, 2);
-    assert.equal(filtered[0], "tool_128");
-    assert.equal(filtered[1], "tool_129");
+    assert.equal(filtered.length, 10);
+    assert.equal(filtered[0], `tool_${PROVIDER_TOOL_SOFT_CAP}`);
+    assert.equal(filtered[1], `tool_${PROVIDER_TOOL_SOFT_CAP + 1}`);
   });
 
   test("emits a warning when tools are trimmed", () => {
@@ -265,10 +281,10 @@ describe("filterToolsForProvider — 128-tool cap", () => {
     const original = console.warn;
     console.warn = (...args: unknown[]) => { warnings.push(String(args[0])); };
     try {
-      const toolNames = Array.from({ length: 129 }, (_, i) => `tool_${i}`);
+      const toolNames = Array.from({ length: PROVIDER_TOOL_SOFT_CAP + 1 }, (_, i) => `tool_${i}`);
       filterToolsForProvider(toolNames, "openai-completions", "groq");
       assert.equal(warnings.length, 1);
-      assert.ok(warnings[0].includes("128"), "warning mentions provider limit");
+      assert.ok(warnings[0].includes(String(PROVIDER_TOOL_SOFT_CAP)), "warning mentions provider soft cap");
     } finally {
       console.warn = original;
     }
@@ -279,7 +295,7 @@ describe("filterToolsForProvider — 128-tool cap", () => {
     const original = console.warn;
     console.warn = (...args: unknown[]) => { warnings.push(String(args[0])); };
     try {
-      const toolNames = Array.from({ length: 128 }, (_, i) => `tool_${i}`);
+      const toolNames = Array.from({ length: PROVIDER_TOOL_SOFT_CAP }, (_, i) => `tool_${i}`);
       filterToolsForProvider(toolNames, "openai-completions", "groq");
       assert.equal(warnings.length, 0);
     } finally {
@@ -296,21 +312,21 @@ describe("adjustToolSet — 128-tool cap", () => {
   test("caps to 128 tools when provider is groq and >128 tools active", () => {
     const toolNames = Array.from({ length: 150 }, (_, i) => `tool_${i}`);
     const { toolNames: result, removedTools } = adjustToolSet(toolNames, "openai-completions", "groq");
-    assert.equal(result.length, 128);
-    assert.equal(removedTools.length, 22);
+    assert.equal(result.length, PROVIDER_TOOL_SOFT_CAP);
+    assert.equal(removedTools.length, 30);
   });
 
   test("caps to 128 tools for non-groq providers too", () => {
     const toolNames = Array.from({ length: 150 }, (_, i) => `tool_${i}`);
     const { toolNames: result, removedTools } = adjustToolSet(toolNames, "openai-completions", "openai");
-    assert.equal(result.length, 128);
-    assert.equal(removedTools.length, 22);
+    assert.equal(result.length, PROVIDER_TOOL_SOFT_CAP);
+    assert.equal(removedTools.length, 30);
   });
 
   test("caps to 128 tools when provider is omitted", () => {
     const toolNames = Array.from({ length: 150 }, (_, i) => `tool_${i}`);
     const { toolNames: result, removedTools } = adjustToolSet(toolNames, "openai-completions");
-    assert.equal(result.length, 128);
-    assert.equal(removedTools.length, 22);
+    assert.equal(result.length, PROVIDER_TOOL_SOFT_CAP);
+    assert.equal(removedTools.length, 30);
   });
 });

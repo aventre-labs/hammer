@@ -739,14 +739,42 @@ function bareModelId(modelId: string): string {
  * @see https://console.groq.com/docs/tool-use
  */
 // Most tool-calling providers reject oversized tool arrays at or near 128
-// entries. Keep the hard cap provider-agnostic and prefer canonical tools over
-// legacy gsd_* aliases when trimming the active set.
+// entries. Keep a small headroom below that provider limit and prefer canonical
+// tools over legacy gsd_* aliases when trimming the active set.
 export const GROQ_MAX_TOOLS = 128;
-const MAX_PROVIDER_TOOLS = GROQ_MAX_TOOLS;
+export const PROVIDER_TOOL_SOFT_CAP = 120;
+const MAX_PROVIDER_TOOLS = PROVIDER_TOOL_SOFT_CAP;
 const LEGACY_TOOL_ALIAS_PREFIXES = ["gsd_"];
+const ESSENTIAL_TOOL_NAMES = new Set([
+  "Skill",
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "async_bash",
+  "await_job",
+  "cancel_job",
+  "hammer_task_complete",
+  "hammer_complete_task",
+  "hammer_slice_complete",
+  "hammer_complete_slice",
+  "hammer_plan_slice",
+  "hammer_summary_save",
+  "hammer_save_summary",
+  "hammer_requirement_update",
+  "hammer_decision_save",
+  "hammer_milestone_status",
+  "hammer_checkpoint_db",
+]);
 
 function isLegacyToolAlias(toolName: string): boolean {
   return LEGACY_TOOL_ALIAS_PREFIXES.some((prefix) => toolName.startsWith(prefix));
+}
+
+function toolTrimPriority(toolName: string): number {
+  if (ESSENTIAL_TOOL_NAMES.has(toolName)) return 0;
+  if (!isLegacyToolAlias(toolName)) return 1;
+  return 2;
 }
 
 /**
@@ -815,10 +843,10 @@ export function filterToolsForProvider(
   // Most providers enforce a hard limit of ~128 tools per request (#4376, #tool-cap-128).
   // Trim legacy aliases first so canonical Hammer/core tools remain available.
   if (compatible.length > MAX_PROVIDER_TOOLS) {
-    const ordered = [
-      ...compatible.filter((name) => !isLegacyToolAlias(name)),
-      ...compatible.filter((name) => isLegacyToolAlias(name)),
-    ];
+    const ordered = compatible
+      .map((name, index) => ({ name, index, priority: toolTrimPriority(name) }))
+      .sort((a, b) => a.priority - b.priority || a.index - b.index)
+      .map((entry) => entry.name);
     const kept = ordered.slice(0, MAX_PROVIDER_TOOLS);
     const trimmed = ordered.slice(MAX_PROVIDER_TOOLS);
     compatible.splice(0, compatible.length, ...kept);
