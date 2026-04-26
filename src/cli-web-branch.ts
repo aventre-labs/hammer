@@ -17,7 +17,7 @@ export interface CliFlags {
   tools?: string[]
   messages: string[]
   web?: boolean
-  /** Optional project path for web mode: `gsd --web <path>` or `gsd web start <path>` */
+  /** Optional project path for web mode: `hammer --web <path>` or `hammer web start <path>` */
   webPath?: string
   /** Custom host to bind web server to: `--host 0.0.0.0` */
   webHost?: string
@@ -26,7 +26,7 @@ export interface CliFlags {
   /** Additional allowed origins for CORS: `--allowed-origins http://192.168.1.10:8080` */
   webAllowedOrigins?: string[]
 
-  /** Set by `gsd sessions` when the user picks a specific session to resume */
+  /** Set by `hammer sessions` when the user picks a specific session to resume */
   _selectedSessionPath?: string
 }
 
@@ -126,7 +126,7 @@ export function migrateLegacyFlatSessions(baseSessionsDir: string, projectSessio
 
 function emitWebModeFailure(stderr: WritableLike, status: WebModeLaunchStatus): void {
   if (status.ok) return
-  stderr.write(`[gsd] Web mode launch failed: ${status.failureReason}\n`)
+  stderr.write(`[hammer] Web mode launch failed: ${status.failureReason}\n`)
 }
 
 /**
@@ -207,7 +207,7 @@ export async function runWebCliBranch(
   flags: CliFlags,
   deps: RunWebCliBranchDeps = {},
 ): Promise<RunWebCliBranchResult> {
-  // Handle `gsd web stop [path|--all]` subcommand
+  // Handle `hammer web stop [path|--all]` subcommand
   if (flags.messages[0] === 'web' && flags.messages[1] === 'stop') {
     const stderr = deps.stderr ?? process.stderr
     const stopArg = flags.messages[2]
@@ -225,8 +225,8 @@ export async function runWebCliBranch(
     }
   }
 
-  // `gsd web [start] [path]` is an alias for `gsd --web [path]`
-  // Matches: `gsd web`, `gsd web start`, `gsd web start <path>`, `gsd web <path>`
+  // `hammer web [start] [path]` is an alias for `hammer --web [path]`
+  // Matches: `hammer web`, `hammer web start`, `hammer web start <path>`, `hammer web <path>`
   const isWebSubcommand = flags.messages[0] === 'web' && flags.messages[1] !== 'stop'
   if (!flags.web && !isWebSubcommand) {
     return { handled: false }
@@ -236,9 +236,9 @@ export async function runWebCliBranch(
   const defaultCwd = (deps.cwd ?? (() => process.cwd()))()
 
   // Resolve project path from multiple forms:
-  //   gsd --web <path>           → flags.webPath
-  //   gsd web start <path>       → messages[2]
-  //   gsd web <path>             → messages[1] (when not "start")
+  //   hammer --web <path>           → flags.webPath
+  //   hammer web start <path>       → messages[2]
+  //   hammer web <path>             → messages[1] (when not "start")
   let webPath = flags.webPath
   if (!webPath && isWebSubcommand) {
     if (flags.messages[1] === 'start') {
@@ -253,7 +253,7 @@ export async function runWebCliBranch(
     currentCwd = resolve(defaultCwd, webPath)
     const checkExists = existsSync
     if (!checkExists(currentCwd)) {
-      stderr.write(`[gsd] Project path does not exist: ${currentCwd}\n`)
+      stderr.write(`[hammer] Project path does not exist: ${currentCwd}\n`)
       return {
         handled: true,
         exitCode: 1,
@@ -274,7 +274,7 @@ export async function runWebCliBranch(
         launchInputs: { cwd: currentCwd, projectSessionsDir: '', agentDir: deps.agentDir ?? defaultAgentDir },
       }
     }
-    stderr.write(`[gsd] Using project path: ${currentCwd}\n`)
+    stderr.write(`[hammer] Using project path: ${currentCwd}\n`)
   } else {
     currentCwd = defaultCwd
   }

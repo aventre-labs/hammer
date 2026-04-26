@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * GSD Interactive Installer
+ * Hammer Interactive Installer
  *
- * Entry point for `npx gsd-pi` or `npx gsd-pi@latest`.
+ * Entry point for `npx hammer-pi` or `npx hammer-pi@latest`.
  * When invoked directly (not as a postinstall hook), runs the visual
  * installer with full terminal access — banner, spinners, progress.
  *
- * If GSD is already installed and the user runs `gsd`, this script
- * is NOT invoked — the normal loader.js handles that via the "gsd" bin.
- * This script only fires for `npx gsd-pi` (the package name bin).
+ * If Hammer is already installed and the user runs `hammer`, this script
+ * is NOT invoked — the normal loader.js handles that via the "hammer" bin.
+ * This script only fires for `npx hammer-pi` (the package name bin).
+ *
+ * Legacy note: this script is also invoked as `npx gsd-pi` (legacy alias for compatibility — legacy-alias)
  */
 
 import { execSync, spawnSync, exec as execCb } from 'child_process'
@@ -24,9 +26,10 @@ import { createInterface } from 'readline'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// packageRoot is always relative to this script — it's the gsd-pi package directory.
-// This is correct whether running as postinstall (inside node_modules/gsd-pi) or
+// packageRoot is always relative to this script — it's the hammer-pi package directory.
+// This is correct whether running as postinstall (inside node_modules/hammer-pi) or
 // via npx (inside a transient cache), since __dirname resolves to the script's location.
+// Legacy note: the package was previously published as gsd-pi — gsd-pi is a legacy alias for compatibility — legacy-alias
 const IS_POSTINSTALL = !!process.env.npm_lifecycle_event
 const packageRoot = resolve(__dirname, '..')
 
@@ -58,11 +61,11 @@ if (HAS_VERSION) {
 
 if (HAS_HELP) {
   process.stdout.write(`
-  ${c.bold}GSD Installer${c.reset} ${c.dim}v${gsdVersion}${c.reset}
+  ${c.bold}Hammer Installer${c.reset} ${c.dim}v${gsdVersion}${c.reset}
 
   ${c.yellow}Usage:${c.reset}
-    npx gsd-pi@latest          Install GSD globally (recommended)
-    npx gsd-pi@latest --local  Install GSD to current project
+    npx hammer-pi@latest          Install Hammer globally (recommended)
+    npx hammer-pi@latest --local  Install Hammer to current project
 
   ${c.yellow}Options:${c.reset}
     ${c.cyan}--local${c.reset}     Install to current directory instead of globally
@@ -73,8 +76,8 @@ if (HAS_HELP) {
 
   ${c.yellow}Environment:${c.reset}
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1  Skip Chromium
-    GSD_SKIP_RTK_INSTALL=1              Skip RTK
-    GSD_RTK_DISABLED=1                  Disable RTK integration
+    GSD_SKIP_RTK_INSTALL=1              Skip RTK  (legacy alias for compatibility — legacy-alias)
+    GSD_RTK_DISABLED=1                  Disable RTK integration  (legacy alias for compatibility — legacy-alias)
 
 `)
   process.exit(0)
@@ -113,14 +116,14 @@ function stopSpinner() {
 
 function printBanner() {
   process.stdout.write(`
-${c.cyan}   ██████╗ ███████╗██████╗
-  ██╔════╝ ██╔════╝██╔══██╗
-  ██║  ███╗███████╗██║  ██║
-  ██║   ██║╚════██║██║  ██║
-  ╚██████╔╝███████║██████╔╝
-   ╚═════╝ ╚══════╝╚═════╝${c.reset}
+${c.cyan}  ██╗  ██╗ █████╗ ███╗   ███╗███╗   ███╗███████╗██████╗
+  ██║  ██║██╔══██╗████╗ ████║████╗ ████║██╔════╝██╔══██╗
+  ███████║███████║██╔████╔██║██╔████╔██║█████╗  ██████╔╝
+  ██╔══██║██╔══██║██║╚██╔╝██║██║╚██╔╝██║██╔══╝  ██╔══██╗
+  ██║  ██║██║  ██║██║ ╚═╝ ██║██║ ╚═╝ ██║███████╗██║  ██║
+  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝${c.reset}
 
-  ${c.bold}Get Shit Done${c.reset} ${c.dim}v${gsdVersion}${c.reset}
+  ${c.bold}Hammer${c.reset} ${c.dim}v${gsdVersion}${c.reset}
 `)
 }
 
@@ -160,17 +163,17 @@ const RTK_SKIP =
 const RTK_VERSION = '0.33.1'
 const RTK_REPO = 'rtk-ai/rtk'
 const RTK_ENV = { ...process.env, RTK_TELEMETRY_DISABLED: '1' }
-const managedBinDir = join(process.env.GSD_HOME || join(homedir(), '.gsd'), 'agent', 'bin')
+const managedBinDir = join(process.env.HAMMER_HOME || process.env.GSD_HOME || join(homedir(), '.hammer'), 'agent', 'bin') // GSD_HOME is a legacy alias for compatibility — bootstrap-migration
 const managedBinaryPath = join(managedBinDir, platform() === 'win32' ? 'rtk.exe' : 'rtk')
 
 // ── Step: npm install -g ───────────────────────────────────────────────────
 
 async function installGlobally() {
-  startSpinner('Installing gsd-pi globally...             ')
+  startSpinner('Installing hammer-pi globally...             ')
   try {
     const result = await new Promise((res) => {
       execCb(
-        `npm install -g gsd-pi@${gsdVersion}`,
+        `npm install -g hammer-pi@${gsdVersion}`,
         { timeout: 300_000 },
         (error, stdout, stderr) => {
           res({ ok: !error, stdout: stdout || '', stderr: stderr || '', error })
@@ -185,11 +188,11 @@ async function installGlobally() {
         .filter(l => !l.includes('npm warn') && !l.includes('npm WARN') && l.trim())
         .slice(-3)
         .join('; ')
-      printFail('Global install failed', meaningful || 'run npm install -g gsd-pi manually')
+      printFail('Global install failed', meaningful || 'run npm install -g hammer-pi manually')
       return false
     }
 
-    printStep('Installed globally', 'npm install -g gsd-pi')
+    printStep('Installed globally', 'npm install -g hammer-pi')
     return true
   } catch (err) {
     stopSpinner()
@@ -199,11 +202,11 @@ async function installGlobally() {
 }
 
 async function installLocally() {
-  startSpinner('Installing gsd-pi locally...              ')
+  startSpinner('Installing hammer-pi locally...              ')
   try {
     const result = await new Promise((res) => {
       execCb(
-        `npm install gsd-pi@${gsdVersion}`,
+        `npm install hammer-pi@${gsdVersion}`,
         { cwd: process.cwd(), timeout: 300_000 },
         (error, stdout, stderr) => {
           res({ ok: !error, stdout: stdout || '', stderr: stderr || '', error })
@@ -218,11 +221,11 @@ async function installLocally() {
         .filter(l => !l.includes('npm warn') && !l.includes('npm WARN') && l.trim())
         .slice(-3)
         .join('; ')
-      printFail('Local install failed', meaningful || 'run npm install gsd-pi manually')
+      printFail('Local install failed', meaningful || 'run npm install hammer-pi manually')
       return false
     }
 
-    printStep('Installed locally', 'npm install gsd-pi')
+    printStep('Installed locally', 'npm install hammer-pi')
     return true
   } catch (err) {
     stopSpinner()
@@ -297,7 +300,7 @@ function sha256File(filePath) {
 }
 
 async function downloadToFile(url, destination) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'gsd-pi-installer' } })
+  const response = await fetch(url, { headers: { 'User-Agent': 'hammer-pi-installer' } })
   if (!response.ok) throw new Error(`download failed (${response.status})`)
   if (!response.body) throw new Error('no response body')
   const output = createWriteStream(destination)
@@ -358,7 +361,7 @@ async function installRtk() {
 
   try {
     const checksumsResponse = await fetch(`${releaseBase}/checksums.txt`, {
-      headers: { 'User-Agent': 'gsd-pi-installer' },
+      headers: { 'User-Agent': 'hammer-pi-installer' },
     })
     if (!checksumsResponse.ok) throw new Error(`checksums fetch failed (${checksumsResponse.status})`)
 
@@ -452,9 +455,9 @@ function linkWorkspacePackages() {
 // ── Step: Verify installation ──────────────────────────────────────────────
 
 function verifyInstall(local) {
-  let bin = 'gsd'
+  let bin = 'hammer'
   if (local) {
-    const localBin = resolve(process.cwd(), 'node_modules', '.bin', 'gsd')
+    const localBin = resolve(process.cwd(), 'node_modules', '.bin', 'hammer')
     if (existsSync(localBin)) {
       bin = localBin
     } else if (platform() === 'win32' && existsSync(localBin + '.cmd')) {
@@ -519,8 +522,8 @@ if (IS_POSTINSTALL) {
   // Verify
   const version = verifyInstall(isLocal)
   if (version) {
-    printStep('Verified', `gsd v${version}`)
+    printStep('Verified', `hammer v${version}`)
   }
 }
 
-process.stdout.write(`\n  ${c.green}Ready.${c.reset} Run: ${c.bold}gsd${c.reset}\n\n`)
+process.stdout.write(`\n  ${c.green}Ready.${c.reset} Run: ${c.bold}hammer${c.reset}\n\n`)

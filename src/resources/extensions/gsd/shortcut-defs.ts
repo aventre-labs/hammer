@@ -1,4 +1,4 @@
-// Canonical GSD shortcut definitions used by registration, help text, and overlays.
+// Canonical Hammer shortcut definitions used by registration, help text, and overlays.
 
 import { formatShortcut } from "./files.js";
 
@@ -15,20 +15,20 @@ type GSDShortcutDef = {
 export const GSD_SHORTCUTS: Record<GSDShortcutId, GSDShortcutDef> = {
   dashboard: {
     key: "g",
-    action: "Open GSD dashboard",
-    command: "/gsd status",
+    action: "Open Hammer dashboard",
+    command: "/hammer status",
     hasFallback: true,
   },
   notifications: {
     key: "n",
     action: "Open notification history",
-    command: "/gsd notifications",
+    command: "/hammer notifications",
     hasFallback: true,
   },
   parallel: {
     key: "p",
     action: "Open parallel worker monitor",
-    command: "/gsd parallel watch",
+    command: "/hammer parallel watch",
     hasFallback: false, // Ctrl+Shift+P conflicts with cycleModelBackward
   },
 };

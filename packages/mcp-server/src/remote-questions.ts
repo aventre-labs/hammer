@@ -291,7 +291,7 @@ function formatForDiscord(prompt: RemotePrompt): { embeds: unknown[]; reactionEm
 
 function formatForSlack(prompt: RemotePrompt): unknown[] {
   const blocks: unknown[] = [
-    { type: 'header', text: { type: 'plain_text', text: 'GSD needs your input' } },
+    { type: 'header', text: { type: 'plain_text', text: 'Hammer needs your input' } },
   ];
 
   if (prompt.questions.length > 1) {
@@ -327,7 +327,7 @@ function formatForSlack(prompt: RemotePrompt): unknown[] {
 
 function formatForTelegram(prompt: RemotePrompt): { text: string; parse_mode: 'HTML'; reply_markup?: unknown } {
   const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const lines: string[] = ['<b>GSD needs your input</b>', ''];
+  const lines: string[] = ['<b>Hammer needs your input</b>', ''];
 
   for (let qi = 0; qi < prompt.questions.length; qi++) {
     const q = prompt.questions[qi];
@@ -499,7 +499,7 @@ async function discordSend(prompt: RemotePrompt, token: string, channelId: strin
   const res = await apiRequest(
     `${DISCORD_API}/channels/${channelId}/messages`,
     'POST',
-    { content: '**GSD needs your input** — reply to this message with your answer', embeds },
+    { content: '**Hammer needs your input** — reply to this message with your answer', embeds },
     'Bot', token, 'Discord API',
   ) as Record<string, unknown>;
 
@@ -582,7 +582,7 @@ async function slackSend(prompt: RemotePrompt, token: string, channelId: string)
   const res = await apiRequest(
     `${SLACK_API}/chat.postMessage`,
     'POST',
-    { channel: channelId, text: 'GSD needs your input', blocks: formatForSlack(prompt) },
+    { channel: channelId, text: 'Hammer needs your input', blocks: formatForSlack(prompt) },
     'Bearer', token, 'Slack API',
   ) as Record<string, unknown>;
 

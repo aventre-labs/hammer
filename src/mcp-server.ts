@@ -16,7 +16,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Minimal tool interface matching GSD's AgentTool shape.
+ * Minimal tool interface matching Hammer's AgentTool shape.
  * Avoids a direct dependency on @gsd/pi-agent-core from this compiled module.
  *
  * `details` and `isError` are optional fields that runtime tool implementations
@@ -57,12 +57,12 @@ const MCP_PKG = '@modelcontextprotocol/sdk'
 /**
  * Starts a native MCP (Model Context Protocol) server over stdin/stdout.
  *
- * This enables GSD's tools (read, write, edit, bash, grep, glob, ls, etc.)
+ * This enables Hammer's tools (read, write, edit, bash, grep, glob, ls, etc.)
  * to be used by external AI clients such as Claude Desktop, VS Code Copilot,
  * and any MCP-compatible host.
  *
  * The server registers all tools from the agent session's tool registry and
- * maps MCP tools/list and tools/call requests to GSD tool definitions and
+ * maps MCP tools/list and tools/call requests to Hammer tool definitions and
  * execution, respectively.
  *
  * All MCP SDK imports are dynamic to avoid subpath export resolution issues
@@ -89,11 +89,11 @@ export async function startMcpServer(options: {
   }
 
   const server = new Server(
-    { name: 'gsd', version },
+    { name: 'hammer', version },
     { capabilities: { tools: {} } },
   )
 
-  // tools/list — return every registered GSD tool with its JSON Schema parameters
+  // tools/list — return every registered Hammer tool with its JSON Schema parameters
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map((t: McpToolDef) => ({
       name: t.name,
@@ -174,5 +174,5 @@ export async function startMcpServer(options: {
   // Connect to stdin/stdout transport
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  process.stderr.write(`[gsd] MCP server started (v${version})\n`)
+  process.stderr.write(`[hammer] MCP server started (v${version})\n`)
 }

@@ -1,5 +1,5 @@
 /**
- * Shared GSD block-letter ASCII logo.
+ * Shared Hammer block-letter ASCII logo.
  *
  * Single source of truth — imported by:
  *   - scripts/postinstall.js (via dist/logo.js)

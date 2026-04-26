@@ -4,7 +4,7 @@
 /**
  * Subcommands that must bypass the managed-resource-mismatch gate.
  *
- * When the synced resource manifest claims a newer gsd version than the
+ * When the synced resource manifest claims a newer hammer version than the
  * running binary, exitIfManagedResourcesAreNewer() blocks every command
  * with a "Version mismatch detected" diagnostic. The `update` subcommand
  * MUST bypass that gate so the user can recover by upgrading the binary —

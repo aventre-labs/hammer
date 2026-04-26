@@ -21,8 +21,8 @@ export function registerShortcuts(pi: ExtensionAPI): void {
 
   const openDashboardOverlay = async (ctx: ExtensionContext) => {
     const basePath = projectRoot();
-    if (!existsSync(join(basePath, ".gsd"))) {
-      ctx.ui.notify("No .gsd/ directory found. Run /gsd to start.", "info");
+    if (!existsSync(join(basePath, ".hammer")) && !existsSync(join(basePath, ".gsd"))) { // .gsd fallback — bootstrap-migration
+      ctx.ui.notify("No .hammer/ directory found. Run /hammer to start.", "info");
       return;
     }
     await ctx.ui.custom<boolean>(
@@ -52,9 +52,10 @@ export function registerShortcuts(pi: ExtensionAPI): void {
 
   const openParallelOverlay = async (ctx: ExtensionContext) => {
     const basePath = projectRoot();
-    const parallelDir = join(basePath, ".gsd", "parallel");
-    if (!existsSync(parallelDir)) {
-      ctx.ui.notify("No parallel workers found. Run /gsd parallel start first.", "info");
+    const parallelDir = join(basePath, ".hammer", "parallel");
+    const parallelDirLegacy = join(basePath, ".gsd", "parallel"); // legacy import bridge — bootstrap-migration
+    if (!existsSync(parallelDir) && !existsSync(parallelDirLegacy)) {
+      ctx.ui.notify("No parallel workers found. Run /hammer parallel start first.", "info");
       return;
     }
     await ctx.ui.custom<boolean>(
@@ -94,5 +95,5 @@ export function registerShortcuts(pi: ExtensionAPI): void {
   });
 
   // No Ctrl+Shift+P fallback — conflicts with cycleModelBackward (shift+ctrl+p).
-  // Use Ctrl+Alt+P or /gsd parallel watch instead.
+  // Use Ctrl+Alt+P or /hammer parallel watch instead.
 }
