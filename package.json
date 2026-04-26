@@ -1,15 +1,15 @@
 {
-  "name": "gsd-pi",
+  "name": "hammer-pi",
   "version": "2.78.1",
-  "description": "GSD — Get Shit Done coding agent",
+  "description": "Hammer — agentic coding workflow runtime",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gsd-build/gsd-2.git"
+    "url": "https://github.com/hammer-build/hammer.git"
   },
-  "homepage": "https://github.com/gsd-build/gsd-2#readme",
+  "homepage": "https://github.com/hammer-build/hammer#readme",
   "bugs": {
-    "url": "https://github.com/gsd-build/gsd-2/issues"
+    "url": "https://github.com/hammer-build/hammer/issues"
   },
   "type": "module",
   "workspaces": [
@@ -18,6 +18,9 @@
     "extensions/*"
   ],
   "bin": {
+    "hammer": "dist/loader.js",
+    "hammer-cli": "dist/loader.js",
+    "hammer-pi": "scripts/install.js",
     "gsd": "dist/loader.js",
     "gsd-cli": "dist/loader.js",
     "gsd-pi": "scripts/install.js"
@@ -37,8 +40,8 @@
     "README.md"
   ],
   "piConfig": {
-    "name": "gsd",
-    "configDir": ".gsd"
+    "name": "hammer",
+    "configDir": ".hammer"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -79,10 +82,6 @@
     "build:native": "node native/scripts/build.js",
     "build:native:dev": "node native/scripts/build.js --dev",
     "dev": "node scripts/dev.js",
-    "gsd": "node scripts/dev-cli.js",
-    "gsd:web": "npm run build:pi && npm run copy-resources && node scripts/build-web-if-stale.cjs && node scripts/dev-cli.js --web",
-    "gsd:web:stop": "node scripts/dev-cli.js web stop",
-    "gsd:web:stop:all": "node scripts/dev-cli.js web stop all",
     "postinstall": "node scripts/install.js",
     "pi:install-global": "node scripts/install-pi-global.js",
     "pi:uninstall-global": "node scripts/uninstall-pi-global.js",
@@ -95,10 +94,14 @@
     "release:changelog": "node scripts/generate-changelog.mjs",
     "release:bump": "node scripts/bump-version.mjs",
     "release:update-changelog": "node scripts/update-changelog.mjs",
-    "docker:build-runtime": "docker build --target runtime -t ghcr.io/gsd-build/gsd-pi .",
-    "docker:build-builder": "docker build --target builder -t ghcr.io/gsd-build/gsd-ci-builder .",
+    "docker:build-runtime": "docker build --target runtime -t ghcr.io/hammer-build/hammer-pi .",
+    "docker:build-builder": "docker build --target builder -t ghcr.io/hammer-build/hammer-ci-builder .",
     "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && node scripts/prepublish-check.mjs && npm run build && npm run typecheck:extensions && npm run validate-pack",
-    "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts"
+    "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts",
+    "hammer": "node scripts/dev-cli.js",
+    "hammer:web": "npm run build:pi && npm run copy-resources && node scripts/build-web-if-stale.cjs && node scripts/dev-cli.js --web",
+    "hammer:web:stop": "node scripts/dev-cli.js web stop",
+    "hammer:web:stop:all": "node scripts/dev-cli.js web stop all"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

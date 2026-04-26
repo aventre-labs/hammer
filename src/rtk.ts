@@ -8,6 +8,8 @@ import { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import extractZip from "extract-zip";
 import {
+  HAMMER_RTK_DISABLED_ENV,
+  HAMMER_RTK_PATH_ENV,
   GSD_RTK_DISABLED_ENV,
   GSD_RTK_PATH_ENV,
   RTK_TELEMETRY_DISABLED_ENV,
@@ -18,10 +20,16 @@ import {
   isRtkEnabled,
   resolveSystemRtkPath,
 } from "./rtk-shared.js";
+import {
+  HAMMER_LEGACY_ENV_ALIASES,
+  HAMMER_SKIP_RTK_INSTALL_ENV,
+} from "./hammer-identity/index.js";
 
 export const RTK_VERSION = "0.33.1";
-export const GSD_SKIP_RTK_INSTALL_ENV = "GSD_SKIP_RTK_INSTALL";
+export const GSD_SKIP_RTK_INSTALL_ENV = HAMMER_LEGACY_ENV_ALIASES.skipRtkInstall; // legacy alias export for HAMMER_SKIP_RTK_INSTALL compatibility
 export {
+  HAMMER_RTK_DISABLED_ENV,
+  HAMMER_RTK_PATH_ENV,
   GSD_RTK_DISABLED_ENV,
   GSD_RTK_PATH_ENV,
   RTK_TELEMETRY_DISABLED_ENV,
