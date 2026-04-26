@@ -1,6 +1,6 @@
 const SUBCOMMAND_HELP: Record<string, string> = {
   config: [
-    'Usage: gsd config',
+    'Usage: hammer config',
     '',
     'Re-run the interactive setup wizard to configure:',
     '  - LLM provider (Anthropic, OpenAI, Google, OpenRouter, Ollama, LM Studio, etc.)',
@@ -15,15 +15,15 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   ].join('\n'),
 
   update: [
-    'Usage: gsd update',
+    'Usage: hammer update',
     '',
-    'Update GSD to the latest version.',
+    'Update Hammer to the latest version.',
     '',
-    'Equivalent to: npm install -g gsd-pi@latest',
+    'Equivalent to: npm install -g hammer-pi@latest',
   ].join('\n'),
 
   sessions: [
-    'Usage: gsd sessions',
+    'Usage: hammer sessions',
     '',
     'List all saved sessions for the current directory and interactively',
     'pick one to resume. Shows date, message count, and a preview of the',
@@ -36,31 +36,31 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   ].join('\n'),
 
   install: [
-    'Usage: gsd install <source> [-l, --local]',
+    'Usage: hammer install <source> [-l, --local]',
     '',
     'Install a package/extension source and run post-install validation (dependency checks, setup).',
     '',
     'Examples:',
-    '  gsd install npm:@foo/bar',
-    '  gsd install git:github.com/user/repo',
-    '  gsd install https://github.com/user/repo',
-    '  gsd install ./local/path',
+    '  hammer install npm:@foo/bar',
+    '  hammer install git:github.com/user/repo',
+    '  hammer install https://github.com/user/repo',
+    '  hammer install ./local/path',
   ].join('\n'),
 
   remove: [
-    'Usage: gsd remove <source> [-l, --local]',
+    'Usage: hammer remove <source> [-l, --local]',
     '',
     'Remove an installed package source and its settings entry.',
   ].join('\n'),
 
   list: [
-    'Usage: gsd list',
+    'Usage: hammer list',
     '',
     'List installed package sources from user and project settings.',
   ].join('\n'),
 
   worktree: [
-    'Usage: gsd worktree <command> [args]',
+    'Usage: hammer worktree <command> [args]',
     '',
     'Manage isolated git worktrees for parallel work streams.',
     '',
@@ -71,35 +71,35 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '  remove <name>        Remove a worktree (--force to remove with unmerged changes)',
     '',
     'The -w flag creates/resumes worktrees for interactive sessions:',
-    '  gsd -w               Auto-name a new worktree, or resume the only active one',
-    '  gsd -w my-feature    Create or resume a named worktree',
+    '  hammer -w               Auto-name a new worktree, or resume the only active one',
+    '  hammer -w my-feature    Create or resume a named worktree',
     '',
     'Lifecycle:',
-    '  1. gsd -w             Create worktree, start session inside it',
-    '  2. (work normally)    All changes happen on the worktree branch',
-    '  3. Ctrl+C             Exit — dirty work is auto-committed',
-    '  4. gsd -w             Resume where you left off',
-    '  5. gsd worktree merge Squash-merge into main when done',
+    '  1. hammer -w             Create worktree, start session inside it',
+    '  2. (work normally)       All changes happen on the worktree branch',
+    '  3. Ctrl+C                Exit — dirty work is auto-committed',
+    '  4. hammer -w             Resume where you left off',
+    '  5. hammer worktree merge Squash-merge into main when done',
     '',
     'Examples:',
-    '  gsd -w                              Start in a new auto-named worktree',
-    '  gsd -w auth-refactor                Create/resume "auth-refactor" worktree',
-    '  gsd worktree list                   See all worktrees and their status',
-    '  gsd worktree merge auth-refactor    Merge and clean up',
-    '  gsd worktree clean                  Remove all merged/empty worktrees',
-    '  gsd worktree remove old-branch      Remove a specific worktree',
-    '  gsd worktree remove old-branch --force  Remove even with unmerged changes',
+    '  hammer -w                              Start in a new auto-named worktree',
+    '  hammer -w auth-refactor                Create/resume "auth-refactor" worktree',
+    '  hammer worktree list                   See all worktrees and their status',
+    '  hammer worktree merge auth-refactor    Merge and clean up',
+    '  hammer worktree clean                  Remove all merged/empty worktrees',
+    '  hammer worktree remove old-branch      Remove a specific worktree',
+    '  hammer worktree remove old-branch --force  Remove even with unmerged changes',
   ].join('\n'),
 
   graph: [
-    'Usage: gsd graph <subcommand> [options]',
+    'Usage: hammer graph <subcommand> [options]',
     '',
-    'Manage the GSD project knowledge graph. Reads .gsd/ artifacts and builds',
+    'Manage the Hammer project knowledge graph. Reads .hammer/ artifacts and builds',
     'a queryable graph of milestones, slices, tasks, rules, patterns, and lessons.',
     '',
     'Subcommands:',
-    '  build   Parse .gsd/ artifacts (STATE.md, milestone ROADMAPs, slice PLANs,',
-    '          KNOWLEDGE.md) and write .gsd/graphs/graph.json atomically.',
+    '  build   Parse .hammer/ artifacts (STATE.md, milestone ROADMAPs, slice PLANs,',
+    '          KNOWLEDGE.md) and write .hammer/graphs/graph.json atomically.',
     '  query   Search graph nodes by term (BFS from seed matches, budget-trimmed).',
     '          Returns matching nodes and reachable edges within the token budget.',
     '  status  Show whether graph.json exists, its age, node/edge counts, and',
@@ -108,16 +108,16 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '          Returns added, removed, and changed nodes and edges.',
     '',
     'Examples:',
-    '  gsd graph build                        Build the graph from .gsd/ artifacts',
-    '  gsd graph status                       Check graph age and node/edge counts',
-    '  gsd graph query auth                   Find nodes related to "auth"',
-    '  gsd graph diff                         Show changes since last snapshot',
+    '  hammer graph build                        Build the graph from .hammer/ artifacts',
+    '  hammer graph status                       Check graph age and node/edge counts',
+    '  hammer graph query auth                   Find nodes related to "auth"',
+    '  hammer graph diff                         Show changes since last snapshot',
   ].join('\n'),
 
   headless: [
-    'Usage: gsd headless [flags] [command] [args...]',
+    'Usage: hammer headless [flags] [command] [args...]',
     '',
-    'Run /gsd commands without the TUI. Default command: auto',
+    'Run /hammer commands without the TUI. Default command: auto',
     '',
     'Flags:',
     '  --timeout N            Overall timeout in ms (default: 300000)',
@@ -150,31 +150,31 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '  stream-json  Stream JSONL events to stdout in real time (same as --json)',
     '',
     'Examples:',
-    '  gsd headless                                    Run /gsd auto',
-    '  gsd headless next                               Run one unit',
-    '  gsd headless --output-format json auto           Structured JSON result on stdout',
-    '  gsd headless --json status                      Machine-readable JSONL stream',
-    '  gsd headless --timeout 60000                    With 1-minute timeout',
-    '  gsd headless --bare auto                        Minimal context (CI/ecosystem use)',
-    '  gsd headless --resume abc123 auto               Resume a prior session',
-    '  gsd headless new-milestone --context spec.md    Create milestone from file',
-    '  cat spec.md | gsd headless new-milestone --context -   From stdin',
-    '  gsd headless new-milestone --context spec.md --auto    Create + auto-execute',
-    '  gsd headless --supervised auto                     Supervised orchestrator mode',
-    '  gsd headless --answers answers.json auto              With pre-supplied answers',
-    '  gsd headless --events agent_end,extension_ui_request auto   Filtered event stream',
-    '  gsd headless query                              Instant JSON state snapshot',
+    '  hammer headless                                    Run /hammer auto',
+    '  hammer headless next                               Run one unit',
+    '  hammer headless --output-format json auto          Structured JSON result on stdout',
+    '  hammer headless --json status                      Machine-readable JSONL stream',
+    '  hammer headless --timeout 60000                    With 1-minute timeout',
+    '  hammer headless --bare auto                        Minimal context (CI/ecosystem use)',
+    '  hammer headless --resume abc123 auto               Resume a prior session',
+    '  hammer headless new-milestone --context spec.md    Create milestone from file',
+    '  cat spec.md | hammer headless new-milestone --context -   From stdin',
+    '  hammer headless new-milestone --context spec.md --auto    Create + auto-execute',
+    '  hammer headless --supervised auto                     Supervised orchestrator mode',
+    '  hammer headless --answers answers.json auto              With pre-supplied answers',
+    '  hammer headless --events agent_end,extension_ui_request auto   Filtered event stream',
+    '  hammer headless query                              Instant JSON state snapshot',
     '',
     'Exit codes: 0 = success, 1 = error/timeout, 10 = blocked, 11 = cancelled',
   ].join('\n'),
 }
 
-// Alias: `gsd wt --help` → same as `gsd worktree --help`
+// Alias: `hammer wt --help` → same as `hammer worktree --help`
 SUBCOMMAND_HELP['wt'] = SUBCOMMAND_HELP['worktree']
 
 export function printHelp(version: string): void {
-  process.stdout.write(`GSD v${version} — Get Shit Done\n\n`)
-  process.stdout.write('Usage: gsd [options] [message...]\n\n')
+  process.stdout.write(`Hammer v${version}\n\n`)
+  process.stdout.write('Usage: hammer [options] [message...]\n\n')
   process.stdout.write('Options:\n')
   process.stdout.write('  --mode <text|json|rpc|mcp> Output mode (default: interactive)\n')
   process.stdout.write('  --print, -p              Single-shot print mode\n')
@@ -192,19 +192,20 @@ export function printHelp(version: string): void {
   process.stdout.write('  install <source>         Install a package/extension source\n')
   process.stdout.write('  remove <source>          Remove an installed package source\n')
   process.stdout.write('  list                     List installed package sources\n')
-  process.stdout.write('  update                   Update GSD to the latest version\n')
+  process.stdout.write('  update                   Update Hammer to the latest version\n')
   process.stdout.write('  sessions                 List and resume a past session\n')
   process.stdout.write('  worktree <cmd>           Manage worktrees (list, merge, clean, remove)\n')
   process.stdout.write('  auto [args]              Run auto-mode without TUI (pipeable)\n')
-  process.stdout.write('  headless [cmd] [args]    Run /gsd commands without TUI (default: auto)\n')
+  process.stdout.write('  headless [cmd] [args]    Run /hammer commands without TUI (default: auto)\n')
   process.stdout.write('  graph <subcommand>       Manage knowledge graph (build, query, status, diff)\n')
-  process.stdout.write('\nRun gsd <subcommand> --help for subcommand-specific help.\n')
+  process.stdout.write('\nRun hammer <subcommand> --help for subcommand-specific help.\n')
+  process.stdout.write('\nLegacy alias: gsd (backwards-compatible alias for hammer)\n')
 }
 
 export function printSubcommandHelp(subcommand: string, version: string): boolean {
   const help = SUBCOMMAND_HELP[subcommand]
   if (!help) return false
-  process.stdout.write(`GSD v${version} — Get Shit Done\n\n`)
+  process.stdout.write(`Hammer v${version}\n\n`)
   process.stdout.write(help + '\n')
   return true
 }

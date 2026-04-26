@@ -64,6 +64,28 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["const LEGACY_TOKEN_PATTERN = ...", "assert.match(report, /GSD/)"] as const,
   },
   {
+    id: "package-manifest-internal-scopes",
+    category: "internal-implementation-path",
+    description: "Entries for @gsd-build/* and @gsd/* npm scopes are internal workspace/native package names, not user-visible product identity.",
+    pathPattern: String.raw`.*`,
+    linePattern: String.raw`(?:@gsd-build|@gsd(?:[-/]|['"]))`,
+    rationale:
+      "The @gsd-build and @gsd npm scopes are internal build tooling and workspace package identifiers. Renaming npm scope names requires coordinated publish changes and is tracked as downstream work.",
+    allowedUntil: "Remove once the internal workspace package scopes are migrated to @hammer-build/.",
+    examples: ['"@gsd-build/engine-darwin-arm64": ">=2.10.2"', '"@gsd/pi-coding-agent": "*"', "join(gsdNodeModules, '@gsd')"] as const,
+  },
+  {
+    id: "package-manifest-legacy-bin-aliases",
+    category: "legacy-alias",
+    description: "Legacy gsd/gsd-cli/gsd-pi bin entries in package manifests kept as backwards-compatible command aliases.",
+    pathPattern: String.raw`(?:^|/)package(?:-lock)?\.json$`,
+    linePattern: String.raw`"(?:gsd|gsd-cli|gsd-pi|gsd-daemon|gsd-mcp-server)"\s*:`,
+    rationale:
+      "Users who installed gsd-pi previously still have gsd/gsd-cli on PATH. These bin entries keep those names working while hammer/hammer-cli become canonical.",
+    allowedUntil: "Remove in a future major version once gsd binary has been sunset.",
+    examples: ['"gsd": "dist/loader.js"', '"gsd-cli": "dist/loader.js"'] as const,
+  },
+  {
     id: "explicit-legacy-alias-marker",
     category: "legacy-alias",
     description: "Lines that explicitly mark an old GSD spelling as a legacy alias or compatibility shim.",
@@ -75,10 +97,32 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["const alias = \"/gsd\"; // legacy alias for /hammer"] as const,
   },
   {
+    id: "internal-workspace-config-field",
+    category: "internal-implementation-path",
+    description: "The `gsd.linkable`, `gsd.scope`, `gsd.name` fields are internal workspace package configuration keys, not user-visible product identity.",
+    pathPattern: String.raw`.*`,
+    linePattern: String.raw`(?:\bpkg\.gsd\b|gsd\.linkable|gsd\.scope\b|gsd\.name\b|const gsd = pkg\.gsd|if \(!gsd\b)`,
+    rationale:
+      "These are private npm workspace config fields used by link-workspace-packages.cjs and loader.ts. They are not visible in help, CLI output, or package public surface.",
+    allowedUntil: "Remove when workspace package.json config fields are migrated to a hammer.* key.",
+    examples: ["const gsd = pkg.gsd", "if (!gsd || gsd.linkable !== true) continue"] as const,
+  },
+  {
+    id: "internal-test-env-var",
+    category: "internal-implementation-path",
+    description: "GSD_LIVE_TESTS and similar test-only env vars used in package.json scripts are internal test harness toggles, not user-facing product identity.",
+    pathPattern: String.raw`(?:^|/)package(?:-lock)?\.json$`,
+    linePattern: String.raw`GSD_(?:LIVE_TESTS|TEST_[A-Z_]+)`,
+    rationale:
+      "Test environment variables are internal harness knobs that happen to carry the GSD prefix. They never appear in user-visible output or help text.",
+    allowedUntil: "Rename when the test harness env vars are migrated to HAMMER_TEST_* naming.",
+    examples: ['"test:live": "node scripts/with-env.mjs GSD_LIVE_TESTS=1 -- ..."'] as const,
+  },
+  {
     id: "bootstrap-state-migration",
     category: "bootstrap-migration",
     description: "Startup/bootstrap code may mention old state locations or env vars while importing existing local state into Hammer paths.",
-    pathPattern: String.raw`(?:^|/)src/(?:loader|app-paths|resource-loader|init-resources|project-state|preferences|config|rtk|bundled-extension-paths|extension-discovery|extension-registry)\.ts$|(?:^|/)src/resources/extensions/gsd/bootstrap/`,
+    pathPattern: String.raw`(?:^|/)src/(?:loader|cli|app-paths|resource-loader|init-resources|project-state|preferences|config|rtk|bundled-extension-paths|extension-discovery|extension-registry)\.ts$|(?:^|/)src/resources/extensions/gsd/bootstrap/`,
     linePattern: String.raw`(?:(?:bootstrap|migrat|fallback|import|upgrade|first launch|state|home|agent|session|artifact).{0,120}${LEGACY_TOKEN_PATTERN}|${LEGACY_TOKEN_PATTERN}.{0,120}(?:bootstrap|migrat|fallback|import|upgrade|first launch|state|home|agent|session|artifact))`,
     rationale:
       "Existing installations need a bounded bridge from old state into canonical Hammer state without making GSD product language visible.",
@@ -101,7 +145,7 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     category: "internal-implementation-path",
     description: "Private repository/runtime path references may contain the existing extension directory name until that tree is physically renamed.",
     pathPattern: String.raw`.*`,
-    linePattern: String.raw`(?:src/)?resources/extensions/gsd(?:/|\b)|(?:^|["'\x60])(?:\.?/)?\.gsd/(?:agent|sessions|milestones|journal|activity|workflow-defs|preferences|captures|backlog|reports|gsd\.db)|GSD_(?:WORKFLOW_PATH|BUNDLED_EXTENSION_PATHS|PKG_ROOT|CODING_AGENT_DIR|BIN_PATH|VERSION|FIRST_RUN_BANNER)\b`,
+    linePattern: String.raw`(?:src/)?resources/extensions/gsd(?:/|\b)|(?:^|["'\x60])(?:\.?/)?\.gsd/(?:agent|sessions|milestones|journal|activity|workflow-defs|preferences|captures|backlog|reports|gsd\.db)|GSD_(?:WORKFLOW_PATH|BUNDLED_EXTENSION_PATHS|PKG_ROOT|CODING_AGENT_DIR|BIN_PATH|VERSION|FIRST_RUN_BANNER|RTK_DISABLED(?:_ENV)?|SKIP_RTK_INSTALL|RTK_PATH)\b|GSD-WORKFLOW\.md\b|GSD_RTK_DISABLED\b|(?:the\s+)?gsd\s+(?:extension|workflow)\b`,
     rationale:
       "These strings are implementation addresses or private process wiring, not user-facing product identity. Public commands and help remain out of scope for this rule.",
     allowedUntil: "Remove each path/env allowance as the implementation tree is renamed.",

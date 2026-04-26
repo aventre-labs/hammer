@@ -47,16 +47,16 @@ if (parseInt(process.versions.node) >= 22) {
 }
 
 function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
-  const currentVersion = process.env.GSD_VERSION || '0.0.0'
+  const currentVersion = process.env.HAMMER_VERSION || process.env.GSD_VERSION || '0.0.0'
   const managedVersion = getNewerManagedResourceVersion(currentAgentDir, currentVersion)
   if (!managedVersion) {
     return
   }
 
   process.stderr.write(
-    `[gsd] ${chalk.yellow('Version mismatch detected')}\n` +
-    `[gsd] Synced resources are from ${chalk.bold(`v${managedVersion}`)}, but this \`gsd\` binary is ${chalk.dim(`v${currentVersion}`)}.\n` +
-    `[gsd] Run ${chalk.bold('npm install -g gsd-pi@latest')} or ${chalk.bold('gsd update')}, then try again.\n`,
+    `[hammer] ${chalk.yellow('Version mismatch detected')}\n` +
+    `[hammer] Synced resources are from ${chalk.bold(`v${managedVersion}`)}, but this \`hammer\` binary is ${chalk.dim(`v${currentVersion}`)}.\n` +
+    `[hammer] Run ${chalk.bold('npm install -g hammer-pi@latest')} or ${chalk.bold('hammer update')}, then try again.\n`,
   )
   process.exit(1)
 }
@@ -73,18 +73,18 @@ function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
  */
 function printNonTtyErrorAndExit(missing: string | undefined, includeWebHint: boolean): never {
   const suffix = missing ? ` but ${missing} not a TTY` : ''
-  process.stderr.write(`[gsd] Error: Interactive mode requires a terminal (TTY)${suffix}.\n`)
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd auto                       Auto-mode (pipeable, no TUI)\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write(`[hammer] Error: Interactive mode requires a terminal (TTY)${suffix}.\n`)
+  process.stderr.write('[hammer] Non-interactive alternatives:\n')
+  process.stderr.write('[hammer]   hammer auto                       Auto-mode (pipeable, no TUI)\n')
+  process.stderr.write('[hammer]   hammer --print "your message"     Single-shot prompt\n')
   if (includeWebHint) {
-    process.stderr.write('[gsd]   gsd --web [path]               Browser-only web mode\n')
+    process.stderr.write('[hammer]   hammer --web [path]               Browser-only web mode\n')
   }
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.stderr.write('[hammer]   hammer --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[hammer]   hammer --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[hammer]   hammer --mode text "message"      Text output mode\n')
   if (includeWebHint) {
-    process.stderr.write('[gsd]   gsd headless                   Auto-mode without TUI\n')
+    process.stderr.write('[hammer]   hammer headless                   Auto-mode without TUI\n')
   }
   process.exit(1)
 }
@@ -97,7 +97,7 @@ function printExtensionErrors(errors: ReadonlyArray<{ error: string }>): void {
   for (const err of errors) {
     const isConflict = err.error.includes('supersedes') || err.error.includes('conflicts with')
     const prefix = isConflict ? 'Extension conflict' : 'Extension load error'
-    process.stderr.write(`[gsd] ${prefix}: ${err.error}\n`)
+    process.stderr.write(`[hammer] ${prefix}: ${err.error}\n`)
   }
 }
 
@@ -109,7 +109,7 @@ function printExtensionErrors(errors: ReadonlyArray<{ error: string }>): void {
 function printExtensionWarnings(warnings: ReadonlyArray<{ message: string }> | undefined): void {
   if (!warnings) return
   for (const w of warnings) {
-    process.stderr.write(`[gsd] Extension warning: ${w.message}\n`)
+    process.stderr.write(`[hammer] Extension warning: ${w.message}\n`)
   }
 }
 
@@ -141,14 +141,14 @@ async function reapplyValidatedModelOnFallback(
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
-// `gsd [subcommand] --help` / `-h` — print help before any subcommand runs.
+// `hammer [subcommand] --help` / `-h` — print help before any subcommand runs.
 // loader.ts only catches --help/-h as the *first* arg; here we handle the
-// case where it appears later (e.g. `gsd update --help`, `gsd --foo --help`).
+// case where it appears later (e.g. `hammer update --help`, `hammer --foo --help`).
 // Prefer subcommand-specific help when the first positional is a known
 // subcommand, otherwise fall back to general help.
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   const helpSubcommand = cliFlags.messages[0]
-  const version = process.env.GSD_VERSION || '0.0.0'
+  const version = process.env.HAMMER_VERSION || process.env.GSD_VERSION || '0.0.0'
   if (!helpSubcommand || !printSubcommandHelp(helpSubcommand, version)) {
     printHelp(version)
   }
@@ -173,14 +173,14 @@ async function doRtkBootstrap(): Promise<void> {
   const rtkStatus = await bootstrapRtk()
   markStartup('bootstrapRtk')
   if (!rtkStatus.available && rtkStatus.supported && rtkStatus.enabled && rtkStatus.reason) {
-    process.stderr.write(`[gsd] Warning: RTK unavailable — continuing without shell-command compression (${rtkStatus.reason}).\n`)
+    process.stderr.write(`[hammer] Warning: RTK unavailable — continuing without shell-command compression (${rtkStatus.reason}).\n`)
   }
 }
 function ensureRtkBootstrap(): Promise<void> {
   return (rtkBootstrapPromise ??= doRtkBootstrap())
 }
 
-// `gsd update` — update to the latest version via npm.
+// `hammer update` — update to the latest version via npm.
 // MUST run before exitIfManagedResourcesAreNewer(): when the bundled resource
 // manifest is from a newer version than the running binary, every other
 // command is blocked — only `update` should bypass the gate so the user can
@@ -192,7 +192,7 @@ if (shouldBypassManagedResourceMismatchGate(cliFlags.messages[0])) {
 }
 
 // ---------------------------------------------------------------------------
-// Graph subcommand — `gsd graph build|status|query|diff`
+// Graph subcommand — `hammer graph build|status|query|diff`
 // ---------------------------------------------------------------------------
 if (cliFlags.messages[0] === 'graph') {
   const sub = cliFlags.messages[1]
@@ -207,14 +207,14 @@ if (cliFlags.messages[0] === 'graph') {
       await writeGraph(gsdRoot, graph)
       process.stdout.write(`Graph built: ${graph.nodes.length} nodes, ${graph.edges.length} edges\n`)
     } catch (err) {
-      process.stderr.write(`[gsd] graph build failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.stderr.write(`[hammer] graph build failed: ${err instanceof Error ? err.message : String(err)}\n`)
       process.exit(1)
     }
   } else if (sub === 'status') {
     try {
       const result = await graphStatus(projectDir)
       if (!result.exists) {
-        process.stdout.write('Graph: not built yet. Run: gsd graph build\n')
+        process.stdout.write('Graph: not built yet. Run: hammer graph build\n')
       } else {
         process.stdout.write(`Graph status:\n`)
         process.stdout.write(`  exists:    ${result.exists}\n`)
@@ -225,13 +225,13 @@ if (cliFlags.messages[0] === 'graph') {
         process.stdout.write(`  lastBuild: ${result.lastBuild ?? 'n/a'}\n`)
       }
     } catch (err) {
-      process.stderr.write(`[gsd] graph status failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.stderr.write(`[hammer] graph status failed: ${err instanceof Error ? err.message : String(err)}\n`)
       process.exit(1)
     }
   } else if (sub === 'query') {
     const term = cliFlags.messages[2]
     if (!term) {
-      process.stderr.write('Usage: gsd graph query <term>\n')
+      process.stderr.write('Usage: hammer graph query <term>\n')
       process.exit(1)
     }
     try {
@@ -245,7 +245,7 @@ if (cliFlags.messages[0] === 'graph') {
         }
       }
     } catch (err) {
-      process.stderr.write(`[gsd] graph query failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.stderr.write(`[hammer] graph query failed: ${err instanceof Error ? err.message : String(err)}\n`)
       process.exit(1)
     }
   } else if (sub === 'diff') {
@@ -258,7 +258,7 @@ if (cliFlags.messages[0] === 'graph') {
       process.stdout.write(`  edges added:    ${result.edges.added.length}\n`)
       process.stdout.write(`  edges removed:  ${result.edges.removed.length}\n`)
     } catch (err) {
-      process.stderr.write(`[gsd] graph diff failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.stderr.write(`[hammer] graph diff failed: ${err instanceof Error ? err.message : String(err)}\n`)
       process.exit(1)
     }
   } else {
@@ -279,7 +279,7 @@ if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listMode
 }
 
 const packageCommand = await runPackageCommand({
-  appName: 'gsd',
+  appName: 'hammer',
   args: process.argv.slice(2),
   cwd: process.cwd(),
   agentDir,
@@ -291,7 +291,7 @@ if (packageCommand.handled) {
   process.exit(packageCommand.exitCode)
 }
 
-// `gsd config` — replay the setup wizard and exit
+// `hammer config` — replay the setup wizard and exit
 if (cliFlags.messages[0] === 'config') {
   const authStorage = AuthStorage.create(authFilePath)
   loadStoredEnvKeys(authStorage)
@@ -299,7 +299,7 @@ if (cliFlags.messages[0] === 'config') {
   process.exit(0)
 }
 
-// `gsd web stop [path|all]` — stop web server before anything else
+// `hammer web stop [path|all]` — stop web server before anything else
 if (cliFlags.messages[0] === 'web' && cliFlags.messages[1] === 'stop') {
   const webBranch = await runWebCliBranch(cliFlags, {
     stopWebMode,
@@ -312,7 +312,7 @@ if (cliFlags.messages[0] === 'web' && cliFlags.messages[1] === 'stop') {
   }
 }
 
-// `gsd --web [path]` or `gsd web [start] [path]` — launch browser-only web mode
+// `hammer --web [path]` or `hammer web [start] [path]` — launch browser-only web mode
 if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 'stop')) {
   await ensureRtkBootstrap()
   const webBranch = await runWebCliBranch(cliFlags, {
@@ -326,7 +326,7 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
 }
 
 
-// `gsd sessions` — list past sessions and pick one to resume
+// `hammer sessions` — list past sessions and pick one to resume
 if (cliFlags.messages[0] === 'sessions') {
   const cwd = process.cwd()
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
@@ -391,7 +391,7 @@ if (cliFlags.messages[0] === 'sessions') {
   cliFlags._selectedSessionPath = selected.path
 }
 
-// `gsd headless` — run auto-mode without TUI
+// `hammer headless` — run auto-mode without TUI
 if (cliFlags.messages[0] === 'headless') {
   await ensureRtkBootstrap()
   // Sync bundled resources before headless runs (#3471). Without this,
@@ -424,8 +424,8 @@ function flushPendingProviderRegistrations(resourceLoader: DefaultResourceLoader
   runtime.pendingProviderRegistrations = []
 }
 
-// `gsd auto [args...]` — shorthand for `gsd headless auto [args...]` (#2732)
-// Without this, `gsd auto` falls through to the interactive TUI which hangs
+// `hammer auto [args...]` — shorthand for `hammer headless auto [args...]` (#2732)
+// Without this, `hammer auto` falls through to the interactive TUI which hangs
 // when stdin/stdout are piped (non-TTY environments).
 if (cliFlags.messages[0] === 'auto') {
   await runHeadlessFromAuto(buildHeadlessAutoArgs(cliFlags))
@@ -476,7 +476,7 @@ if (!isPrintMode) {
 // Warn if terminal is too narrow for readable output
 if (!isPrintMode && process.stdout.columns && process.stdout.columns < 40) {
   process.stderr.write(
-    chalk.yellow(`[gsd] Terminal width is ${process.stdout.columns} columns (minimum recommended: 40). Output may be unreadable.\n`),
+    chalk.yellow(`[hammer] Terminal width is ${process.stdout.columns} columns (minimum recommended: 40). Output may be unreadable.\n`),
   )
 }
 
@@ -538,7 +538,7 @@ if (cliFlags.listModels !== undefined) {
   process.exit(0)
 }
 
-// GSD always uses quiet startup — the gsd extension renders its own branded header
+// Hammer always uses quiet startup — the gsd extension renders its own branded header
 if (!settingsManager.getQuietStartup()) {
   settingsManager.setQuietStartup(true)
 }
@@ -639,7 +639,7 @@ if (isPrintMode) {
 
     await startMcpServer({
       tools: session.agent.state.tools ?? [],
-      version: process.env.GSD_VERSION || '0.0.0',
+      version: process.env.HAMMER_VERSION || process.env.GSD_VERSION || '0.0.0',
     })
     // MCP server runs until the transport closes; keep alive
     await new Promise(() => {})
@@ -654,7 +654,7 @@ if (isPrintMode) {
 }
 
 // ---------------------------------------------------------------------------
-// Worktree subcommand — `gsd worktree <list|merge|clean|remove>`
+// Worktree subcommand — `hammer worktree <list|merge|clean|remove>`
 // ---------------------------------------------------------------------------
 if (cliFlags.messages[0] === 'worktree' || cliFlags.messages[0] === 'wt') {
   const { handleList, handleMerge, handleClean, handleRemove } = await import('./worktree-cli.js')
@@ -695,13 +695,13 @@ if (!cliFlags.worktree && !isPrintMode) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-redirect: `gsd auto` with piped stdout → headless mode (#2732)
-// When stdout is not a TTY (e.g. `gsd auto | cat`, `gsd auto > file`),
+// Auto-redirect: `hammer auto` with piped stdout → headless mode (#2732)
+// When stdout is not a TTY (e.g. `hammer auto | cat`, `hammer auto > file`),
 // the TUI cannot render and the process hangs. Redirect to headless mode
 // which handles non-interactive output gracefully.
 // ---------------------------------------------------------------------------
 if (cliFlags.messages[0] === 'auto' && !process.stdout.isTTY) {
-  process.stderr.write('[gsd] stdout is not a terminal — running auto-mode in headless mode.\n')
+  process.stderr.write('[hammer] stdout is not a terminal — running auto-mode in headless mode.\n')
   await runHeadlessFromAuto(cliFlags.messages.slice(1))
 }
 
@@ -717,7 +717,7 @@ const cwd = process.cwd()
 const projectSessionsDir = getProjectSessionsDir(cwd)
 
 // Migrate legacy flat sessions: before per-directory scoping, all .jsonl session
-// files lived directly in ~/.gsd/sessions/. Move them into the correct per-cwd
+// files lived directly in ~/.gsd/sessions/ or ~/.hammer/sessions/. Move them into the correct per-cwd
 // subdirectory so /resume can find them.
 migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 
@@ -821,7 +821,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 
 // Welcome screen — shown on every fresh interactive session before TUI takes over.
 // Skip when the first-run banner was already printed in loader.ts (prevents double banner).
-if (!process.env.GSD_FIRST_RUN_BANNER) {
+if (!process.env.HAMMER_FIRST_RUN_BANNER && !process.env.GSD_FIRST_RUN_BANNER) {  // legacy alias for compatibility — bootstrap-migration
   const { printWelcomeScreen } = await import('./welcome-screen.js')
   let remoteChannel: string | undefined
   try {
@@ -830,7 +830,7 @@ if (!process.env.GSD_FIRST_RUN_BANNER) {
     if (rc) remoteChannel = rc.channel
   } catch { /* non-fatal */ }
   printWelcomeScreen({
-    version: process.env.GSD_VERSION || '0.0.0',
+    version: process.env.HAMMER_VERSION || process.env.GSD_VERSION || '0.0.0',
     modelName: settingsManager.getDefaultModel() || undefined,
     provider: settingsManager.getDefaultProvider() || undefined,
     remoteChannel,

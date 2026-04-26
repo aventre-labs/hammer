@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// GSD Startup Loader
+// Hammer Startup Loader
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 import { fileURLToPath } from 'url'
 import { dirname, resolve, join, relative, delimiter } from 'path'
@@ -12,7 +12,7 @@ const gsdRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const firstArg = args[0]
 
-// Read package.json once — reused for version, banner, and GSD_VERSION below
+// Read package.json once — reused for version, banner, and HAMMER_VERSION below
 let gsdVersion = '0.0.0'
 try {
   const pkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
@@ -46,7 +46,7 @@ if (firstArg === '--help' || firstArg === '-h') {
   const nodeCheck = checkNodeVersion(process.versions.node, MIN_NODE_MAJOR)
   if (!nodeCheck.ok) {
     process.stderr.write(
-      `\n${red}${bold}Error:${reset} GSD requires Node.js >= ${MIN_NODE_MAJOR}.0.0\n` +
+      `\n${red}${bold}Error:${reset} Hammer requires Node.js >= ${MIN_NODE_MAJOR}.0.0\n` +
       `       You are running Node.js ${process.versions.node}\n\n` +
       `${dim}Install a supported version:${reset}\n` +
       `  nvm install ${MIN_NODE_MAJOR}   ${dim}# if using nvm${reset}\n` +
@@ -61,7 +61,7 @@ if (firstArg === '--help' || firstArg === '-h') {
   const gitOk = requireGit((cmd, args) => execFileSync(cmd, args as string[], { stdio: 'ignore' }))
   if (!gitOk) {
     process.stderr.write(
-      `\n${red}${bold}Error:${reset} GSD requires git but it was not found on PATH.\n\n` +
+      `\n${red}${bold}Error:${reset} Hammer requires git but it was not found on PATH.\n\n` +
       `${dim}Install git:${reset}\n` +
       `  https://git-scm.com/downloads\n\n`
     )
@@ -76,21 +76,21 @@ import { discoverExtensionEntryPaths } from './extension-discovery.js'
 import { loadRegistry, readManifestFromEntryPath, isExtensionEnabled } from './extension-registry.js'
 import { renderLogo } from './logo.js'
 
-// pkg/ is a shim directory: contains gsd's piConfig (package.json) and pi's
+// pkg/ is a shim directory: contains Hammer's piConfig (package.json) and pi's
 // theme assets (dist/modes/interactive/theme/) without a src/ directory.
 // This allows config.js to:
-//   1. Read piConfig.name → "gsd" (branding)
+//   1. Read piConfig.name → "hammer" (branding)
 //   2. Resolve themes via dist/ (no src/ present → uses dist path)
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'pkg')
 
 // MUST be set before any dynamic import of pi SDK fires — this is what config.js
 // reads to determine APP_NAME and CONFIG_DIR_NAME
 process.env.PI_PACKAGE_DIR = pkgDir
-process.env.PI_SKIP_VERSION_CHECK = '1'  // GSD runs its own update check in cli.ts — suppress pi's
-process.title = 'gsd'
+process.env.PI_SKIP_VERSION_CHECK = '1'  // Hammer runs its own update check in cli.ts — suppress pi's
+process.title = 'hammer'
 
-// Print branded banner on first launch (before ~/.gsd/ exists).
-// Set GSD_FIRST_RUN_BANNER so cli.ts skips the duplicate welcome screen.
+// Print branded banner on first launch (before ~/.hammer/ exists).
+// Set HAMMER_FIRST_RUN_BANNER so cli.ts skips the duplicate welcome screen.
 if (!existsSync(appRoot)) {
   const cyan  = '\x1b[36m'
   const green = '\x1b[32m'
@@ -100,28 +100,31 @@ if (!existsSync(appRoot)) {
   process.stderr.write(
     renderLogo(colorCyan) +
     '\n' +
-    `  Get Shit Done ${dim}v${gsdVersion}${reset}\n` +
+    `  Hammer ${dim}v${gsdVersion}${reset}\n` +
     `  ${green}Welcome.${reset} Setting up your environment...\n\n`
   )
-  process.env.GSD_FIRST_RUN_BANNER = '1'
+  process.env.HAMMER_FIRST_RUN_BANNER = '1'
+  process.env.GSD_FIRST_RUN_BANNER = '1'  // legacy alias for compatibility — bootstrap-migration
 }
 
-// GSD_CODING_AGENT_DIR — tells pi's getAgentDir() to return ~/.gsd/agent/ instead of ~/.gsd/agent/
-process.env.GSD_CODING_AGENT_DIR = agentDir
+// HAMMER_CODING_AGENT_DIR — tells pi's getAgentDir() to return ~/.hammer/agent/
+process.env.HAMMER_CODING_AGENT_DIR = agentDir
+process.env.GSD_CODING_AGENT_DIR = agentDir  // legacy alias for compatibility — bootstrap-migration
 
-// GSD_PKG_ROOT — absolute path to gsd-pi package root. Used by deployed extensions
+// HAMMER_PKG_ROOT — absolute path to hammer-pi package root. Used by deployed extensions
 // (e.g. auto.ts resume path) to import modules like resource-loader.js that live
-// in the package tree, not in the deployed ~/.gsd/agent/ tree.
-process.env.GSD_PKG_ROOT = gsdRoot
+// in the package tree, not in the deployed ~/.hammer/agent/ tree.
+process.env.HAMMER_PKG_ROOT = gsdRoot
+process.env.GSD_PKG_ROOT = gsdRoot  // legacy alias for compatibility — bootstrap-migration
 
-// RTK environment — make ~/.gsd/agent/bin visible to all child-process paths,
-// not just the bash tool, and force-disable RTK telemetry for GSD-managed use.
+// RTK environment — make ~/.hammer/agent/bin visible to all child-process paths,
+// not just the bash tool, and force-disable RTK telemetry for Hammer-managed use.
 applyRtkProcessEnv(process.env)
 
-// NODE_PATH — make gsd's own node_modules available to extensions loaded via jiti.
+// NODE_PATH — make Hammer's own node_modules available to extensions loaded via jiti.
 // Without this, extensions (e.g. browser-tools) can't resolve dependencies like
-// `playwright` because jiti resolves modules from pi-coding-agent's location, not gsd's.
-// Prepending gsd's node_modules to NODE_PATH fixes this for all extensions.
+// `playwright` because jiti resolves modules from pi-coding-agent's location, not Hammer's.
+// Prepending Hammer's node_modules to NODE_PATH fixes this for all extensions.
 const gsdNodeModules = join(gsdRoot, 'node_modules')
 process.env.NODE_PATH = [gsdNodeModules, process.env.NODE_PATH]
   .filter(Boolean)
@@ -132,24 +135,27 @@ process.env.NODE_PATH = [gsdNodeModules, process.env.NODE_PATH]
 const { Module } = await import('module');
 (Module as any)._initPaths?.()
 
-// GSD_VERSION — expose package version so extensions can display it
-process.env.GSD_VERSION = gsdVersion
+// HAMMER_VERSION — expose package version so extensions can display it
+process.env.HAMMER_VERSION = gsdVersion
+process.env.GSD_VERSION = gsdVersion  // legacy alias for compatibility — bootstrap-migration
 
-// GSD_BIN_PATH — absolute path to this loader (dist/loader.js), used by patched subagent
-// to spawn gsd instead of pi when dispatching workflow tasks
-process.env.GSD_BIN_PATH = process.argv[1]
+// HAMMER_BIN_PATH — absolute path to this loader (dist/loader.js), used by patched subagent
+// to spawn hammer instead of pi when dispatching workflow tasks
+process.env.HAMMER_BIN_PATH = process.argv[1]
+process.env.GSD_BIN_PATH = process.argv[1]  // legacy alias for compatibility — bootstrap-migration
 
-// GSD_WORKFLOW_PATH — absolute path to bundled GSD-WORKFLOW.md, used by patched gsd extension
+// HAMMER_WORKFLOW_PATH — absolute path to bundled GSD-WORKFLOW.md, used by patched gsd extension
 // when dispatching workflow prompts. Prefers dist/resources/ (stable, set at build time)
 // over src/resources/ (live working tree) — see resource-loader.ts for rationale.
 const distRes = join(gsdRoot, 'dist', 'resources')
 const srcRes = join(gsdRoot, 'src', 'resources')
 const resourcesDir = existsSync(distRes) ? distRes : srcRes
-process.env.GSD_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md')
+process.env.HAMMER_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md')
+process.env.GSD_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md')  // legacy alias for compatibility — bootstrap-migration
 
-// GSD_BUNDLED_EXTENSION_PATHS — dynamically discovered bundled extension entry points.
+// HAMMER_BUNDLED_EXTENSION_PATHS — dynamically discovered bundled extension entry points.
 // Uses the shared discoverExtensionEntryPaths() to scan the bundled resources
-// directory, then remaps discovered paths to agentDir (~/.gsd/agent/extensions/)
+// directory, then remaps discovered paths to agentDir (~/.hammer/agent/extensions/)
 // where initResources() will sync them.
 const bundledExtDir = join(resourcesDir, 'extensions')
 const agentExtDir = join(agentDir, 'extensions')
@@ -162,10 +168,11 @@ const discoveredExtensionPaths = discoverExtensionEntryPaths(bundledExtDir)
     return isExtensionEnabled(registry, manifest.id)
   })
 
-process.env.GSD_BUNDLED_EXTENSION_PATHS = serializeBundledExtensionPaths(discoveredExtensionPaths)
+process.env.HAMMER_BUNDLED_EXTENSION_PATHS = serializeBundledExtensionPaths(discoveredExtensionPaths)
+process.env.GSD_BUNDLED_EXTENSION_PATHS = serializeBundledExtensionPaths(discoveredExtensionPaths)  // legacy alias for compatibility — bootstrap-migration
 
 // Respect HTTP_PROXY / HTTPS_PROXY / NO_PROXY env vars for all outbound requests.
-// pi-coding-agent's cli.ts sets this, but GSD bypasses that entry point — so we
+// pi-coding-agent's cli.ts sets this, but Hammer bypasses that entry point — so we
 // must set it here before any SDK clients are created.
 // Lazy-load undici (~200ms) only when proxy env vars are actually set.
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy) {
@@ -180,7 +187,7 @@ if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy 
 // 'junction' type — so we fall back to cpSync (a full directory copy) which works
 // everywhere without elevated permissions.
 // Discover linkable workspace packages by scanning packages/*/package.json for
-// `gsd.linkable === true`. This is the single source of truth — the same list
+// `gsd.linkable === true` (internal config field). This is the single source of truth — the same list
 // read by scripts/link-workspace-packages.cjs and scripts/validate-pack.js.
 // Adding a new linkable package requires only setting `gsd.linkable` in its
 // package.json; there is no enumeration to keep in sync here.
@@ -231,15 +238,15 @@ const missingPackages = criticalPackages.filter(pkg => !existsSync(join(gsdScope
 if (missingPackages.length > 0) {
   const missing = missingPackages.map(p => `@gsd/${p}`).join(', ')
   process.stderr.write(
-    `\nError: GSD installation is broken — missing packages: ${missing}\n\n` +
+    `\n[hammer] Error: Hammer installation is broken — missing packages: ${missing}\n\n` +
     `This is usually caused by one of:\n` +
-    `  • An outdated version installed from npm (run: npm install -g gsd-pi@latest)\n` +
+    `  • An outdated version installed from npm (run: npm install -g hammer-pi@latest)\n` +
     `  • The packages/ directory was excluded from the installed tarball\n` +
     `  • A filesystem error prevented linking or copying the workspace packages\n\n` +
     `Fix it by reinstalling:\n\n` +
-    `  npm install -g gsd-pi@latest\n\n` +
+    `  npm install -g hammer-pi@latest\n\n` +
     `If the issue persists, please open an issue at:\n` +
-    `  https://github.com/gsd-build/gsd-2/issues\n`
+    `  https://github.com/hammer-build/hammer/issues\n`
   )
   process.exit(1)
 }

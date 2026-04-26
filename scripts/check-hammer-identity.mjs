@@ -203,15 +203,17 @@ export function hasEnforcementFailures(findings) {
   return findings.some((finding) => finding.category === UNCLASSIFIED_CATEGORY);
 }
 
-export async function runHammerIdentityScan({ root = process.cwd(), enforce = false, includeClassified = false } = {}) {
+export async function runHammerIdentityScan({ root = process.cwd(), enforce = false, includeClassified = false, scopes = null } = {}) {
   const rules = await loadHammerIdentityCompatibilityRules();
   const trackedFiles = getTrackedFiles(root);
-  const { scannedFileCount, findings } = scanFiles(trackedFiles, rules, root);
+  const filteredFiles = scopes ? filterByScope(trackedFiles, scopes) : trackedFiles;
+  const { scannedFileCount, findings } = scanFiles(filteredFiles, rules, root);
   const summary = summarizeFindings(findings, scannedFileCount);
   const report = renderHammerIdentityReport(summary, findings, { includeClassified });
   return {
     root,
     enforce,
+    scopes,
     trackedFileCount: trackedFiles.length,
     scannedFileCount,
     findings,
@@ -222,11 +224,40 @@ export async function runHammerIdentityScan({ root = process.cwd(), enforce = fa
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node scripts/check-hammer-identity.mjs [--report] [--enforce] [--classified]\n\n`);
+  process.stdout.write(`Usage: node scripts/check-hammer-identity.mjs [--report] [--enforce] [--classified] [--scope <categories>]\n\n`);
   process.stdout.write("Scans git-tracked text files for legacy GSD identity spellings and classifies them against src/hammer-identity/compatibility.ts.\n");
-  process.stdout.write("--report      Print the bounded report (default).\n");
-  process.stdout.write("--enforce     Exit non-zero when an unclassified visible GSD reference remains.\n");
-  process.stdout.write("--classified  Include classified compatibility findings in addition to unclassified findings.\n");
+  process.stdout.write("--report         Print the bounded report (default).\n");
+  process.stdout.write("--enforce        Exit non-zero when an unclassified visible GSD reference remains.\n");
+  process.stdout.write("--classified     Include classified compatibility findings in addition to unclassified findings.\n");
+  process.stdout.write("--scope <list>   Comma-separated categories to restrict the scan to. Known scopes:\n");
+  process.stdout.write("                   package   root/pkg package manifests (package.json, package-lock.json)\n");
+  process.stdout.write("                   cli       loader and CLI entry points (src/loader.ts, src/cli.ts)\n");
+  process.stdout.write("                   help      user-visible help text (src/help-text.ts)\n");
+  process.stdout.write("                 Omit to scan all tracked files.\n");
+}
+
+/** Map scope name → path-match function (applied after shouldScanPath filters). */
+const SCOPE_PATH_FILTERS = {
+  package: (p) => /^(?:package(?:-lock)?\.json|pkg\/package\.json)$/.test(p),
+  cli:     (p) => /^src\/(?:loader|cli)\.(?:ts|js)$/.test(p),
+  help:    (p) => /^src\/help-text\.(?:ts|js)$/.test(p),
+};
+
+/** Parse --scope a,b,c → array of known scope keys, or null if unset. */
+function parseScopeArg(argv) {
+  const idx = argv.indexOf("--scope");
+  if (idx === -1) return null;
+  const raw = argv[idx + 1];
+  if (!raw || raw.startsWith("--")) return null;
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/** Filter a file list to only those matching at least one requested scope. */
+export function filterByScope(filePaths, scopes) {
+  if (!scopes || scopes.length === 0) return filePaths;
+  const filters = scopes.map((s) => SCOPE_PATH_FILTERS[s]).filter(Boolean);
+  if (filters.length === 0) return filePaths;
+  return filePaths.filter((p) => filters.some((fn) => fn(p)));
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -237,7 +268,8 @@ async function main(argv = process.argv.slice(2)) {
 
   const includeClassified = argv.includes("--classified");
   const enforce = argv.includes("--enforce");
-  const result = await runHammerIdentityScan({ root: process.cwd(), enforce, includeClassified });
+  const scopes = parseScopeArg(argv);
+  const result = await runHammerIdentityScan({ root: process.cwd(), enforce, includeClassified, scopes });
   process.stdout.write(`${result.report}\n`);
   return result.exitCode;
 }
