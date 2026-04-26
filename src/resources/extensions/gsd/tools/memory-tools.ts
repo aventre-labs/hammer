@@ -20,9 +20,12 @@ import type { Memory, RankedMemory } from "../memory-store.js";
 import { traverseGraph } from "../memory-relations.js";
 import {
   buildDefaultTrinityMetadata,
+  normalizeTrinityLayer,
   normalizeTrinityMetadata,
+  normalizeTrinityVector,
   parseTrinityJson,
 } from "../../../../iam/trinity.js";
+import type { TrinityLayer } from "../../../../iam/trinity.js";
 import type { TrinityMetadata } from "../../../../iam/trinity.js";
 
 // ─── Shared result shape (matches tools/workflow-tool-executors.ts) ─────────
@@ -196,7 +199,8 @@ export interface MemoryQueryParams {
   scope?: string;
   tag?: string;
   include_superseded?: boolean;
-  reinforce_hits?: boolean;
+  trinityLayer?: unknown;
+  trinityLens?: { ity?: unknown; pathy?: unknown } | null;
 }
 
 export interface MemoryQueryHit {
@@ -210,6 +214,9 @@ export interface MemoryQueryHit {
   keyword_rank: number | null;
   semantic_rank: number | null;
   trinity: TrinityMetadata;
+  trinity_score: number;
+  trinity_rank: number | null;
+  trinity_layer_match: boolean;
 }
 
 export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResult {
@@ -221,6 +228,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
   const category = params.category?.trim().toLowerCase() || undefined;
   const scopeFilter = params.scope?.trim() || undefined;
   const tagFilter = params.tag?.trim().toLowerCase() || undefined;
+  const trinityLayer = normalizeQueryTrinityLayer(params.trinityLayer);
 
   try {
     let ranked: RankedMemory[] = [];
@@ -232,6 +240,8 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
         scope: scopeFilter,
         tag: tagFilter,
         include_superseded: includeSuperseded,
+        ...(trinityLayer ? { trinityLayer } : {}),
+        trinityLens: normalizeQueryTrinityLens(params.trinityLens),
       });
     } else {
       const candidates: Memory[] = includeSuperseded
@@ -242,6 +252,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
           if (category && m.category.toLowerCase() !== category) return false;
           if (scopeFilter && m.scope !== scopeFilter) return false;
           if (tagFilter && !m.tags.map((t) => t.toLowerCase()).includes(tagFilter)) return false;
+          if (trinityLayer && m.trinity?.layer !== trinityLayer) return false;
           return true;
         })
         .slice(0, k)
@@ -251,6 +262,9 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
           keywordRank: null,
           semanticRank: null,
           confidenceBoost: memory.confidence * (1 + memory.hit_count * 0.1),
+          trinityScore: 0,
+          trinityRank: null,
+          trinityLayerMatch: !trinityLayer || memory.trinity?.layer === trinityLayer,
           reason: "ranked" as const,
         }));
     }
@@ -265,6 +279,9 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
       reason: r.reason,
       keyword_rank: r.keywordRank,
       semantic_rank: r.semanticRank,
+      trinity_score: r.trinityScore,
+      trinity_rank: r.trinityRank,
+      trinity_layer_match: r.trinityLayerMatch,
       trinity: r.memory.trinity ?? buildDefaultTrinityMetadata({
         category: r.memory.category,
         sourceUnitType: r.memory.source_unit_type,
@@ -287,6 +304,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
         query,
         k,
         returned: hits.length,
+        ...(trinityLayer ? { trinityLayer } : {}),
         hits,
       },
     };
@@ -304,6 +322,21 @@ function clampTopK(value: unknown, fallback: number): number {
   if (value < 1) return 1;
   if (value > 50) return 50;
   return Math.floor(value);
+}
+
+function normalizeQueryTrinityLayer(value: unknown): TrinityLayer | undefined {
+  if (value == null) return undefined;
+  const normalized = normalizeTrinityLayer(value, "knowledge");
+  return typeof value === "string" && value.trim().length > 0 ? normalized : undefined;
+}
+
+function normalizeQueryTrinityLens(value: unknown): { ity: Record<string, number>; pathy: Record<string, number> } | undefined {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as { ity?: unknown; pathy?: unknown };
+  return {
+    ity: normalizeTrinityVector(raw.ity),
+    pathy: normalizeTrinityVector(raw.pathy),
+  };
 }
 
 function includeSupersededMemories(rankedActive: Memory[]): Memory[] {

@@ -55,6 +55,26 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
           description: "Optional structured payload preserved alongside content (ADR-013). Use for decisions to retain scope/decision/choice/rationale/made_by/revisable. Omit for plain captures.",
         }),
       ),
+      trinity_layer: Type.Optional(
+        Type.Union([Type.Literal("social"), Type.Literal("knowledge"), Type.Literal("generative")], {
+          description: "Optional Trinity layer metadata for this memory.",
+        }),
+      ),
+      trinity_ity: Type.Optional(Type.Record(Type.String(), Type.Number({ minimum: 0, maximum: 1 }), {
+        description: "Optional normalized -ity vector scores (0–1). Unknown keys are ignored.",
+      })),
+      trinity_pathy: Type.Optional(Type.Record(Type.String(), Type.Number({ minimum: 0, maximum: 1 }), {
+        description: "Optional normalized -pathy vector scores (0–1). Unknown keys are ignored.",
+      })),
+      trinity_provenance: Type.Optional(Type.Record(Type.String(), Type.Unknown(), {
+        description: "Optional provenance/source-relation metadata. Do not include secrets.",
+      })),
+      trinity_validation_state: Type.Optional(
+        Type.Union([Type.Literal("unvalidated"), Type.Literal("validated"), Type.Literal("contested"), Type.Literal("deprecated")], {
+          description: "Optional Trinity validation state.",
+        }),
+      ),
+      trinity_validation_score: Type.Optional(Type.Number({ description: "Optional validation score (0–1).", minimum: 0, maximum: 1 })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const ok = await ensureDbOpen();
@@ -106,6 +126,19 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
       reinforce_hits: Type.Optional(
         Type.Boolean({ description: "Increment hit_count on returned memories (default false)" }),
       ),
+      trinityLayer: Type.Optional(
+        Type.Union([Type.Literal("social"), Type.Literal("knowledge"), Type.Literal("generative")], {
+          description: "Only include memories from this Trinity layer.",
+        }),
+      ),
+      trinityLens: Type.Optional(Type.Object({
+        ity: Type.Optional(Type.Record(Type.String(), Type.Number({ minimum: 0, maximum: 1 }), {
+          description: "Query-side -ity vector lens used as a ranking boost.",
+        })),
+        pathy: Type.Optional(Type.Record(Type.String(), Type.Number({ minimum: 0, maximum: 1 }), {
+          description: "Query-side -pathy vector lens used as a ranking boost.",
+        })),
+      }, { description: "Optional Trinity vector lens for deterministic ranking preference." })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const ok = await ensureDbOpen();

@@ -3,12 +3,15 @@
 // Storage layer for auto-learned project memories. Follows context-store.ts patterns.
 // All functions degrade gracefully: return empty results when DB unavailable, never throw.
 
-import type { TrinityMetadata } from '../../../iam/trinity.js';
+import type { TrinityLayer, TrinityMetadata, TrinityVector } from '../../../iam/trinity.js';
 import {
   buildDefaultTrinityMetadata,
+  normalizeTrinityLayer,
   normalizeTrinityMetadata,
+  normalizeTrinityVector,
   parseTrinityJson,
   serializeTrinityJson,
+  trinityVectorDot,
 } from '../../../iam/trinity.js';
 import {
   isDbAvailable,
@@ -227,6 +230,7 @@ export interface QueryMemoriesFilters {
   scope?: string;
   tag?: string;
   include_superseded?: boolean;
+  trinityLayer?: TrinityLayer;
 }
 
 export interface QueryMemoriesOptions extends QueryMemoriesFilters {
@@ -239,6 +243,11 @@ export interface QueryMemoriesOptions extends QueryMemoriesFilters {
   queryVector?: Float32Array | null;
   /** RRF fusion constant (default 60). */
   rrfK?: number;
+  /** Optional -ity/-pathy query vector used as a deterministic Trinity ranking lens. */
+  trinityLens?: {
+    ity?: TrinityVector | Record<string, number>;
+    pathy?: TrinityVector | Record<string, number>;
+  };
 }
 
 export interface RankedMemory {
@@ -247,6 +256,9 @@ export interface RankedMemory {
   keywordRank: number | null;
   semanticRank: number | null;
   confidenceBoost: number;
+  trinityScore: number;
+  trinityRank: number | null;
+  trinityLayerMatch: boolean;
   reason: 'keyword' | 'semantic' | 'both' | 'ranked';
 }
 
@@ -257,27 +269,41 @@ export function queryMemoriesRanked(opts: QueryMemoriesOptions): RankedMemory[] 
 
   const k = clampLimit(opts.k, 10);
   const rrfK = opts.rrfK ?? 60;
-  const activeClause = opts.include_superseded === true ? '' : 'WHERE superseded_by IS NULL';
+  const whereClauses: string[] = [];
+  if (opts.include_superseded !== true) whereClauses.push('superseded_by IS NULL');
+  if (opts.trinityLayer) whereClauses.push('trinity_layer = :trinityLayer');
+  const activeClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const sqlParams = opts.trinityLayer ? { ':trinityLayer': opts.trinityLayer } : undefined;
   const trimmedQuery = (opts.query ?? '').trim();
+  const fetchLimit = Math.max(k, Math.min(100, k * 4));
 
   // 1) Keyword hits — try FTS5 first, fall back to LIKE when unavailable.
-  const keywordHits = trimmedQuery ? keywordSearch(adapter, trimmedQuery, activeClause, 50) : [];
+  const keywordHits = trimmedQuery ? keywordSearch(adapter, trimmedQuery, activeClause, fetchLimit, sqlParams) : [];
 
   // 2) Semantic hits — cosine over memory_embeddings. Requires opts.queryVector.
   const semanticHits = opts.queryVector
-    ? semanticSearch(adapter, opts.queryVector, activeClause, 50)
+    ? semanticSearch(adapter, opts.queryVector, activeClause, fetchLimit, sqlParams)
     : [];
 
   if (keywordHits.length === 0 && semanticHits.length === 0 && !trimmedQuery) {
     // No query at all — fall back to the existing ranked-by-score listing.
-    return getActiveMemoriesRanked(k).map((memory) => ({
-      memory,
-      score: memory.confidence * (1 + memory.hit_count * 0.1),
-      keywordRank: null,
-      semanticRank: null,
-      confidenceBoost: memory.confidence * (1 + memory.hit_count * 0.1),
-      reason: 'ranked' as const,
-    })).filter((hit) => passesFilters(hit.memory, opts));
+    const candidates = opts.trinityLayer
+      ? selectRankedMemoryCandidates(adapter, activeClause, fetchLimit, sqlParams)
+      : getActiveMemoriesRanked(fetchLimit);
+    return rankTrinityBoosts(candidates.map((memory) => {
+      const boost = memory.confidence * (1 + memory.hit_count * 0.1);
+      return {
+        memory,
+        score: boost,
+        keywordRank: null,
+        semanticRank: null,
+        confidenceBoost: boost,
+        trinityScore: 0,
+        trinityRank: null,
+        trinityLayerMatch: trinityLayerMatches(memory, opts.trinityLayer),
+        reason: 'ranked' as const,
+      };
+    }).filter((hit) => passesFilters(hit.memory, opts)), opts).slice(0, k);
   }
 
   // 3) Reciprocal rank fusion — each hit contributes 1/(rrfK + rank).
@@ -307,7 +333,7 @@ export function queryMemoriesRanked(opts: QueryMemoriesOptions): RankedMemory[] 
     }
   }
 
-  // 4) Apply filters + confidence boost, then sort.
+  // 4) Apply filters + confidence + Trinity boosts, then sort.
   const ranked: RankedMemory[] = [];
   for (const entry of fused.values()) {
     if (!passesFilters(entry.memory, opts)) continue;
@@ -324,12 +350,14 @@ export function queryMemoriesRanked(opts: QueryMemoriesOptions): RankedMemory[] 
       keywordRank: entry.kwRank,
       semanticRank: entry.semRank,
       confidenceBoost: boost,
+      trinityScore: 0,
+      trinityRank: null,
+      trinityLayerMatch: trinityLayerMatches(entry.memory, opts.trinityLayer),
       reason,
     });
   }
 
-  ranked.sort((a, b) => b.score - a.score);
-  return ranked.slice(0, k);
+  return rankTrinityBoosts(ranked, opts).slice(0, k);
 }
 
 function clampLimit(value: unknown, fallback: number): number {
@@ -346,7 +374,81 @@ function passesFilters(memory: Memory, filters: QueryMemoriesFilters): boolean {
     const needle = filters.tag.toLowerCase();
     if (!memory.tags.map((t) => t.toLowerCase()).includes(needle)) return false;
   }
+  if (filters.trinityLayer && memory.trinity?.layer !== filters.trinityLayer) return false;
   return true;
+}
+
+function trinityLayerMatches(memory: Memory, layer: TrinityLayer | undefined): boolean {
+  return !layer || memory.trinity?.layer === layer;
+}
+
+function trinityLensScore(memory: Memory, lens: QueryMemoriesOptions['trinityLens']): number {
+  if (!lens) return 0;
+  const ity = normalizeTrinityVector(lens.ity);
+  const pathy = normalizeTrinityVector(lens.pathy);
+  const ityScore = trinityVectorDot(memory.trinity?.ity, ity);
+  const pathyScore = trinityVectorDot(memory.trinity?.pathy, pathy);
+  return Math.round((ityScore + pathyScore) * 10_000) / 10_000;
+}
+
+function rankTrinityBoosts(ranked: RankedMemory[], opts: QueryMemoriesOptions): RankedMemory[] {
+  const withScores = ranked.map((hit) => ({
+    ...hit,
+    trinityScore: trinityLensScore(hit.memory, opts.trinityLens),
+    trinityLayerMatch: trinityLayerMatches(hit.memory, opts.trinityLayer),
+  }));
+
+  const orderedByLens = [...withScores].sort((a, b) => {
+    if (b.trinityScore !== a.trinityScore) return b.trinityScore - a.trinityScore;
+    return a.memory.id.localeCompare(b.memory.id);
+  });
+  const rankById = new Map<string, number>();
+  for (let i = 0; i < orderedByLens.length; i++) {
+    if (orderedByLens[i].trinityScore > 0) rankById.set(orderedByLens[i].memory.id, i + 1);
+  }
+
+  const boosted = withScores.map((hit) => {
+    const trinityRank = rankById.get(hit.memory.id) ?? null;
+    return {
+      ...hit,
+      trinityRank,
+      // Keep the boost strong enough to deterministically break tied/equal keyword
+      // hits, but bounded so a weak vector does not swamp exact keyword relevance.
+      score: hit.score * (1 + Math.min(hit.trinityScore, 2)),
+    };
+  });
+
+  boosted.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.trinityScore !== a.trinityScore) return b.trinityScore - a.trinityScore;
+    if (b.confidenceBoost !== a.confidenceBoost) return b.confidenceBoost - a.confidenceBoost;
+    return a.memory.id.localeCompare(b.memory.id);
+  });
+  return boosted;
+}
+
+function selectRankedMemoryCandidates(
+  adapter: NonNullable<ReturnType<typeof _getAdapter>>,
+  activeClause: string,
+  limit: number,
+  params?: Record<string, unknown>,
+): Memory[] {
+  try {
+    const rows = adapter.prepare(
+      `SELECT * FROM memories
+       ${activeClause}
+       ORDER BY (confidence * (1.0 + hit_count * 0.1)) DESC, id ASC
+       LIMIT :limit`,
+    ).all({ ...(params ?? {}), ':limit': limit });
+    return rows.map(rowToMemory);
+  } catch {
+    return [];
+  }
+}
+
+function qualifyMemoryWhereClause(clause: string, alias: string): string {
+  if (!clause) return '';
+  return clause.replace(/\b(superseded_by|trinity_layer)\b/g, `${alias}.$1`);
 }
 
 function keywordSearch(
@@ -354,13 +456,14 @@ function keywordSearch(
   rawQuery: string,
   activeClause: string,
   limit: number,
+  params?: Record<string, unknown>,
 ): Memory[] {
   const ftsAvailable = isFtsAvailable(adapter);
   if (ftsAvailable) {
     try {
       const matchExpr = toFtsMatchExpr(rawQuery);
       if (!matchExpr) return [];
-      const activePart = activeClause ? `AND m.${activeClause.replace(/^WHERE\s+/i, '')}` : '';
+      const activePart = activeClause ? `AND ${qualifyMemoryWhereClause(activeClause, 'm').replace(/^WHERE\s+/i, '')}` : '';
       const rows = adapter.prepare(
         `SELECT m.*
          FROM memories_fts f
@@ -369,7 +472,7 @@ function keywordSearch(
          ${activePart}
          ORDER BY bm25(memories_fts)
          LIMIT :limit`,
-      ).all({ ':match': matchExpr, ':limit': limit });
+      ).all({ ...(params ?? {}), ':match': matchExpr, ':limit': limit });
       return rows.map(rowToMemory);
     } catch {
       // fall through to LIKE
@@ -383,7 +486,7 @@ function keywordSearch(
     .filter((t) => t.length >= 2);
   if (terms.length === 0) return [];
 
-  const rows = adapter.prepare(`SELECT * FROM memories ${activeClause}`).all();
+  const rows = adapter.prepare(`SELECT * FROM memories ${activeClause}`).all(params ?? {});
   const scored: Array<{ memory: Memory; score: number }> = [];
   for (const row of rows) {
     const memory = rowToMemory(row);
@@ -427,6 +530,7 @@ function semanticSearch(
   queryVector: Float32Array,
   activeClause: string,
   limit: number,
+  params?: Record<string, unknown>,
 ): Memory[] {
   try {
     const rows = adapter
@@ -434,9 +538,9 @@ function semanticSearch(
         `SELECT m.*, e.vector as embedding_vector, e.dim as embedding_dim
          FROM memories m
          JOIN memory_embeddings e ON e.memory_id = m.id
-         ${activeClause}`,
+         ${qualifyMemoryWhereClause(activeClause, 'm')}`,
       )
-      .all();
+      .all(params ?? {});
 
     const scored: Array<{ memory: Memory; sim: number }> = [];
     for (const row of rows) {
@@ -881,7 +985,8 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
     remaining -= catHeader.length;
 
     for (const item of items) {
-      const bullet = `- ${item.content}\n`;
+      const annotation = formatTrinityAnnotation(item.trinity);
+      const bullet = `- ${item.content}${annotation}\n`;
       if (remaining < bullet.length) break;
       output += bullet;
       remaining -= bullet.length;
@@ -889,4 +994,31 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
   }
 
   return output.trimEnd();
+}
+
+function formatTrinityAnnotation(metadata: TrinityMetadata | undefined): string {
+  if (!metadata) return '';
+  const parts = [`layer=${metadata.layer}`];
+  const ity = topVectorEntries(metadata.ity);
+  const pathy = topVectorEntries(metadata.pathy);
+  if (ity) parts.push(`ity=${ity}`);
+  if (pathy) parts.push(`pathy=${pathy}`);
+  parts.push(`validation=${metadata.validation.state}:${formatScore(metadata.validation.score)}`);
+  return ` [${parts.join(' ')}]`;
+}
+
+function topVectorEntries(vector: TrinityVector): string {
+  return Object.entries(vector)
+    .filter(([, score]) => typeof score === 'number' && score > 0)
+    .sort((a, b) => {
+      const diff = (b[1] ?? 0) - (a[1] ?? 0);
+      return diff !== 0 ? diff : a[0].localeCompare(b[0]);
+    })
+    .slice(0, 2)
+    .map(([key, score]) => `${key}:${formatScore(score ?? 0)}`)
+    .join(',');
+}
+
+function formatScore(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 }

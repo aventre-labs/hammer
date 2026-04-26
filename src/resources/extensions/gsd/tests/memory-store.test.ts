@@ -23,6 +23,7 @@ import {
   decayStaleMemories,
   enforceMemoryCap,
   applyMemoryActions,
+  queryMemoriesRanked,
   formatMemoriesForPrompt,
 } from '../memory-store.ts';
 import type { MemoryAction } from '../memory-store.ts';
@@ -307,6 +308,43 @@ test('memory-store: applyMemoryActions', () => {
   closeDatabase();
 });
 
+test('memory-store: queryMemoriesRanked filters by Trinity layer and prefers vector lens matches', () => {
+  openDatabase(':memory:');
+
+  createMemory({
+    category: 'pattern',
+    content: 'trinity vector ranking shared keyword alpha',
+    confidence: 0.8,
+    trinity: { layer: 'generative', ity: { creativity: 0.95 }, pathy: { reciprocity: 0.2 } },
+  });
+  createMemory({
+    category: 'architecture',
+    content: 'trinity vector ranking shared keyword alpha',
+    confidence: 0.99,
+    trinity: { layer: 'knowledge', ity: { factuality: 1 }, pathy: { empathy: 1 } },
+  });
+  createMemory({
+    category: 'pattern',
+    content: 'trinity vector ranking shared keyword alpha',
+    confidence: 0.8,
+    trinity: { layer: 'generative', ity: { creativity: 0.1 }, pathy: { reciprocity: 0.1 } },
+  });
+
+  const filtered = queryMemoriesRanked({
+    query: 'shared keyword alpha',
+    k: 10,
+    trinityLayer: 'generative',
+    trinityLens: { ity: { creativity: 1 }, pathy: { reciprocity: 1 } },
+  });
+
+  assert.deepStrictEqual(filtered.map((hit) => hit.memory.id), ['MEM001', 'MEM003']);
+  assert.equal(filtered[0].trinityRank, 1);
+  assert.equal(filtered[0].trinityLayerMatch, true);
+  assert.ok(filtered[0].trinityScore > filtered[1].trinityScore, 'closer vector match should rank first');
+
+  closeDatabase();
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // memory-store: formatMemoriesForPrompt
 // ═══════════════════════════════════════════════════════════════════════════
@@ -347,6 +385,33 @@ test('memory-store: formatMemoriesForPrompt', () => {
 
   closeDatabase();
 });
+
+test('memory-store: formatMemoriesForPrompt annotates compact Trinity metadata', () => {
+  openDatabase(':memory:');
+
+  createMemory({
+    category: 'pattern',
+    content: 'compact Trinity prompt annotation',
+    trinity: {
+      layer: 'generative',
+      ity: { creativity: 0.92, factuality: 0.4, risk: 0.1 },
+      pathy: { reciprocity: 0.8 },
+      validation: { state: 'validated', score: 0.75 },
+    },
+  });
+
+  const formatted = formatMemoriesForPrompt(getActiveMemoriesRanked(5));
+
+  assert.ok(
+    formatted.includes('[layer=generative ity=creativity:0.92,factuality:0.4 pathy=reciprocity:0.8 validation=validated:0.75]'),
+    formatted,
+  );
+  assert.ok(!formatted.includes('sourceRelations'), 'prompt annotations should not dump provenance JSON blobs');
+
+  closeDatabase();
+});
+
+closeDatabase();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // memory-store: ID generation

@@ -104,6 +104,51 @@ test('memory-extractor: field validation', () => {
   assert.deepStrictEqual(actions[3].action, 'SUPERSEDE', 'fourth valid is SUPERSEDE');
 });
 
+test('memory-extractor: CREATE actions accept optional Trinity metadata and drop invalid fields', () => {
+  const response = JSON.stringify([
+    {
+      action: 'CREATE',
+      category: 'pattern',
+      content: 'Trinity-aware extracted memory',
+      confidence: 0.8,
+      trinityLayer: 'generative',
+      ity: { creativity: 0.9, bogus: 1 },
+      pathy: { reciprocity: 0.7 },
+      provenance: { sourceRelations: [{ type: 'observed_in', targetId: 'SRC-1', weight: 1 }] },
+      validation: { state: 'validated', score: 0.6 },
+    },
+    {
+      action: 'CREATE',
+      category: 'gotcha',
+      content: 'Malformed Trinity fields should not poison extraction',
+      trinityLayer: 'not-a-layer',
+      ity: ['bad'],
+      pathy: 'bad',
+      validation: { state: 'unknown', score: 5 },
+    },
+  ]);
+
+  const actions = parseMemoryResponse(response);
+  assert.equal(actions.length, 2);
+  const first = actions[0] as Extract<MemoryAction, { action: 'CREATE' }>;
+  assert.deepStrictEqual(first.trinity, {
+    layer: 'generative',
+    ity: { creativity: 0.9 },
+    pathy: { reciprocity: 0.7 },
+    provenance: { sourceRelations: [{ type: 'observed_in', targetId: 'SRC-1', weight: 1 }] },
+    validation: { state: 'validated', score: 0.6 },
+  });
+
+  const second = actions[1] as Extract<MemoryAction, { action: 'CREATE' }>;
+  assert.deepStrictEqual(second.trinity, {
+    layer: 'knowledge',
+    ity: {},
+    pathy: {},
+    provenance: { sourceRelations: [] },
+    validation: { state: 'unvalidated', score: 0 },
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Integration: applyMemoryActions with mixed actions
 // ═══════════════════════════════════════════════════════════════════════════

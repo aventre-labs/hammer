@@ -189,13 +189,14 @@ export function normalizeTrinityProvenance(
 
 export function normalizeTrinityValidation(value: unknown): TrinityValidation {
   const raw = isPlainObject(value) ? value : {};
-  const stateRaw = typeof raw.state === "string" ? raw.state.trim().toLowerCase() : DEFAULT_VALIDATION.state;
+  const hasExplicitState = typeof raw.state === "string";
+  const stateRaw = hasExplicitState ? raw.state.trim().toLowerCase() : DEFAULT_VALIDATION.state;
   const state = (VALID_TRINITY_VALIDATION_STATES as readonly string[]).includes(stateRaw)
     ? (stateRaw as TrinityValidationState)
     : DEFAULT_VALIDATION.state;
   return {
     state,
-    score: clampTrinityScore(raw.score),
+    score: hasExplicitState ? clampTrinityScore(raw.score) : DEFAULT_VALIDATION.score,
   };
 }
 

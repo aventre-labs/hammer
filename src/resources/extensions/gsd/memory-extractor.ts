@@ -4,6 +4,12 @@
 // transcript and stores it as memory entries. One extraction at a time
 // (mutex guard). Fire-and-forget — never blocks auto-mode.
 
+import {
+  VALID_TRINITY_VALIDATION_STATES,
+  buildDefaultTrinityMetadata,
+  normalizeTrinityMetadata,
+} from '../../../iam/trinity.js';
+import type { TrinityMetadata } from '../../../iam/trinity.js';
 import { readFileSync, statSync } from 'node:fs';
 import type { ExtensionContext } from '@gsd/pi-coding-agent';
 import type { Api, AssistantMessage, Model } from '@gsd/pi-ai';
@@ -132,7 +138,7 @@ transcript and identify durable knowledge worth remembering for future sessions.
 Categories: architecture, convention, gotcha, preference, environment, pattern
 
 Actions (return JSON array):
-- CREATE: {"action": "CREATE", "category": "<cat>", "content": "<text>", "confidence": <0.6-0.95>}
+- CREATE: {"action": "CREATE", "category": "<cat>", "content": "<text>", "confidence": <0.6-0.95>, "trinityLayer": "social|knowledge|generative", "ity": {"factuality": 0-1}, "pathy": {"reciprocity": 0-1}, "provenance": {"sourceRelations": []}, "validation": {"state": "unvalidated|validated|contested|deprecated", "score": 0-1}}
 - UPDATE: {"action": "UPDATE", "id": "<MEM###>", "content": "<revised text>"}
 - REINFORCE: {"action": "REINFORCE", "id": "<MEM###>"}
 - SUPERSEDE: {"action": "SUPERSEDE", "id": "<MEM###>", "superseded_by": "<MEM###>"}
@@ -152,6 +158,7 @@ Rules:
 - Confidence: 0.6 tentative, 0.8 solid, 0.95 well-confirmed
 - Prefer fewer high-quality memories over many low-quality ones
 - Only LINK memories that genuinely relate — don't fabricate edges
+- Invalid or missing Trinity fields on CREATE are OK; they will be normalized to deterministic defaults
 - Return empty array [] if nothing worth remembering
 - NEVER include secrets, API keys, or passwords
 
@@ -252,6 +259,7 @@ export function parseMemoryResponse(raw: string): MemoryAction[] {
               category: item.category,
               content: item.content,
               confidence: typeof item.confidence === 'number' ? item.confidence : undefined,
+              trinity: normalizeExtractedTrinity(item),
             });
           }
           break;
@@ -301,6 +309,32 @@ export function parseMemoryResponse(raw: string): MemoryAction[] {
   } catch {
     return [];
   }
+}
+
+function normalizeExtractedTrinity(item: Record<string, unknown>): TrinityMetadata {
+  const category = typeof item.category === 'string' ? item.category : undefined;
+  const fallback = buildDefaultTrinityMetadata({ category });
+  const rawValidation = item.validation && typeof item.validation === 'object' && !Array.isArray(item.validation)
+    ? item.validation as Record<string, unknown>
+    : {
+        state: item.validationState ?? item.trinity_validation_state,
+        score: item.validationScore ?? item.trinity_validation_score,
+      };
+  const stateRaw = typeof rawValidation.state === 'string' ? rawValidation.state.trim().toLowerCase() : '';
+  const validation = (VALID_TRINITY_VALIDATION_STATES as readonly string[]).includes(stateRaw)
+    ? rawValidation
+    : undefined;
+  return normalizeTrinityMetadata(
+    {
+      layer: item.trinityLayer ?? item.trinity_layer ?? fallback.layer,
+      ity: item.ity ?? item.trinity_ity,
+      pathy: item.pathy ?? item.trinity_pathy,
+      provenance: item.provenance ?? item.trinity_provenance,
+      validation,
+    },
+    fallback.layer,
+    fallback.provenance,
+  );
 }
 
 // ─── Main Extraction Function ───────────────────────────────────────────────
