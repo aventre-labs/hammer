@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import {
   extractPackageReferences,
+  checkPackageExistence,
   checkFilePathConsistency,
   checkTaskOrdering,
   checkInterfaceContracts,
@@ -158,6 +159,31 @@ import type { Request } from 'express';
     const desc = "```typescript\nimport express from 'express';\nimport { Router } from 'express';\n```";
     const packages = extractPackageReferences(desc);
     assert.ok(packages.includes("express"), "import...from in code blocks must still be recognized");
+  });
+});
+
+describe("checkPackageExistence", () => {
+  test("treats local workspace packages as valid even when private or unpublished", async () => {
+    const tempDir = join(tmpdir(), `pre-exec-local-workspace-${Date.now()}`);
+    mkdirSync(join(tempDir, "packages", "pi-coding-agent"), { recursive: true });
+    writeFileSync(
+      join(tempDir, "package.json"),
+      JSON.stringify({ workspaces: ["packages/*"] }),
+    );
+    writeFileSync(
+      join(tempDir, "packages", "pi-coding-agent", "package.json"),
+      JSON.stringify({ name: "@gsd/pi-coding-agent", private: true }),
+    );
+
+    try {
+      const results = await checkPackageExistence(
+        [createTask({ description: 'import type { ExtensionAPI } from "@gsd/pi-coding-agent";' })],
+        tempDir,
+      );
+      assert.deepEqual(results, []);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 

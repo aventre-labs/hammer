@@ -14,10 +14,10 @@
  *   - No AST parsers — interface parsing is heuristic (regex on code blocks)
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { TaskRow } from "./gsd-db.ts";
 import type { PreExecutionCheckJSON } from "./verification-evidence.ts";
 
@@ -124,6 +124,59 @@ function normalizePackageName(raw: string): string {
   return raw.split("/")[0];
 }
 
+function readPackageJson(packageJsonPath: string): { name?: unknown; workspaces?: unknown } | null {
+  try {
+    return JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { name?: unknown; workspaces?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+function workspacePatterns(workspaces: unknown): string[] {
+  if (Array.isArray(workspaces)) return workspaces.filter((entry): entry is string => typeof entry === "string");
+  if (
+    workspaces &&
+    typeof workspaces === "object" &&
+    Array.isArray((workspaces as { packages?: unknown }).packages)
+  ) {
+    return (workspaces as { packages: unknown[] }).packages.filter((entry): entry is string => typeof entry === "string");
+  }
+  return [];
+}
+
+function packageNameAt(dir: string): string | null {
+  const pkg = readPackageJson(join(dir, "package.json"));
+  return typeof pkg?.name === "string" ? pkg.name : null;
+}
+
+function isLocalWorkspacePackage(packageName: string, basePath: string): boolean {
+  const nodeModulesPath = join(basePath, "node_modules", ...packageName.split("/"));
+  if (existsSync(nodeModulesPath)) return true;
+
+  if (packageNameAt(basePath) === packageName) return true;
+
+  const rootPackage = readPackageJson(join(basePath, "package.json"));
+  for (const pattern of workspacePatterns(rootPackage?.workspaces)) {
+    if (pattern.endsWith("/*")) {
+      const parent = join(basePath, pattern.slice(0, -2));
+      let entries: string[] = [];
+      try {
+        entries = readdirSync(parent);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (packageNameAt(join(parent, entry)) === packageName) return true;
+      }
+      continue;
+    }
+
+    if (packageNameAt(join(basePath, pattern)) === packageName) return true;
+  }
+
+  return false;
+}
+
 /**
  * Check if a package exists on npm registry.
  * Returns null on success, error message on failure.
@@ -183,7 +236,7 @@ async function checkPackageOnNpm(
  */
 export async function checkPackageExistence(
   tasks: TaskRow[],
-  _basePath: string
+  basePath: string
 ): Promise<PreExecutionCheckJSON[]> {
   const results: PreExecutionCheckJSON[] = [];
   const packagesToCheck = new Set<string>();
@@ -200,11 +253,14 @@ export async function checkPackageExistence(
     return results;
   }
 
-  // Check packages in parallel
-  const checkPromises = Array.from(packagesToCheck).map(async (pkg) => {
-    const result = await checkPackageOnNpm(pkg);
-    return { pkg, result };
-  });
+  // Check packages in parallel. Local workspace packages are valid even when
+  // they are private/unpublished and therefore absent from the npm registry.
+  const checkPromises = Array.from(packagesToCheck)
+    .filter((pkg) => !isLocalWorkspacePackage(pkg, basePath))
+    .map(async (pkg) => {
+      const result = await checkPackageOnNpm(pkg);
+      return { pkg, result };
+    });
 
   const checkResults = await Promise.all(checkPromises);
 
