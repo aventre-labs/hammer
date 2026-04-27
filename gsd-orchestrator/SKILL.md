@@ -1,52 +1,57 @@
 ---
 name: gsd-orchestrator
 description: >
-  Build software products autonomously via Hammer headless mode. Handles the full
-  lifecycle: write a spec, launch a build, poll for completion, handle blockers,
-  track costs, and verify the result. Use when asked to "build something",
-  "create a project", "run gsd", "check build status", or any task that
-  requires autonomous software development via subprocess.
+  Build software products autonomously by orchestrating Hammer headless mode.
+  Handles the full lifecycle: write a spec, launch a build, poll for completion,
+  handle blockers, track costs, and verify the result. Use when asked to
+  "build something", "create a project", "run hammer", "check build status",
+  or any task that requires autonomous software development via subprocess.
 metadata:
   openclaw:
     requires:
-      bins: [gsd]
+      bins: [hammer]
     install:
       kind: node
-      package: gsd-pi
-      bins: [gsd]
+      package: hammer-pi
+      bins: [hammer, hammer-pi]
 ---
 
 <objective>
 You are an autonomous agent that builds software by orchestrating Hammer as a subprocess.
 Hammer is a headless CLI that plans, codes, tests, and ships software from a spec.
-You control it via shell commands, exit codes, and JSON output — no SDK, no RPC.
+You control it with shell commands, exit codes, JSON output, and state files — no SDK, no RPC.
 </objective>
 
+<reader_contract>
+This skill is for future agents running unattended builds. After reading it, an agent should be able to create a Hammer spec, launch `hammer headless`, monitor progress, handle blockers, and verify deliverables without writing application code itself.
+</reader_contract>
+
 <awareness_contract>
-Hammer/IAM awareness is required: preserve provenance for specs, commands, JSON results, and remediation decisions. Missing IAM/Omega/Trinity/VOLVOX or no-degradation evidence is a blocker signal, not a silent fallback.
+Hammer/IAM awareness is required. Preserve provenance for specs, commands, JSON results, answer files, and remediation decisions. Missing IAM/Omega/Trinity/VOLVOX evidence, absent provenance, or failed no-degradation proof is a blocker signal. Do not silently fallback to lower-quality work or hide the missing awareness artifact.
 </awareness_contract>
 
 <mental_model>
-Hammer headless is a subprocess you launch and monitor. Think of it like a junior developer
-you hand a spec to:
+Hammer headless is a subprocess you launch and monitor. Think of it like a junior developer you hand a spec to:
 
-1. You write the spec (what to build)
-2. You launch the build (`hammer headless ... new-milestone --context spec.md --auto`)
-3. You wait for it to finish (exit code tells you the outcome)
-4. You check the result (query state, inspect files, verify deliverables)
-5. If blocked, you intervene (steer, supply answers, or escalate)
+1. You write the spec with user outcomes, constraints, provenance, and verification expectations.
+2. You launch the build (`hammer headless --output-format json --context spec.md new-milestone --auto`).
+3. You wait for it to finish; the process exit code tells you the outcome.
+4. You query state, inspect files, and verify deliverables.
+5. If blocked, you intervene with steering, answer injection, replanning, or human escalation.
 
-The subprocess handles all planning, coding, testing, and git commits internally.
-You never write application code yourself — Hammer does that.
+The subprocess handles planning, coding, testing, artifact summaries, and commits internally. You do not write application code yourself unless explicitly asked to stop orchestrating and become the implementer.
 </mental_model>
 
 <critical_rules>
+- **Current command surface is Hammer.** Use `hammer`, `hammer-pi`, `hammer headless`, and `/hammer` for current behavior.
 - **Flags before command.** `hammer headless [--flags] [command] [args]`. Flags after the command are ignored.
-- **Redirect stderr.** JSON output goes to stdout. Progress goes to stderr. Always `2>/dev/null` when parsing JSON.
-- **Check exit codes.** 0=success, 1=error, 10=blocked (needs you), 11=cancelled.
-- **Use `query` to poll.** Instant (~50ms), no LLM cost. Use it between steps, not `auto` for status.
-- **Budget awareness.** Track `cost.total` from query results. Set limits before launching long runs.
-- **One project directory per build.** Each Hammer project needs its own directory with a `.hammer/` folder.
+- **Redirect stderr when parsing JSON.** JSON output goes to stdout. Progress and diagnostics go to stderr. Use `2>/dev/null` only when you need machine-readable stdout.
+- **Check exit codes.** `0` = success, `1` = error or timeout, `10` = blocked, `11` = cancelled.
+- **Use `query` to poll.** It is instant, free of LLM cost, and safe for tight polling loops.
+- **Budget awareness.** Track `cost.total` from query or result JSON. Set limits before long runs.
+- **One project directory per build.** Each Hammer project has one canonical `.hammer/` state tree.
+- **Legacy state bridge only.** `.gsd` may exist as a legacy state bridge in older projects; never create it as the canonical state root for new work.
+- **No-degradation remediation.** When a blocker names missing awareness, verification, or provenance, inspect the evidence and remediate deliberately instead of accepting a weaker result.
 </critical_rules>
 
 <routing>
@@ -62,28 +67,31 @@ Read `workflows/monitor-and-poll.md` — query state, interpret phases, handle b
 Read `workflows/step-by-step.md` — run one unit at a time with decision points.
 
 **Understand the JSON output:**
-Read `references/json-result.md` — field reference for HeadlessJsonResult.
+Read `references/json-result.md` — field reference for `HeadlessJsonResult`.
 
 **Pre-supply answers or secrets:**
-Read `references/answer-injection.md` — answer file schema and injection mechanism.
+Read `references/answer-injection.md` — answer file schema, secret handling, and injection mechanics.
 
 **Look up a specific command:**
-Read `references/commands.md` — full command reference with flags and examples.
+Read `references/commands.md` — command reference with flags and examples.
 </routing>
 
 <quick_reference>
 
-**Launch a full build (spec to working code):**
+**Launch a full build from spec to working code:**
 ```bash
 mkdir -p /tmp/my-project && cd /tmp/my-project && git init
 cat > spec.md << 'EOF'
-# Your Product Spec Here
-Build a ...
+# Product Spec
+
+Build a user-visible capability with explicit outcomes, constraints, verification,
+and IAM/Omega/Trinity/VOLVOX provenance expectations.
 EOF
-hammer headless --output-format json --context spec.md new-milestone --auto 2>/dev/null
+RESULT=$(hammer headless --output-format json --context spec.md new-milestone --auto 2>/dev/null)
+EXIT=$?
 ```
 
-**Check project state (instant, free):**
+**Check project state without spending LLM budget:**
 ```bash
 cd /path/to/project
 hammer headless query | jq '{phase: .state.phase, progress: .state.progress, cost: .cost.total}'
@@ -98,6 +106,7 @@ hammer headless --output-format json auto 2>/dev/null
 **Run one step at a time:**
 ```bash
 RESULT=$(hammer headless --output-format json next 2>/dev/null)
+EXIT=$?
 echo "$RESULT" | jq '{status: .status, phase: .phase, cost: .cost.total}'
 ```
 
@@ -106,21 +115,21 @@ echo "$RESULT" | jq '{status: .status, phase: .phase, cost: .cost.total}'
 <exit_codes>
 | Code | Meaning | Your action |
 |------|---------|-------------|
-| `0`  | Success | Check deliverables, verify output, report completion |
-| `1`  | Error or timeout | Inspect stderr, check `.hammer/STATE.md`, retry or escalate |
-| `10` | Blocked | Query state for blocker details, steer around it or escalate to human |
-| `11` | Cancelled | Process was interrupted — resume with `--resume <sessionId>` or restart |
+| `0`  | Success | Check deliverables, verify output, and report completion with evidence. |
+| `1`  | Error or timeout | Inspect stderr and `.hammer/STATE.md`; retry only after a specific hypothesis or escalate. |
+| `10` | Blocked | Query state for blocker details; steer, inject answers, replan, or escalate. Missing IAM/no-degradation artifacts belong here. |
+| `11` | Cancelled | Process was interrupted; resume with `--resume <sessionId>` when available or restart from state. |
 </exit_codes>
 
 <project_structure>
-Hammer creates and manages all state in `.hammer/`:
+Hammer creates and manages canonical state in `.hammer/`:
 ```
 .hammer/
   PROJECT.md          # What this project is
   REQUIREMENTS.md     # Capability contract
-  DECISIONS.md        # Architectural decisions (append-only)
-  KNOWLEDGE.md        # Persistent project knowledge (patterns, rules, lessons)
-  STATE.md            # Current phase and next action
+  DECISIONS.md        # Architectural decisions
+  KNOWLEDGE.md        # Persistent project knowledge
+  STATE.md            # Current phase, next action, and blocker context
   milestones/
     M001-xxxxx/
       M001-xxxxx-CONTEXT.md    # Scope, constraints, assumptions
@@ -134,26 +143,28 @@ Hammer creates and manages all state in `.hammer/`:
           T01-SUMMARY.md       # Task completion summary
 ```
 
-State is derived from files on disk — checkboxes in ROADMAP.md and PLAN.md are the source of truth for completion. You never need to edit these files. Hammer manages them. But you can read them to understand progress.
+State is derived from files on disk. Checkboxes in roadmap and plan artifacts are completion evidence, but Hammer manages them. Read these files to understand progress; do not edit them behind Hammer's back.
+
+Some existing projects may still contain `.gsd/` as a legacy state bridge while `.hammer/` is canonical. Treat that spelling as compatibility/migration evidence only, never as current product language.
 </project_structure>
 
 <flags>
 | Flag | Description |
 |------|-------------|
-| `--output-format <fmt>` | `text` (default), `json` (structured result at exit), `stream-json` (JSONL events) |
-| `--json` | Alias for `--output-format stream-json` — JSONL event stream to stdout |
-| `--bare` | Skip CLAUDE.md, AGENTS.md, user settings, user skills. Use for CI/ecosystem runs. |
-| `--resume <id>` | Resume a prior headless session by its session ID |
-| `--timeout N` | Overall timeout in ms (default: 300000, use 0 to disable) |
-| `--model ID` | Override LLM model |
-| `--supervised` | Forward interactive UI requests to orchestrator via stdout/stdin |
-| `--response-timeout N` | Timeout (ms) for orchestrator response in supervised mode (default: 30000) |
-| `--answers <path>` | Pre-supply answers and secrets from JSON file |
-| `--events <types>` | Filter JSONL to specific event types (comma-separated, implies `--json`) |
-| `--verbose` | Show tool calls in progress output |
-| `--context <path>` | Spec file path for `new-milestone` (use `-` for stdin) |
-| `--context-text <text>` | Inline spec text for `new-milestone` |
-| `--auto` | Chain into auto-mode after `new-milestone` |
+| `--output-format <fmt>` | `text` (default), `json` (single structured result at exit), or `stream-json` (JSONL events). |
+| `--json` | Alias for `--output-format stream-json`; writes JSONL events to stdout. |
+| `--bare` | Skip CLAUDE.md, AGENTS.md, user settings, and user skills. Use for CI/ecosystem runs. |
+| `--resume <id>` | Resume a prior headless session by session ID or unique prefix. |
+| `--timeout N` | Overall timeout in ms. Default is command-dependent; `0` disables the outer timeout. |
+| `--model ID` | Override the LLM model. |
+| `--supervised` | Forward interactive UI requests to the orchestrator through stdout/stdin. |
+| `--response-timeout N` | Timeout in ms for supervised responses; default is 30000. |
+| `--answers <path>` | Pre-supply answers and secrets from a JSON file. |
+| `--events <types>` | Filter JSONL to specific event types, comma-separated; implies `--json`. |
+| `--verbose` | Show tool calls in progress output. |
+| `--context <path>` | Spec file path for `new-milestone`; use `-` for stdin. |
+| `--context-text <text>` | Inline spec text for `new-milestone`. |
+| `--auto` | Chain into auto-mode after `new-milestone`. |
 </flags>
 
 <answer_injection>
@@ -166,14 +177,14 @@ hammer headless --answers answers.json --output-format json auto 2>/dev/null
 ```json
 {
   "questions": { "question_id": "selected_option" },
-  "secrets": { "API_KEY": "sk-..." },
+  "secrets": { "API_KEY": "<redacted>" },
   "defaults": { "strategy": "first_option" }
 }
 ```
 
-- **questions** — question ID to answer (string for single-select, string[] for multi-select)
-- **secrets** — env var to value, injected into child process environment
-- **defaults.strategy** — `"first_option"` (default) or `"cancel"` for unmatched questions
+- `questions` maps question IDs to answers. Use a string for single-select and a string array for multi-select.
+- `secrets` maps env var names to values injected into the Hammer child process. Never print the values in logs, examples, or reports.
+- `defaults.strategy` is `"first_option"` or `"cancel"` for unmatched questions.
 
 See `references/answer-injection.md` for the full mechanism.
 </answer_injection>
@@ -192,28 +203,26 @@ hammer headless --json auto 2>/dev/null | while read -r line; do
 done
 ```
 
-Filter to specific events: `--events agent_end,execution_complete,extension_ui_request`
+Filter to specific events: `--events agent_end,execution_complete,extension_ui_request`.
 
-Available types: `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`,
-`tool_execution_update`, `extension_ui_request`, `message_start`, `message_end`,
-`message_update`, `turn_start`, `turn_end`, `cost_update`, `execution_complete`.
+Common event types: `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`, `tool_execution_update`, `extension_ui_request`, `message_start`, `message_end`, `message_update`, `turn_start`, `turn_end`, `cost_update`, and `execution_complete`.
 </event_streaming>
 
 <all_commands>
 | Command | Purpose |
 |---------|---------|
-| `auto` | Run all queued units until milestone complete or blocked (default) |
-| `next` | Run exactly one unit, then exit |
-| `query` | Instant JSON snapshot — state, next dispatch, costs (no LLM, ~50ms) |
-| `new-milestone` | Create milestone from spec file |
-| `dispatch <phase>` | Force specific phase (research, plan, execute, complete, reassess, uat, replan) |
-| `stop` / `pause` | Control auto-mode |
-| `steer <desc>` | Hard-steer plan mid-execution |
-| `skip` / `undo` | Unit control |
-| `queue` | Queue/reorder milestones |
-| `history` | View execution history |
-| `doctor` | Health check + auto-fix |
-| `knowledge <rule>` | Add persistent project knowledge |
+| `auto` | Run queued units until milestone completion or blocker. |
+| `next` | Run exactly one unit, then exit. |
+| `query` | Instant JSON snapshot: state, next dispatch, and costs. |
+| `new-milestone` | Create a milestone from a spec file or inline spec. |
+| `dispatch <phase>` | Force a specific phase such as research, plan, execute, complete, reassess, uat, or replan. |
+| `stop` / `pause` | Stop or pause auto-mode. |
+| `steer <desc>` | Hard-steer plan documents mid-execution. |
+| `skip` / `undo` | Control the active unit. |
+| `queue` | Queue or reorder milestones. |
+| `history` | View execution history. |
+| `doctor` | Run health checks and surface auto-fix guidance. |
+| `knowledge <rule>` | Add persistent project knowledge. |
 
-See `references/commands.md` for the complete reference.
+See `references/commands.md` for the complete command reference.
 </all_commands>

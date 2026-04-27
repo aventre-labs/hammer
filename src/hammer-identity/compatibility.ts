@@ -679,15 +679,26 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["# False positives in GSD prompt templates"] as const,
   },
   {
-    id: "gsd-orchestrator-docs",
-    category: "downstream-follow-up",
-    description: "The gsd-orchestrator/ directory contains workflow docs, SKILL.md, and command references that use /gsd syntax as the canonical command for the agent orchestrator surface.",
+    id: "gsd-orchestrator-state-path-bridge",
+    category: "bootstrap-migration",
+    description: "Hammer orchestrator docs may mention .gsd only as an explicit legacy state bridge while .hammer remains canonical.",
     pathPattern: String.raw`(?:^|/)gsd-orchestrator/`,
-    linePattern: LEGACY_TOKEN_PATTERN,
+    linePattern: String.raw`(?:(?:\.gsd(?:-id)?).{0,180}(?:\.hammer|state[- ]?(?:namespace|path|root|dir)|state\s+bridge|legacy|compat|migration|migrate|fallback|bootstrap|older project|canonical)|(?:\.hammer|state[- ]?(?:namespace|path|root|dir)|state\s+bridge|legacy|compat|migration|migrate|fallback|bootstrap|older project|canonical).{0,180}(?:\.gsd(?:-id)?))`,
     rationale:
-      "The gsd-orchestrator docs teach the AI agent how to use the GSD workflow system. Updating these requires coordinated prompt testing to ensure the orchestrator still works correctly after the command name change.",
-    allowedUntil: "Update when orchestrator docs are migrated to /hammer syntax.",
-    examples: ["/gsd auto — run all queued units continuously"] as const,
+      "The orchestrator docs must teach .hammer as canonical while still explaining how older projects may expose .gsd as a read-only compatibility bridge. The allowance is line-scoped so new .gsd canonical prose remains unclassified.",
+    allowedUntil: "Remove when .gsd state imports are retired from headless orchestration.",
+    examples: [".gsd may exist as a legacy state bridge while .hammer is canonical."] as const,
+  },
+  {
+    id: "gsd-orchestrator-internal-path-bridge",
+    category: "internal-implementation-path",
+    description: "The physical gsd-orchestrator/ directory and skill id remain implementation-path identifiers while its visible workflow prose is Hammer-native.",
+    pathPattern: String.raw`(?:^|/)gsd-orchestrator/`,
+    linePattern: String.raw`\bgsd-orchestrator\b`,
+    rationale:
+      "T07 migrated the orchestrator docs to Hammer headless, /hammer, .hammer, IAM, and no-degradation language without renaming the physical directory. This rule classifies only the path/skill identifier so stale canonical /gsd or .gsd prose cannot hide behind the directory allowance.",
+    allowedUntil: "Remove when the physical gsd-orchestrator directory and skill id are renamed.",
+    examples: ["name: gsd-orchestrator"] as const,
   },
   {
     id: "packages-daemon-internal",

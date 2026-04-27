@@ -125,6 +125,37 @@ test("core prompt and workflow paths do not inherit broad extension compatibilit
   assert.equal(legacyStateBridge[0].ruleId, "s08-legacy-state-path-bridge");
 });
 
+test("gsd-orchestrator docs classify only physical path and explicit legacy bridges", async () => {
+  const rules = await loadHammerIdentityCompatibilityRules();
+
+  const skillId = scanText(
+    "gsd-orchestrator/SKILL.md",
+    "name: gsd-orchestrator\n",
+    rules,
+  );
+  assert.equal(skillId.length, 1);
+  assert.equal(skillId[0].category, "internal-implementation-path");
+  assert.equal(skillId[0].ruleId, "gsd-orchestrator-internal-path-bridge");
+
+  const staleCommand = scanText(
+    "gsd-orchestrator/references/commands.md",
+    "Run gsd headless auto for current builds.\n",
+    rules,
+  );
+  assert.equal(staleCommand.length, 1);
+  assert.equal(staleCommand[0].category, UNCLASSIFIED_CATEGORY);
+  assert.equal(staleCommand[0].ruleId, null);
+
+  const legacyStateBridge = scanText(
+    "gsd-orchestrator/workflows/build-from-spec.md",
+    "Do not pre-create `.gsd/`; `.hammer` is canonical and `.gsd` is a legacy state bridge.\n",
+    rules,
+  );
+  assert.equal(legacyStateBridge.length, 1);
+  assert.equal(legacyStateBridge[0].category, "bootstrap-migration");
+  assert.equal(legacyStateBridge[0].ruleId, "gsd-orchestrator-state-path-bridge");
+});
+
 test("scanner filters ignored and generated state before reading files", () => {
   assert.equal(shouldScanPath("src/hammer-identity/index.ts"), true);
   assert.equal(shouldScanPath("scripts/check-hammer-identity.mjs"), true);
