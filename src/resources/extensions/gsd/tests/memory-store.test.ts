@@ -25,6 +25,9 @@ import {
   applyMemoryActions,
   queryMemoriesRanked,
   formatMemoriesForPrompt,
+  runVolvoxEpoch,
+  shouldRunVolvoxEpoch,
+  getVolvoxStatus,
 } from '../memory-store.ts';
 import type { MemoryAction } from '../memory-store.ts';
 import { describe, test, beforeEach, afterEach } from 'node:test';
@@ -345,6 +348,194 @@ test('memory-store: queryMemoriesRanked filters by Trinity layer and prefers vec
   closeDatabase();
 });
 
+
+test('memory-store: create/read defaults include VOLVOX metadata and reinforce updates activation counters', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'VOLVOX defaults' });
+  let memory = getActiveMemories()[0];
+  assert.equal(memory.volvox?.cellType, 'UNDIFFERENTIATED');
+  assert.equal(memory.volvox?.roleStability, 0);
+  assert.equal(memory.volvox?.lifecyclePhase, 'embryonic');
+  assert.equal(memory.volvox?.propagationEligible, false);
+  assert.equal(memory.volvox?.activationCount, 0);
+  assert.equal(memory.volvox?.activationRate, 0);
+
+  assert.equal(reinforceMemory('MEM001'), true);
+  memory = getActiveMemories()[0];
+  assert.equal(memory.hit_count, 1);
+  assert.equal(memory.volvox?.activationCount, 1);
+  assert.ok((memory.volvox?.activationRate ?? 0) > 0, 'reinforce should bump activation rate');
+
+  closeDatabase();
+});
+
+test('memory-store: VOLVOX epoch persists classification, audit rows, and failed diagnostics', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'offspring-rich memory', trinity: { layer: 'generative' } });
+  createMemory({ category: 'gotcha', content: 'false germline claimant' });
+
+  const adapter = _getAdapter()!;
+  adapter.prepare(
+    `UPDATE memories
+        SET volvox_activation_rate = 0.8,
+            volvox_offspring_count = 5,
+            volvox_kirk_step = 6
+      WHERE id = 'MEM001'`,
+  ).run();
+  adapter.prepare(
+    `UPDATE memories
+        SET volvox_propagation_eligible = 1,
+            volvox_cell_type = 'SOMATIC_SENSOR',
+            volvox_lifecycle_phase = 'juvenile'
+      WHERE id = 'MEM002'`,
+  ).run();
+
+  const epoch = runVolvoxEpoch({
+    trigger: 'test',
+    now: '2026-04-27T00:00:00.000Z',
+    thresholds: { offspringCount: 3, activationRate: 0.5 },
+  });
+
+  assert.equal(epoch.status, 'blocked', 'false-germline should block successful completion');
+  assert.equal(epoch.counts.processed, 2);
+  assert.ok(epoch.diagnostics.some((d) => d.code === 'false-germline' && d.memoryId === 'MEM002'));
+
+  const germline = getActiveMemories().find((memory) => memory.id === 'MEM001');
+  assert.equal(germline?.volvox?.cellType, 'GERMLINE');
+  assert.equal(germline?.volvox?.lifecyclePhase, 'juvenile');
+  assert.equal(germline?.volvox?.lastEpochId, epoch.epochId);
+
+  const epochRow = adapter.prepare('SELECT status, trigger, processed_count, diagnostics_json FROM volvox_epochs WHERE id = ?').get(epoch.epochId);
+  assert.equal(epochRow?.['status'], 'failed');
+  assert.equal(epochRow?.['trigger'], 'test');
+  assert.equal(epochRow?.['processed_count'], 2);
+  assert.ok(String(epochRow?.['diagnostics_json']).includes('false-germline'));
+
+  const mutationRows = adapter.prepare('SELECT memory_id, diagnostics_json FROM volvox_epoch_mutations WHERE epoch_id = ? ORDER BY memory_id').all(epoch.epochId);
+  assert.equal(mutationRows.length, 2);
+  assert.ok(String(mutationRows[1]?.['diagnostics_json']).includes('false-germline'));
+
+  closeDatabase();
+});
+
+
+test('memory-store: VOLVOX epoch leaves failed audit state when persistence throws', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'persistence failure' });
+  const adapter = _getAdapter()!;
+  const originalPrepare = adapter.prepare.bind(adapter);
+  const originalPrepareMethod = adapter.prepare;
+  adapter.prepare = ((sql: string) => {
+    if (sql.includes('UPDATE memories SET') && sql.includes('volvox_cell_type')) {
+      const stmt = originalPrepare(sql);
+      return {
+        run: (..._params: unknown[]) => {
+          throw new Error('simulated VOLVOX update failure');
+        },
+        get: (...params: unknown[]) => stmt.get(...params),
+        all: (...params: unknown[]) => stmt.all(...params),
+      };
+    }
+    return originalPrepare(sql);
+  }) as typeof adapter.prepare;
+
+  try {
+    assert.throws(
+      () => runVolvoxEpoch({ trigger: 'persistence-failure', now: '2026-04-27T00:00:00.000Z' }),
+      /simulated VOLVOX update failure/,
+    );
+  } finally {
+    adapter.prepare = originalPrepareMethod;
+  }
+
+  const failed = adapter.prepare(
+    "SELECT status, trigger, error_message FROM volvox_epochs WHERE trigger = 'persistence-failure'",
+  ).get();
+  assert.equal(failed?.['status'], 'failed');
+  assert.match(String(failed?.['error_message']), /simulated VOLVOX update failure/);
+
+  closeDatabase();
+});
+
+test('memory-store: VOLVOX filters and legacy ranking compatibility', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'alpha high', confidence: 0.7 });
+  createMemory({ category: 'pattern', content: 'alpha low dormant', confidence: 0.95 });
+  reinforceMemory('MEM001');
+  reinforceMemory('MEM001');
+
+  const adapter = _getAdapter()!;
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'GERMLINE', volvox_lifecycle_phase = 'mature', volvox_propagation_eligible = 1 WHERE id = 'MEM001'",
+  ).run();
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'DORMANT', volvox_lifecycle_phase = 'dormant' WHERE id = 'MEM002'",
+  ).run();
+
+  const legacy = getActiveMemoriesRanked(10).map((memory) => memory.id);
+  assert.equal(legacy.length, 2, 'legacy ranked listing should still include dormant rows by default');
+  assert.ok(legacy.includes('MEM001'));
+  assert.ok(legacy.includes('MEM002'));
+
+  const germline = queryMemoriesRanked({ query: 'alpha', k: 10, volvoxCellType: 'GERMLINE' });
+  assert.deepStrictEqual(germline.map((hit) => hit.memory.id), ['MEM001']);
+
+  const activeOnly = queryMemoriesRanked({ query: '', k: 10, includeDormant: false });
+  assert.deepStrictEqual(activeOnly.map((hit) => hit.memory.id), ['MEM001']);
+
+  const eligible = getActiveMemoriesRanked(10, { propagationEligible: true });
+  assert.deepStrictEqual(eligible.map((memory) => memory.id), ['MEM001']);
+
+  closeDatabase();
+});
+
+test('memory-store: shouldRunVolvoxEpoch respects query-count and elapsed thresholds', () => {
+  assert.equal(shouldRunVolvoxEpoch({ processedQueriesSinceLastEpoch: 4 }), false);
+  assert.equal(shouldRunVolvoxEpoch({ processedQueriesSinceLastEpoch: 5 }), true);
+  assert.equal(shouldRunVolvoxEpoch({ processedQueriesSinceLastEpoch: 0, lastEpochAt: '2026-04-27T00:00:00.000Z', now: '2026-04-27T00:04:59.000Z', minElapsedMs: 300_000 }), false);
+  assert.equal(shouldRunVolvoxEpoch({ processedQueriesSinceLastEpoch: 0, lastEpochAt: '2026-04-27T00:00:00.000Z', now: '2026-04-27T00:05:00.000Z', minElapsedMs: 300_000 }), true);
+});
+
+test('memory-store: VOLVOX epoch handles empty and all-dormant tables', () => {
+  openDatabase(':memory:');
+
+  const empty = runVolvoxEpoch({ trigger: 'empty', now: '2026-04-27T00:00:00.000Z' });
+  assert.equal(empty.status, 'completed');
+  assert.equal(empty.counts.processed, 0);
+
+  createMemory({ category: 'gotcha', content: 'dormant only' });
+  _getAdapter()!.prepare(
+    "UPDATE memories SET volvox_cell_type = 'DORMANT', volvox_lifecycle_phase = 'dormant', volvox_dormancy_cycles = 12 WHERE id = 'MEM001'",
+  ).run();
+
+  const dormant = runVolvoxEpoch({ trigger: 'dormant', now: '2026-04-27T00:01:00.000Z' });
+  assert.equal(dormant.counts.processed, 1, 'dormant but not archived rows are still settled');
+  const activeOnly = queryMemoriesRanked({ query: '', includeDormant: false, k: 10 });
+  assert.deepStrictEqual(activeOnly, []);
+
+  closeDatabase();
+});
+
+test('memory-store: VOLVOX status surfaces latest epoch and diagnostics', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'status memory' });
+  const epoch = runVolvoxEpoch({ trigger: 'status-test', now: '2026-04-27T00:00:00.000Z', thresholds: { activationRate: -1 } });
+  const status = getVolvoxStatus();
+
+  assert.equal(status.latestEpoch?.id, epoch.epochId);
+  assert.equal(status.latestEpoch?.trigger, 'status-test');
+  assert.equal(status.diagnostics.length, 1);
+  assert.equal(status.diagnostics[0].code, 'malformed-threshold');
+  assert.equal(status.memories.length, 1);
+
+  closeDatabase();
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // memory-store: formatMemoriesForPrompt
 // ═══════════════════════════════════════════════════════════════════════════
@@ -411,7 +602,31 @@ test('memory-store: formatMemoriesForPrompt annotates compact Trinity metadata',
   closeDatabase();
 });
 
-closeDatabase();
+
+test('memory-store: formatMemoriesForPrompt annotates compact VOLVOX metadata', () => {
+  openDatabase(':memory:');
+
+  createMemory({
+    category: 'pattern',
+    content: 'compact VOLVOX prompt annotation',
+    volvox: {
+      cellType: 'GERMLINE',
+      roleStability: 0.85,
+      lifecyclePhase: 'mature',
+      propagationEligible: true,
+    },
+  });
+
+  const formatted = formatMemoriesForPrompt(getActiveMemoriesRanked(5));
+
+  assert.ok(
+    formatted.includes('[volvox cell=GERMLINE phase=mature stable=0.85 propagation=eligible]'),
+    formatted,
+  );
+  assert.ok(!formatted.includes('diagnostics_json'), 'prompt annotations should not dump VOLVOX audit JSON blobs');
+
+  closeDatabase();
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // memory-store: ID generation

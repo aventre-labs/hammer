@@ -91,7 +91,8 @@ export type VolvoxDiagnosticCode =
   | "false-germline"
   | "invalid-transition"
   | "archive-germline-blocked"
-  | "propagation-gate-failed";
+  | "propagation-gate-failed"
+  | "persistence-failed";
 
 export interface VolvoxDiagnostic {
   epochId: string;

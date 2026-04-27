@@ -5,12 +5,16 @@
 
 import type { TrinityLayer, TrinityMetadata, TrinityVector } from '../../../iam/trinity.js';
 import {
+  normalizeVolvoxMetadata as normalizeKernelVolvoxMetadata,
+  runVolvoxEpoch as runPureVolvoxEpoch,
+  scoreVolvoxFitness,
+} from '../../../iam/volvox.js';
+import type { VolvoxCellType, VolvoxDiagnostic, VolvoxLifecyclePhase, VolvoxMetadata as KernelVolvoxMetadata, VolvoxThresholds } from '../../../iam/volvox.js';
+import {
   buildDefaultTrinityMetadata,
-  normalizeTrinityLayer,
   normalizeTrinityMetadata,
   normalizeTrinityVector,
   parseTrinityJson,
-  serializeTrinityJson,
   trinityVectorDot,
 } from '../../../iam/trinity.js';
 import {
@@ -21,8 +25,13 @@ import {
   insertMemoryRow,
   rewriteMemoryId,
   updateMemoryContentRow,
-  incrementMemoryHitCount,
+  incrementMemoryVolvoxActivation,
+  incrementMemoryVolvoxDormancy,
+  insertVolvoxEpochMutationRow,
+  insertVolvoxEpochRow,
+  getLatestVolvoxEpochRow,
   supersedeMemoryRow,
+  updateMemoryVolvoxMetadata,
   markMemoryUnitProcessed,
   decayMemoriesBefore,
   supersedeLowestRankedMemories,
@@ -55,6 +64,20 @@ export interface Memory {
    */
   structured_fields: Record<string, unknown> | null;
   trinity?: TrinityMetadata;
+  volvox?: MemoryVolvoxMetadata;
+}
+
+export interface MemoryVolvoxMetadata extends KernelVolvoxMetadata {
+  activationCount: number;
+  activationRate: number;
+  propagationCount: number;
+  dormancyCycles: number;
+  generation: number;
+  offspringCount: number;
+  connectionDensity: number;
+  crossLayerConnections: number;
+  fitness: number;
+  kirkStep?: number;
 }
 
 export type MemoryActionCreate = {
@@ -66,6 +89,7 @@ export type MemoryActionCreate = {
   tags?: string[];
   structuredFields?: Record<string, unknown> | null;
   trinity?: Partial<TrinityMetadata> | null;
+  volvox?: Partial<MemoryVolvoxMetadata> | null;
 };
 
 export type MemoryActionUpdate = {
@@ -131,7 +155,46 @@ function rowToMemory(row: Record<string, unknown>): Memory {
     tags: parseTags(row['tags']),
     structured_fields: parseStructuredFields(row['structured_fields']),
     trinity: rowToTrinityMetadata(row),
+    volvox: rowToVolvoxMetadata(row),
   };
+}
+
+
+function rowToVolvoxMetadata(row: Record<string, unknown>): MemoryVolvoxMetadata {
+  const base = normalizeKernelVolvoxMetadata({
+    cellType: row['volvox_cell_type'],
+    roleStability: row['volvox_role_stability'],
+    lifecyclePhase: row['volvox_lifecycle_phase'],
+    propagationEligible: row['volvox_propagation_eligible'] === 1 || row['volvox_propagation_eligible'] === true,
+    lastEpochId: row['volvox_last_epoch_id'],
+    lastEpochAt: row['volvox_last_epoch_at'],
+    archivedAt: row['volvox_archived_at'],
+  });
+  return {
+    ...base,
+    activationCount: nonNegativeInteger(row['volvox_activation_count']),
+    activationRate: clampUnitNumber(row['volvox_activation_rate']),
+    propagationCount: nonNegativeInteger(row['volvox_propagation_count']),
+    dormancyCycles: nonNegativeInteger(row['volvox_dormancy_cycles']),
+    generation: nonNegativeInteger(row['volvox_generation']),
+    offspringCount: nonNegativeInteger(row['volvox_offspring_count']),
+    connectionDensity: nonNegativeInteger(row['volvox_connection_density']),
+    crossLayerConnections: nonNegativeInteger(row['volvox_cross_layer_connections']),
+    fitness: clampUnitNumber(row['volvox_fitness']),
+    ...(typeof row['volvox_kirk_step'] === 'number' && Number.isFinite(row['volvox_kirk_step'])
+      ? { kirkStep: Math.floor(row['volvox_kirk_step'] as number) }
+      : {}),
+  };
+}
+
+function nonNegativeInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 0;
+  return Math.floor(value);
+}
+
+function clampUnitNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.round(Math.max(0, Math.min(1, value)) * 10_000) / 10_000;
 }
 
 function rowToTrinityMetadata(row: Record<string, unknown>): TrinityMetadata {
@@ -205,18 +268,19 @@ export function getActiveMemories(): Memory[] {
  * Get active memories ordered by ranking score: confidence * (1 + hit_count * 0.1).
  * Higher-scored memories are more relevant and frequently confirmed.
  */
-export function getActiveMemoriesRanked(limit = 30): Memory[] {
+export function getActiveMemoriesRanked(limit = 30, filters: Omit<QueryMemoriesFilters, 'category' | 'scope' | 'tag' | 'include_superseded' | 'trinityLayer'> = {}): Memory[] {
   if (!isDbAvailable()) return [];
   const adapter = _getAdapter();
   if (!adapter) return [];
 
   try {
+    const { clause, params } = buildVolvoxSqlFilter(filters, '');
     const rows = adapter.prepare(
       `SELECT * FROM memories
-       WHERE superseded_by IS NULL
+       WHERE superseded_by IS NULL${clause}
        ORDER BY (confidence * (1.0 + hit_count * 0.1)) DESC
        LIMIT :limit`,
-    ).all({ ':limit': limit });
+    ).all({ ...params, ':limit': limit });
     return rows.map(rowToMemory);
   } catch {
     return [];
@@ -231,6 +295,10 @@ export interface QueryMemoriesFilters {
   tag?: string;
   include_superseded?: boolean;
   trinityLayer?: TrinityLayer;
+  volvoxCellType?: VolvoxCellType;
+  volvoxLifecyclePhase?: VolvoxLifecyclePhase;
+  propagationEligible?: boolean;
+  includeDormant?: boolean;
 }
 
 export interface QueryMemoriesOptions extends QueryMemoriesFilters {
@@ -272,8 +340,9 @@ export function queryMemoriesRanked(opts: QueryMemoriesOptions): RankedMemory[] 
   const whereClauses: string[] = [];
   if (opts.include_superseded !== true) whereClauses.push('superseded_by IS NULL');
   if (opts.trinityLayer) whereClauses.push('trinity_layer = :trinityLayer');
+  appendVolvoxWhereClauses(whereClauses, opts);
   const activeClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-  const sqlParams = opts.trinityLayer ? { ':trinityLayer': opts.trinityLayer } : undefined;
+  const sqlParams = buildQuerySqlParams(opts);
   const trimmedQuery = (opts.query ?? '').trim();
   const fetchLimit = Math.max(k, Math.min(100, k * 4));
 
@@ -375,7 +444,35 @@ function passesFilters(memory: Memory, filters: QueryMemoriesFilters): boolean {
     if (!memory.tags.map((t) => t.toLowerCase()).includes(needle)) return false;
   }
   if (filters.trinityLayer && memory.trinity?.layer !== filters.trinityLayer) return false;
+  if (filters.volvoxCellType && memory.volvox?.cellType !== filters.volvoxCellType) return false;
+  if (filters.volvoxLifecyclePhase && memory.volvox?.lifecyclePhase !== filters.volvoxLifecyclePhase) return false;
+  if (filters.propagationEligible !== undefined && memory.volvox?.propagationEligible !== filters.propagationEligible) return false;
+  if (filters.includeDormant === false && (memory.volvox?.cellType === 'DORMANT' || memory.volvox?.lifecyclePhase === 'dormant' || memory.volvox?.lifecyclePhase === 'archived')) return false;
   return true;
+}
+
+function appendVolvoxWhereClauses(whereClauses: string[], filters: QueryMemoriesFilters): void {
+  if (filters.volvoxCellType) whereClauses.push('volvox_cell_type = :volvoxCellType');
+  if (filters.volvoxLifecyclePhase) whereClauses.push('volvox_lifecycle_phase = :volvoxLifecyclePhase');
+  if (filters.propagationEligible !== undefined) whereClauses.push('volvox_propagation_eligible = :propagationEligible');
+  if (filters.includeDormant === false) whereClauses.push("volvox_cell_type != 'DORMANT' AND volvox_lifecycle_phase NOT IN ('dormant', 'archived')");
+}
+
+function buildQuerySqlParams(opts: QueryMemoriesFilters): Record<string, unknown> | undefined {
+  const params: Record<string, unknown> = {};
+  if (opts.trinityLayer) params[':trinityLayer'] = opts.trinityLayer;
+  if (opts.volvoxCellType) params[':volvoxCellType'] = opts.volvoxCellType;
+  if (opts.volvoxLifecyclePhase) params[':volvoxLifecyclePhase'] = opts.volvoxLifecyclePhase;
+  if (opts.propagationEligible !== undefined) params[':propagationEligible'] = opts.propagationEligible ? 1 : 0;
+  return Object.keys(params).length > 0 ? params : undefined;
+}
+
+function buildVolvoxSqlFilter(filters: Pick<QueryMemoriesFilters, 'volvoxCellType' | 'volvoxLifecyclePhase' | 'propagationEligible' | 'includeDormant'>, alias: string): { clause: string; params: Record<string, unknown> } {
+  const clauses: string[] = [];
+  appendVolvoxWhereClauses(clauses, filters as QueryMemoriesFilters);
+  const prefix = alias ? `${alias}.` : '';
+  const clause = clauses.length === 0 ? '' : ` AND ${clauses.join(' AND ').replace(/\bvolvox_/g, `${prefix}volvox_`)}`;
+  return { clause, params: buildQuerySqlParams(filters as QueryMemoriesFilters) ?? {} };
 }
 
 function trinityLayerMatches(memory: Memory, layer: TrinityLayer | undefined): boolean {
@@ -448,7 +545,7 @@ function selectRankedMemoryCandidates(
 
 function qualifyMemoryWhereClause(clause: string, alias: string): string {
   if (!clause) return '';
-  return clause.replace(/\b(superseded_by|trinity_layer)\b/g, `${alias}.$1`);
+  return clause.replace(/\b(superseded_by|trinity_layer|volvox_cell_type|volvox_lifecycle_phase|volvox_propagation_eligible)\b/g, `${alias}.$1`);
 }
 
 function keywordSearch(
@@ -647,6 +744,7 @@ export function createMemory(fields: {
   tags?: string[];
   structuredFields?: Record<string, unknown> | null;
   trinity?: Partial<TrinityMetadata> | null;
+  volvox?: Partial<MemoryVolvoxMetadata> | null;
 }): string | null {
   if (!isDbAvailable()) return null;
   const adapter = _getAdapter();
@@ -691,6 +789,7 @@ function doCreateMemory(
     tags?: string[];
     structuredFields?: Record<string, unknown> | null;
     trinity?: Partial<TrinityMetadata> | null;
+    volvox?: Partial<MemoryVolvoxMetadata> | null;
   },
 ): string {
   const now = new Date().toISOString();
@@ -717,6 +816,7 @@ function doCreateMemory(
     tags: fields.tags ?? [],
     structuredFields: fields.structuredFields ?? null,
     trinity,
+    volvox: fields.volvox ?? null,
   });
   // Derive the real ID from the assigned seq (SELECT is still fine via adapter)
   const row = adapter.prepare('SELECT seq FROM memories WHERE id = :id').get({ ':id': placeholder });
@@ -748,7 +848,7 @@ export function reinforceMemory(id: string): boolean {
   if (!isDbAvailable()) return false;
 
   try {
-    incrementMemoryHitCount(id, new Date().toISOString());
+    incrementMemoryVolvoxActivation(id, new Date().toISOString());
     return true;
   } catch {
     return false;
@@ -831,7 +931,9 @@ export function decayStaleMemories(thresholdUnits = 20): string[] {
        WHERE superseded_by IS NULL AND updated_at < :cutoff AND confidence > 0.1`,
     ).all({ ':cutoff': cutoff }).map((r) => r['id'] as string);
 
-    decayMemoriesBefore(cutoff, new Date().toISOString());
+    const now = new Date().toISOString();
+    decayMemoriesBefore(cutoff, now);
+    incrementMemoryVolvoxDormancy(affected, now);
     return affected;
   } catch {
     return [];
@@ -906,6 +1008,7 @@ export function applyMemoryActions(
               // silently drop it.
               structuredFields: action.structuredFields ?? null,
               trinity: action.trinity ?? null,
+              volvox: action.volvox ?? null,
             });
             break;
           case 'UPDATE':
@@ -985,7 +1088,7 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
     remaining -= catHeader.length;
 
     for (const item of items) {
-      const annotation = formatTrinityAnnotation(item.trinity);
+      const annotation = `${formatTrinityAnnotation(item.trinity)}${formatVolvoxAnnotation(item.volvox)}`;
       const bullet = `- ${item.content}${annotation}\n`;
       if (remaining < bullet.length) break;
       output += bullet;
@@ -994,6 +1097,17 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
   }
 
   return output.trimEnd();
+}
+
+function formatVolvoxAnnotation(metadata: MemoryVolvoxMetadata | undefined): string {
+  if (!metadata) return '';
+  const parts = [
+    `cell=${metadata.cellType}`,
+    `phase=${metadata.lifecyclePhase}`,
+    `stable=${formatScore(metadata.roleStability)}`,
+  ];
+  if (metadata.propagationEligible) parts.push('propagation=eligible');
+  return ` [volvox ${parts.join(' ')}]`;
 }
 
 function formatTrinityAnnotation(metadata: TrinityMetadata | undefined): string {
@@ -1021,4 +1135,273 @@ function topVectorEntries(vector: TrinityVector): string {
 
 function formatScore(value: number): string {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+}
+
+// ─── VOLVOX epoch runner and status surfaces ────────────────────────────────
+
+export interface RunMemoryVolvoxEpochOptions {
+  trigger?: string;
+  now?: string | Date;
+  thresholds?: Partial<VolvoxThresholds> | null;
+  dryRun?: boolean;
+}
+
+export interface MemoryVolvoxEpochStatus {
+  id: string;
+  status: string;
+  trigger: string;
+  startedAt: string;
+  completedAt?: string;
+  thresholds: unknown;
+  counts: unknown;
+  diagnostics: VolvoxDiagnostic[];
+}
+
+export function runVolvoxEpoch(options: RunMemoryVolvoxEpochOptions = {}) {
+  if (!isDbAvailable()) {
+    return runPureVolvoxEpoch([], options);
+  }
+  const adapter = _getAdapter();
+  if (!adapter) return runPureVolvoxEpoch([], options);
+
+  const timestamp = normalizeVolvoxEpochTimestamp(options.now);
+  const rows = adapter.prepare(
+    `SELECT * FROM memories WHERE superseded_by IS NULL AND volvox_archived_at IS NULL ORDER BY id`,
+  ).all();
+  const metrics = deriveVolvoxRelationMetrics(adapter);
+  const records = rows.map((row) => memoryRowToVolvoxRecord(row, metrics.get(row['id'] as string)));
+  const epoch = runPureVolvoxEpoch(records, {
+    trigger: options.trigger ?? 'manual',
+    now: timestamp,
+    thresholds: options.thresholds ?? undefined,
+  });
+
+  if (options.dryRun) return epoch;
+
+  const auditRow = {
+    id: epoch.epochId,
+    status: epoch.status === 'blocked' ? 'failed' : epoch.status,
+    trigger: epoch.trigger,
+    startedAt: epoch.startedAt,
+    completedAt: epoch.completedAt,
+    thresholdsJson: epoch.thresholdsJson,
+    processedCount: epoch.counts.processed,
+    changedCount: epoch.counts.changed,
+    diagnosticsCount: epoch.counts.diagnostics,
+    blockingDiagnosticsCount: epoch.counts.blockingDiagnostics,
+    propagationEligibleCount: epoch.counts.propagationEligible,
+    archivedCount: epoch.counts.archived,
+    countsJson: stableMemoryJson(epoch.counts),
+    diagnosticsJson: epoch.diagnosticsJson,
+    dryRun: false,
+  };
+
+  try {
+    transaction(() => {
+      insertVolvoxEpochRow(auditRow);
+
+    const diffById = new Map(epoch.diffs.map((diff) => [diff.memoryId, diff]));
+    for (const record of epoch.records) {
+      const previousRow = rows.find((row) => row['id'] === record.id);
+      const previous = previousRow ? rowToVolvoxMetadata(previousRow) : undefined;
+      const derived = metrics.get(record.id);
+      const memoryDiagnostics = epoch.diagnostics.filter((diagnostic) => diagnostic.memoryId === record.id);
+      const after = record.volvox;
+      updateMemoryVolvoxMetadata({
+        memoryId: record.id,
+        cellType: after.cellType,
+        roleStability: after.roleStability,
+        activationCount: previous?.activationCount ?? 0,
+        activationRate: record.metrics?.activationRate ?? previous?.activationRate ?? 0,
+        propagationCount: after.propagationEligible ? (previous?.propagationCount ?? 0) + 1 : (previous?.propagationCount ?? 0),
+        dormancyCycles: record.metrics?.dormancyCycles ?? previous?.dormancyCycles ?? 0,
+        generation: previous?.generation ?? 0,
+        offspringCount: record.metrics?.offspringCount ?? previous?.offspringCount ?? 0,
+        connectionDensity: record.metrics?.connectionDensity ?? derived?.connectionDensity ?? previous?.connectionDensity ?? 0,
+        crossLayerConnections: record.metrics?.crossLayerConnections ?? derived?.crossLayerConnections ?? previous?.crossLayerConnections ?? 0,
+        fitness: scoreVolvoxFitness(record.metrics, after),
+        kirkStep: record.metrics?.kirkStep ?? previous?.kirkStep ?? null,
+        lifecyclePhase: after.lifecyclePhase,
+        propagationEligible: after.propagationEligible,
+        lastEpochId: after.lastEpochId ?? epoch.epochId,
+        lastEpochAt: after.lastEpochAt ?? epoch.completedAt,
+        archivedAt: after.archivedAt ?? null,
+        updatedAt: epoch.completedAt,
+      });
+
+      const diff = diffById.get(record.id);
+      insertVolvoxEpochMutationRow({
+        epochId: epoch.epochId,
+        memoryId: record.id,
+        beforeJson: stableMemoryJson(diff?.before ?? previous ?? {}),
+        afterJson: stableMemoryJson(after),
+        changedFieldsJson: stableMemoryJson(diff?.changedFields ?? []),
+        diagnosticsJson: stableMemoryJson(memoryDiagnostics),
+        createdAt: epoch.completedAt,
+      });
+    }
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    insertVolvoxEpochRow({
+      ...auditRow,
+      status: 'failed',
+      completedAt: normalizeVolvoxEpochTimestamp(options.now),
+      errorMessage: message,
+      diagnosticsJson: stableMemoryJson([
+        ...epoch.diagnostics,
+        {
+          epochId: epoch.epochId,
+          code: 'persistence-failed',
+          severity: 'blocking',
+          phase: 'diagnose',
+          message: 'VOLVOX epoch persistence failed before all memory mutations could be committed.',
+          remediation: 'Inspect SQLite availability and retry the epoch after resolving the persistence error.',
+          timestamp: normalizeVolvoxEpochTimestamp(options.now),
+          metadata: { error: message },
+        },
+      ]),
+    });
+    throw err;
+  }
+
+  return epoch;
+}
+
+export function shouldRunVolvoxEpoch(input: {
+  processedQueriesSinceLastEpoch: number;
+  lastEpochAt?: string | null;
+  now?: string | Date;
+  queryThreshold?: number;
+  minElapsedMs?: number;
+}): boolean {
+  const queryThreshold = input.queryThreshold ?? 5;
+  if (input.processedQueriesSinceLastEpoch >= queryThreshold) return true;
+  if (!input.lastEpochAt || input.minElapsedMs == null) return false;
+  const nowMs = new Date(normalizeVolvoxEpochTimestamp(input.now)).getTime();
+  const lastMs = new Date(input.lastEpochAt).getTime();
+  return Number.isFinite(nowMs) && Number.isFinite(lastMs) && nowMs - lastMs >= input.minElapsedMs;
+}
+
+export function getVolvoxStatus(): { latestEpoch: MemoryVolvoxEpochStatus | null; memories: Memory[]; diagnostics: VolvoxDiagnostic[] } {
+  const row = getLatestVolvoxEpochRow();
+  const latestEpoch = row ? rowToVolvoxEpochStatus(row as unknown as Record<string, unknown>) : null;
+  return {
+    latestEpoch,
+    memories: getActiveMemoriesRanked(30),
+    diagnostics: latestEpoch?.diagnostics ?? [],
+  };
+}
+
+function rowToVolvoxEpochStatus(row: Record<string, unknown>): MemoryVolvoxEpochStatus {
+  const diagnostics = parseJsonArray(row['diagnostics_json']) as VolvoxDiagnostic[];
+  return {
+    id: row['id'] as string,
+    status: row['status'] as string,
+    trigger: row['trigger'] as string,
+    startedAt: row['started_at'] as string,
+    ...(row['completed_at'] ? { completedAt: row['completed_at'] as string } : {}),
+    thresholds: parseJsonValue(row['thresholds_json']),
+    counts: parseJsonValue(row['counts_json']),
+    diagnostics,
+  };
+}
+
+function memoryRowToVolvoxRecord(row: Record<string, unknown>, relationMetrics?: { connectionDensity: number; crossLayerConnections: number; offspringCount: number }) {
+  const memory = rowToMemory(row);
+  const activationRate = memory.volvox?.activationRate ?? clampUnitNumber((memory.hit_count ?? 0) / 5);
+  const metrics = {
+    activationRate,
+    offspringCount: Math.max(memory.volvox?.offspringCount ?? 0, relationMetrics?.offspringCount ?? 0),
+    crossLayerConnections: Math.max(memory.volvox?.crossLayerConnections ?? 0, relationMetrics?.crossLayerConnections ?? 0),
+    connectionDensity: Math.max(memory.volvox?.connectionDensity ?? 0, relationMetrics?.connectionDensity ?? 0),
+    dormancyCycles: memory.volvox?.dormancyCycles ?? 0,
+    ...(memory.volvox?.kirkStep === undefined ? {} : { kirkStep: memory.volvox.kirkStep }),
+  };
+  return {
+    id: memory.id,
+    category: memory.category,
+    content: memory.content.slice(0, 160),
+    trinityLayer: memory.trinity?.layer,
+    volvox: memory.volvox,
+    metrics,
+    propagation: {
+      contributor: memory.confidence >= 0.5,
+      provenanceComplete: (memory.trinity?.provenance.sourceRelations.length ?? 0) > 0 || Boolean(memory.source_unit_type),
+    },
+  };
+}
+
+function deriveVolvoxRelationMetrics(adapter: NonNullable<ReturnType<typeof _getAdapter>>): Map<string, { connectionDensity: number; crossLayerConnections: number; offspringCount: number }> {
+  const out = new Map<string, { connectionDensity: number; crossLayerConnections: number; offspringCount: number }>();
+  const ensure = (id: string) => {
+    let entry = out.get(id);
+    if (!entry) {
+      entry = { connectionDensity: 0, crossLayerConnections: 0, offspringCount: 0 };
+      out.set(id, entry);
+    }
+    return entry;
+  };
+
+  try {
+    const rows = adapter.prepare(
+      `SELECT from_id, to_id, rel FROM memory_relations`,
+    ).all();
+    const layerRows = adapter.prepare(
+      `SELECT id, trinity_layer FROM memories`,
+    ).all();
+    const layers = new Map(layerRows.map((row) => [row['id'] as string, row['trinity_layer'] as string]));
+
+    for (const row of rows) {
+      const from = row['from_id'] as string;
+      const to = row['to_id'] as string;
+      const rel = row['rel'] as string;
+      const fromEntry = ensure(from);
+      const toEntry = ensure(to);
+      fromEntry.connectionDensity += 1;
+      toEntry.connectionDensity += 1;
+      if (layers.get(from) !== layers.get(to)) {
+        fromEntry.crossLayerConnections += 1;
+        toEntry.crossLayerConnections += 1;
+      }
+      if (rel === 'supersedes' || rel === 'elaborates') {
+        fromEntry.offspringCount += 1;
+      }
+    }
+  } catch {
+    // Missing/legacy relation tables count as zero metrics by design.
+  }
+
+  return out;
+}
+
+function normalizeVolvoxEpochTimestamp(value: string | Date | undefined): string {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return new Date().toISOString();
+}
+
+function stableMemoryJson(value: unknown): string {
+  return JSON.stringify(toStableMemoryJsonValue(value));
+}
+
+function toStableMemoryJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toStableMemoryJsonValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, toStableMemoryJsonValue(entry)]),
+  );
+}
+
+function parseJsonValue(raw: unknown): unknown {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+function parseJsonArray(raw: unknown): unknown[] {
+  const parsed = parseJsonValue(raw);
+  return Array.isArray(parsed) ? parsed : [];
 }

@@ -115,6 +115,77 @@ describe('gsd-db', () => {
     assert.ok(!isDbAvailable(), 'isDbAvailable should be false after close');
   });
 
+
+  test('gsd-db: fresh DB includes VOLVOX v25 state and audit schema', () => {
+    openDatabase(':memory:');
+    const adapter = _getAdapter()!;
+
+    const columns = adapter.prepare('PRAGMA table_info(memories)').all().map((row) => row['name']);
+    for (const col of [
+      'volvox_cell_type',
+      'volvox_role_stability',
+      'volvox_activation_count',
+      'volvox_activation_rate',
+      'volvox_propagation_count',
+      'volvox_dormancy_cycles',
+      'volvox_generation',
+      'volvox_offspring_count',
+      'volvox_connection_density',
+      'volvox_cross_layer_connections',
+      'volvox_fitness',
+      'volvox_kirk_step',
+      'volvox_lifecycle_phase',
+      'volvox_propagation_eligible',
+      'volvox_last_epoch_id',
+      'volvox_last_epoch_at',
+      'volvox_archived_at',
+    ]) {
+      assert.ok(columns.includes(col), `memories.${col} should exist`);
+    }
+
+    const epochTable = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'volvox_epochs'",
+    ).get();
+    const mutationTable = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'volvox_epoch_mutations'",
+    ).get();
+    assert.equal(epochTable?.['name'], 'volvox_epochs');
+    assert.equal(mutationTable?.['name'], 'volvox_epoch_mutations');
+
+    for (const indexName of [
+      'idx_memories_volvox_cell_type',
+      'idx_memories_volvox_lifecycle_phase',
+      'idx_memories_volvox_propagation',
+      'idx_memories_volvox_last_epoch',
+      'idx_memories_volvox_archived',
+      'idx_volvox_epochs_status',
+      'idx_volvox_epoch_mutations_epoch',
+      'idx_volvox_epoch_mutations_memory',
+    ]) {
+      const row = adapter.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+      ).get(indexName);
+      assert.equal(row?.['name'], indexName, `${indexName} should exist`);
+    }
+
+    adapter.prepare(
+      "INSERT INTO memories(id, category, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+    ).run('MEM-VOLVOX-DEFAULT', 'pattern', 'volvox defaults', '2026-04-27T00:00:00.000Z', '2026-04-27T00:00:00.000Z');
+    const row = adapter.prepare(
+      `SELECT volvox_cell_type, volvox_role_stability, volvox_activation_count,
+              volvox_activation_rate, volvox_lifecycle_phase, volvox_propagation_eligible
+         FROM memories WHERE id = ?`,
+    ).get('MEM-VOLVOX-DEFAULT');
+    assert.equal(row?.['volvox_cell_type'], 'UNDIFFERENTIATED');
+    assert.equal(row?.['volvox_role_stability'], 0);
+    assert.equal(row?.['volvox_activation_count'], 0);
+    assert.equal(row?.['volvox_activation_rate'], 0);
+    assert.equal(row?.['volvox_lifecycle_phase'], 'embryonic');
+    assert.equal(row?.['volvox_propagation_eligible'], 0);
+
+    closeDatabase();
+  });
+
   test('gsd-db: double-init idempotency', () => {
     const dbPath = tempDbPath();
     openDatabase(dbPath);
@@ -588,6 +659,84 @@ describe('gsd-db', () => {
       .prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('memories') WHERE name = 'trinity_ity'")
       .get();
     assert.equal(count?.['cnt'], 1, 'Trinity columns should not be duplicated on reopen');
+
+    cleanup(dbPath);
+  });
+
+
+  test('gsd-db: v24-to-v25 VOLVOX migration is idempotent and normalizes malformed state', () => {
+    const dbPath = tempDbPath();
+    const legacyDb = openRawSqliteForTest(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE schema_version (
+        version INTEGER NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_version(version, applied_at) VALUES (24, '2026-04-26T00:00:00.000Z');
+      CREATE TABLE memories (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        source_unit_type TEXT,
+        source_unit_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        superseded_by TEXT DEFAULT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        scope TEXT NOT NULL DEFAULT 'project',
+        tags TEXT NOT NULL DEFAULT '[]',
+        structured_fields TEXT DEFAULT NULL,
+        trinity_layer TEXT NOT NULL DEFAULT 'knowledge',
+        trinity_ity TEXT NOT NULL DEFAULT '{}',
+        trinity_pathy TEXT NOT NULL DEFAULT '{}',
+        trinity_provenance TEXT NOT NULL DEFAULT '{"sourceRelations":[]}',
+        trinity_validation_state TEXT NOT NULL DEFAULT 'unvalidated',
+        trinity_validation_score REAL NOT NULL DEFAULT 0,
+        volvox_cell_type TEXT NOT NULL DEFAULT 'BAD_CELL'
+      );
+      CREATE TABLE memory_relations (
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        rel TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (from_id, to_id, rel)
+      );
+      INSERT INTO memories(id, category, content, created_at, updated_at, volvox_cell_type)
+      VALUES ('partial-volvox', 'pattern', 'partial VOLVOX row', '2026-04-26T00:00:00.000Z', '2026-04-26T00:00:00.000Z', 'BAD_CELL');
+    `);
+    legacyDb.close();
+
+    assert.equal(openDatabase(dbPath), true, 'openDatabase should migrate partially shaped v24 VOLVOX rows');
+
+    let adapter = _getAdapter()!;
+    const names = adapter.prepare('PRAGMA table_info(memories)').all().map((row) => row['name']);
+    for (const col of ['volvox_cell_type', 'volvox_role_stability', 'volvox_lifecycle_phase', 'volvox_archived_at']) {
+      assert.ok(names.includes(col), `${col} should exist after v25 migration`);
+    }
+
+    const row = adapter.prepare(
+      `SELECT volvox_cell_type, volvox_role_stability, volvox_lifecycle_phase
+         FROM memories WHERE id = 'partial-volvox'`,
+    ).get();
+    assert.equal(row?.['volvox_cell_type'], 'UNDIFFERENTIATED', 'malformed VOLVOX cell type should be normalized');
+    assert.equal(row?.['volvox_role_stability'], 0);
+    assert.equal(row?.['volvox_lifecycle_phase'], 'embryonic');
+
+    const epochTable = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'volvox_epochs'",
+    ).get();
+    assert.equal(epochTable?.['name'], 'volvox_epochs');
+
+    closeDatabase();
+    assert.equal(openDatabase(dbPath), true, 'reopening migrated VOLVOX DB should be idempotent');
+    adapter = _getAdapter()!;
+    const count = adapter
+      .prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('memories') WHERE name = 'volvox_cell_type'")
+      .get();
+    assert.equal(count?.['cnt'], 1, 'VOLVOX columns should not duplicate on reopen');
 
     cleanup(dbPath);
   });

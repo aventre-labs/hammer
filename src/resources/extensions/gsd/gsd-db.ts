@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -290,7 +290,24 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         trinity_pathy TEXT NOT NULL DEFAULT '{}',
         trinity_provenance TEXT NOT NULL DEFAULT '{"sourceRelations":[]}',
         trinity_validation_state TEXT NOT NULL DEFAULT 'unvalidated',
-        trinity_validation_score REAL NOT NULL DEFAULT 0
+        trinity_validation_score REAL NOT NULL DEFAULT 0,
+        volvox_cell_type TEXT NOT NULL DEFAULT 'UNDIFFERENTIATED',
+        volvox_role_stability REAL NOT NULL DEFAULT 0,
+        volvox_activation_count INTEGER NOT NULL DEFAULT 0,
+        volvox_activation_rate REAL NOT NULL DEFAULT 0,
+        volvox_propagation_count INTEGER NOT NULL DEFAULT 0,
+        volvox_dormancy_cycles INTEGER NOT NULL DEFAULT 0,
+        volvox_generation INTEGER NOT NULL DEFAULT 0,
+        volvox_offspring_count INTEGER NOT NULL DEFAULT 0,
+        volvox_connection_density INTEGER NOT NULL DEFAULT 0,
+        volvox_cross_layer_connections INTEGER NOT NULL DEFAULT 0,
+        volvox_fitness REAL NOT NULL DEFAULT 0,
+        volvox_kirk_step INTEGER DEFAULT NULL,
+        volvox_lifecycle_phase TEXT NOT NULL DEFAULT 'embryonic',
+        volvox_propagation_eligible INTEGER NOT NULL DEFAULT 0,
+        volvox_last_epoch_id TEXT DEFAULT NULL,
+        volvox_last_epoch_at TEXT DEFAULT NULL,
+        volvox_archived_at TEXT DEFAULT NULL
       )
     `);
 
@@ -336,6 +353,8 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         PRIMARY KEY (from_id, to_id, rel)
       )
     `);
+
+    ensureVolvoxSchema(db);
 
     // FTS5 virtual table mirroring memories.content for fast keyword search.
     // Optional — if the SQLite build lacks FTS5, we fall back to LIKE scans.
@@ -631,6 +650,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_layer ON memories(trinity_layer)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_validation ON memories(trinity_validation_state)");
+      createVolvoxIndexes(db);
 
       db.prepare(
         "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
@@ -706,6 +726,117 @@ export function isMemoriesFtsAvailable(db: DbAdapter): boolean {
 
 function ensureColumn(db: DbAdapter, table: string, column: string, ddl: string): void {
   if (!columnExists(db, table, column)) db.exec(ddl);
+}
+
+function createVolvoxIndexes(db: DbAdapter): void {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_volvox_cell_type ON memories(volvox_cell_type)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_volvox_lifecycle_phase ON memories(volvox_lifecycle_phase)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_volvox_propagation ON memories(volvox_propagation_eligible)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_volvox_last_epoch ON memories(volvox_last_epoch_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_volvox_archived ON memories(volvox_archived_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_volvox_epochs_status ON volvox_epochs(status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_volvox_epochs_started ON volvox_epochs(started_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_volvox_epoch_mutations_epoch ON volvox_epoch_mutations(epoch_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_volvox_epoch_mutations_memory ON volvox_epoch_mutations(memory_id)");
+}
+
+function ensureVolvoxSchema(db: DbAdapter): void {
+  ensureColumn(db, "memories", "volvox_cell_type", "ALTER TABLE memories ADD COLUMN volvox_cell_type TEXT NOT NULL DEFAULT 'UNDIFFERENTIATED'");
+  ensureColumn(db, "memories", "volvox_role_stability", "ALTER TABLE memories ADD COLUMN volvox_role_stability REAL NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_activation_count", "ALTER TABLE memories ADD COLUMN volvox_activation_count INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_activation_rate", "ALTER TABLE memories ADD COLUMN volvox_activation_rate REAL NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_propagation_count", "ALTER TABLE memories ADD COLUMN volvox_propagation_count INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_dormancy_cycles", "ALTER TABLE memories ADD COLUMN volvox_dormancy_cycles INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_generation", "ALTER TABLE memories ADD COLUMN volvox_generation INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_offspring_count", "ALTER TABLE memories ADD COLUMN volvox_offspring_count INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_connection_density", "ALTER TABLE memories ADD COLUMN volvox_connection_density INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_cross_layer_connections", "ALTER TABLE memories ADD COLUMN volvox_cross_layer_connections INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_fitness", "ALTER TABLE memories ADD COLUMN volvox_fitness REAL NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_kirk_step", "ALTER TABLE memories ADD COLUMN volvox_kirk_step INTEGER DEFAULT NULL");
+  ensureColumn(db, "memories", "volvox_lifecycle_phase", "ALTER TABLE memories ADD COLUMN volvox_lifecycle_phase TEXT NOT NULL DEFAULT 'embryonic'");
+  ensureColumn(db, "memories", "volvox_propagation_eligible", "ALTER TABLE memories ADD COLUMN volvox_propagation_eligible INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "memories", "volvox_last_epoch_id", "ALTER TABLE memories ADD COLUMN volvox_last_epoch_id TEXT DEFAULT NULL");
+  ensureColumn(db, "memories", "volvox_last_epoch_at", "ALTER TABLE memories ADD COLUMN volvox_last_epoch_at TEXT DEFAULT NULL");
+  ensureColumn(db, "memories", "volvox_archived_at", "ALTER TABLE memories ADD COLUMN volvox_archived_at TEXT DEFAULT NULL");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS volvox_epochs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'running',
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      started_at TEXT NOT NULL,
+      completed_at TEXT DEFAULT NULL,
+      thresholds_json TEXT NOT NULL DEFAULT '{}',
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      changed_count INTEGER NOT NULL DEFAULT 0,
+      diagnostics_count INTEGER NOT NULL DEFAULT 0,
+      blocking_diagnostics_count INTEGER NOT NULL DEFAULT 0,
+      propagation_eligible_count INTEGER NOT NULL DEFAULT 0,
+      archived_count INTEGER NOT NULL DEFAULT 0,
+      counts_json TEXT NOT NULL DEFAULT '{}',
+      diagnostics_json TEXT NOT NULL DEFAULT '[]',
+      dry_run INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT DEFAULT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS volvox_epoch_mutations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      epoch_id TEXT NOT NULL,
+      memory_id TEXT NOT NULL,
+      before_json TEXT NOT NULL DEFAULT '{}',
+      after_json TEXT NOT NULL DEFAULT '{}',
+      changed_fields_json TEXT NOT NULL DEFAULT '[]',
+      diagnostics_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (epoch_id) REFERENCES volvox_epochs(id)
+    )
+  `);
+
+  createVolvoxIndexes(db);
+  normalizeVolvoxStoredState(db);
+}
+
+function normalizeVolvoxStoredState(db: DbAdapter): void {
+  db.exec(`
+    UPDATE memories
+    SET volvox_cell_type = 'UNDIFFERENTIATED'
+    WHERE volvox_cell_type IS NULL
+       OR volvox_cell_type NOT IN ('UNDIFFERENTIATED', 'SOMATIC_SENSOR', 'SOMATIC_MOTOR', 'STRUCTURAL', 'GERMLINE', 'DORMANT')
+  `);
+  db.exec(`
+    UPDATE memories
+    SET volvox_lifecycle_phase = 'embryonic'
+    WHERE volvox_lifecycle_phase IS NULL
+       OR volvox_lifecycle_phase NOT IN ('embryonic', 'juvenile', 'mature', 'dormant', 'archived')
+  `);
+  db.exec(`
+    UPDATE memories
+    SET volvox_role_stability = CASE
+          WHEN COALESCE(volvox_role_stability, 0) < 0 THEN 0
+          WHEN COALESCE(volvox_role_stability, 0) > 1 THEN 1
+          ELSE COALESCE(volvox_role_stability, 0)
+        END,
+        volvox_activation_count = MAX(0, COALESCE(volvox_activation_count, 0)),
+        volvox_activation_rate = CASE
+          WHEN COALESCE(volvox_activation_rate, 0) < 0 THEN 0
+          WHEN COALESCE(volvox_activation_rate, 0) > 1 THEN 1
+          ELSE COALESCE(volvox_activation_rate, 0)
+        END,
+        volvox_propagation_count = MAX(0, COALESCE(volvox_propagation_count, 0)),
+        volvox_dormancy_cycles = MAX(0, COALESCE(volvox_dormancy_cycles, 0)),
+        volvox_generation = MAX(0, COALESCE(volvox_generation, 0)),
+        volvox_offspring_count = MAX(0, COALESCE(volvox_offspring_count, 0)),
+        volvox_connection_density = MAX(0, COALESCE(volvox_connection_density, 0)),
+        volvox_cross_layer_connections = MAX(0, COALESCE(volvox_cross_layer_connections, 0)),
+        volvox_fitness = CASE
+          WHEN COALESCE(volvox_fitness, 0) < 0 THEN 0
+          WHEN COALESCE(volvox_fitness, 0) > 1 THEN 1
+          ELSE COALESCE(volvox_fitness, 0)
+        END,
+        volvox_propagation_eligible = CASE WHEN COALESCE(volvox_propagation_eligible, 0) = 1 THEN 1 ELSE 0 END
+  `);
 }
 
 function migrateSchema(db: DbAdapter): void {
@@ -1342,6 +1473,15 @@ function migrateSchema(db: DbAdapter): void {
       `);
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 24,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 25) {
+      // v25 — native Hammer VOLVOX lifecycle state and epoch audit rows.
+      ensureVolvoxSchema(db);
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 25,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -3890,6 +4030,7 @@ export function insertMemoryRow(args: {
     provenance: object;
     validation: { state: string; score: number };
   } | null;
+  volvox?: Partial<VolvoxMemoryMetadataRow> | null;
 }): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
@@ -3897,13 +4038,25 @@ export function insertMemoryRow(args: {
        id, category, content, confidence, source_unit_type, source_unit_id,
        created_at, updated_at, scope, tags, structured_fields,
        trinity_layer, trinity_ity, trinity_pathy, trinity_provenance,
-       trinity_validation_state, trinity_validation_score
+       trinity_validation_state, trinity_validation_score,
+       volvox_cell_type, volvox_role_stability, volvox_activation_count,
+       volvox_activation_rate, volvox_propagation_count, volvox_dormancy_cycles,
+       volvox_generation, volvox_offspring_count, volvox_connection_density,
+       volvox_cross_layer_connections, volvox_fitness, volvox_kirk_step,
+       volvox_lifecycle_phase, volvox_propagation_eligible, volvox_last_epoch_id,
+       volvox_last_epoch_at, volvox_archived_at
      )
      VALUES (
        :id, :category, :content, :confidence, :source_unit_type, :source_unit_id,
        :created_at, :updated_at, :scope, :tags, :structured_fields,
        :trinity_layer, :trinity_ity, :trinity_pathy, :trinity_provenance,
-       :trinity_validation_state, :trinity_validation_score
+       :trinity_validation_state, :trinity_validation_score,
+       :volvox_cell_type, :volvox_role_stability, :volvox_activation_count,
+       :volvox_activation_rate, :volvox_propagation_count, :volvox_dormancy_cycles,
+       :volvox_generation, :volvox_offspring_count, :volvox_connection_density,
+       :volvox_cross_layer_connections, :volvox_fitness, :volvox_kirk_step,
+       :volvox_lifecycle_phase, :volvox_propagation_eligible, :volvox_last_epoch_id,
+       :volvox_last_epoch_at, :volvox_archived_at
      )`,
   ).run({
     ":id": args.id,
@@ -3923,6 +4076,23 @@ export function insertMemoryRow(args: {
     ":trinity_provenance": JSON.stringify(args.trinity?.provenance ?? { sourceRelations: [] }),
     ":trinity_validation_state": args.trinity?.validation?.state ?? "unvalidated",
     ":trinity_validation_score": args.trinity?.validation?.score ?? 0,
+    ":volvox_cell_type": args.volvox?.cellType ?? "UNDIFFERENTIATED",
+    ":volvox_role_stability": args.volvox?.roleStability ?? 0,
+    ":volvox_activation_count": args.volvox?.activationCount ?? 0,
+    ":volvox_activation_rate": args.volvox?.activationRate ?? 0,
+    ":volvox_propagation_count": args.volvox?.propagationCount ?? 0,
+    ":volvox_dormancy_cycles": args.volvox?.dormancyCycles ?? 0,
+    ":volvox_generation": args.volvox?.generation ?? 0,
+    ":volvox_offspring_count": args.volvox?.offspringCount ?? 0,
+    ":volvox_connection_density": args.volvox?.connectionDensity ?? 0,
+    ":volvox_cross_layer_connections": args.volvox?.crossLayerConnections ?? 0,
+    ":volvox_fitness": args.volvox?.fitness ?? 0,
+    ":volvox_kirk_step": args.volvox?.kirkStep ?? null,
+    ":volvox_lifecycle_phase": args.volvox?.lifecyclePhase ?? "embryonic",
+    ":volvox_propagation_eligible": args.volvox?.propagationEligible ? 1 : 0,
+    ":volvox_last_epoch_id": args.volvox?.lastEpochId ?? null,
+    ":volvox_last_epoch_at": args.volvox?.lastEpochAt ?? null,
+    ":volvox_archived_at": args.volvox?.archivedAt ?? null,
   });
 }
 
@@ -4216,4 +4386,221 @@ export function insertSavesuccessResult(row: SavesuccessResultRow): void {
     ":blind_spots": row.blind_spots,
     ":validated_at": row.validated_at,
   });
+}
+
+// ---------------------------------------------------------------------------
+// v25 — VOLVOX lifecycle persistence helpers
+// ---------------------------------------------------------------------------
+
+export interface VolvoxMemoryMetadataRow {
+  memoryId: string;
+  cellType: string;
+  roleStability: number;
+  activationCount: number;
+  activationRate: number;
+  propagationCount: number;
+  dormancyCycles: number;
+  generation: number;
+  offspringCount: number;
+  connectionDensity: number;
+  crossLayerConnections: number;
+  fitness: number;
+  kirkStep: number | null;
+  lifecyclePhase: string;
+  propagationEligible: boolean;
+  lastEpochId: string | null;
+  lastEpochAt: string | null;
+  archivedAt: string | null;
+  updatedAt?: string;
+}
+
+export interface VolvoxEpochAuditRow {
+  id: string;
+  status: string;
+  trigger: string;
+  startedAt: string;
+  completedAt: string | null;
+  thresholdsJson: string;
+  processedCount: number;
+  changedCount: number;
+  diagnosticsCount: number;
+  blockingDiagnosticsCount: number;
+  propagationEligibleCount: number;
+  archivedCount: number;
+  countsJson: string;
+  diagnosticsJson: string;
+  dryRun?: boolean;
+  errorMessage?: string | null;
+}
+
+export interface VolvoxEpochMutationRow {
+  epochId: string;
+  memoryId: string;
+  beforeJson: string;
+  afterJson: string;
+  changedFieldsJson: string;
+  diagnosticsJson: string;
+  createdAt: string;
+}
+
+export function updateMemoryVolvoxMetadata(row: VolvoxMemoryMetadataRow): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE memories SET
+       volvox_cell_type = :cell_type,
+       volvox_role_stability = :role_stability,
+       volvox_activation_count = :activation_count,
+       volvox_activation_rate = :activation_rate,
+       volvox_propagation_count = :propagation_count,
+       volvox_dormancy_cycles = :dormancy_cycles,
+       volvox_generation = :generation,
+       volvox_offspring_count = :offspring_count,
+       volvox_connection_density = :connection_density,
+       volvox_cross_layer_connections = :cross_layer_connections,
+       volvox_fitness = :fitness,
+       volvox_kirk_step = :kirk_step,
+       volvox_lifecycle_phase = :lifecycle_phase,
+       volvox_propagation_eligible = :propagation_eligible,
+       volvox_last_epoch_id = :last_epoch_id,
+       volvox_last_epoch_at = :last_epoch_at,
+       volvox_archived_at = :archived_at,
+       updated_at = COALESCE(:updated_at, updated_at)
+     WHERE id = :memory_id`,
+  ).run({
+    ":memory_id": row.memoryId,
+    ":cell_type": row.cellType,
+    ":role_stability": row.roleStability,
+    ":activation_count": row.activationCount,
+    ":activation_rate": row.activationRate,
+    ":propagation_count": row.propagationCount,
+    ":dormancy_cycles": row.dormancyCycles,
+    ":generation": row.generation,
+    ":offspring_count": row.offspringCount,
+    ":connection_density": row.connectionDensity,
+    ":cross_layer_connections": row.crossLayerConnections,
+    ":fitness": row.fitness,
+    ":kirk_step": row.kirkStep,
+    ":lifecycle_phase": row.lifecyclePhase,
+    ":propagation_eligible": row.propagationEligible ? 1 : 0,
+    ":last_epoch_id": row.lastEpochId,
+    ":last_epoch_at": row.lastEpochAt,
+    ":archived_at": row.archivedAt,
+    ":updated_at": row.updatedAt ?? null,
+  });
+}
+
+export function incrementMemoryVolvoxActivation(id: string, updatedAt: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE memories
+     SET hit_count = hit_count + 1,
+         volvox_activation_count = volvox_activation_count + 1,
+         volvox_activation_rate = MIN(1.0, (volvox_activation_count + 1) / 5.0),
+         updated_at = :updated_at
+     WHERE id = :id`,
+  ).run({ ":updated_at": updatedAt, ":id": id });
+}
+
+export function incrementMemoryVolvoxDormancy(memoryIds: string[], now: string): void {
+  if (!currentDb || memoryIds.length === 0) return;
+  const stmt = currentDb.prepare(
+    `UPDATE memories
+     SET volvox_dormancy_cycles = volvox_dormancy_cycles + 1, updated_at = :now
+     WHERE id = :id`,
+  );
+  for (const id of memoryIds) stmt.run({ ":now": now, ":id": id });
+}
+
+export function insertVolvoxEpochRow(row: VolvoxEpochAuditRow): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `INSERT INTO volvox_epochs (
+       id, status, trigger, started_at, completed_at, thresholds_json,
+       processed_count, changed_count, diagnostics_count, blocking_diagnostics_count,
+       propagation_eligible_count, archived_count, counts_json, diagnostics_json, dry_run, error_message
+     ) VALUES (
+       :id, :status, :trigger, :started_at, :completed_at, :thresholds_json,
+       :processed_count, :changed_count, :diagnostics_count, :blocking_diagnostics_count,
+       :propagation_eligible_count, :archived_count, :counts_json, :diagnostics_json, :dry_run, :error_message
+     )
+     ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       trigger = excluded.trigger,
+       started_at = excluded.started_at,
+       completed_at = excluded.completed_at,
+       thresholds_json = excluded.thresholds_json,
+       processed_count = excluded.processed_count,
+       changed_count = excluded.changed_count,
+       diagnostics_count = excluded.diagnostics_count,
+       blocking_diagnostics_count = excluded.blocking_diagnostics_count,
+       propagation_eligible_count = excluded.propagation_eligible_count,
+       archived_count = excluded.archived_count,
+       counts_json = excluded.counts_json,
+       diagnostics_json = excluded.diagnostics_json,
+       dry_run = excluded.dry_run,
+       error_message = excluded.error_message`,
+  ).run({
+    ":id": row.id,
+    ":status": row.status,
+    ":trigger": row.trigger,
+    ":started_at": row.startedAt,
+    ":completed_at": row.completedAt,
+    ":thresholds_json": row.thresholdsJson,
+    ":processed_count": row.processedCount,
+    ":changed_count": row.changedCount,
+    ":diagnostics_count": row.diagnosticsCount,
+    ":blocking_diagnostics_count": row.blockingDiagnosticsCount,
+    ":propagation_eligible_count": row.propagationEligibleCount,
+    ":archived_count": row.archivedCount,
+    ":counts_json": row.countsJson,
+    ":diagnostics_json": row.diagnosticsJson,
+    ":dry_run": row.dryRun ? 1 : 0,
+    ":error_message": row.errorMessage ?? null,
+  });
+}
+
+export function insertVolvoxEpochMutationRow(row: VolvoxEpochMutationRow): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `INSERT INTO volvox_epoch_mutations (
+       epoch_id, memory_id, before_json, after_json, changed_fields_json, diagnostics_json, created_at
+     ) VALUES (
+       :epoch_id, :memory_id, :before_json, :after_json, :changed_fields_json, :diagnostics_json, :created_at
+     )`,
+  ).run({
+    ":epoch_id": row.epochId,
+    ":memory_id": row.memoryId,
+    ":before_json": row.beforeJson,
+    ":after_json": row.afterJson,
+    ":changed_fields_json": row.changedFieldsJson,
+    ":diagnostics_json": row.diagnosticsJson,
+    ":created_at": row.createdAt,
+  });
+}
+
+export interface VolvoxEpochRow {
+  id: string;
+  status: string;
+  trigger: string;
+  started_at: string;
+  completed_at: string | null;
+  thresholds_json: string;
+  processed_count: number;
+  changed_count: number;
+  diagnostics_count: number;
+  blocking_diagnostics_count: number;
+  propagation_eligible_count: number;
+  archived_count: number;
+  counts_json: string;
+  diagnostics_json: string;
+  dry_run: number;
+  error_message: string | null;
+}
+
+export function getLatestVolvoxEpochRow(): VolvoxEpochRow | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM volvox_epochs ORDER BY completed_at DESC, started_at DESC LIMIT 1`,
+  ).get();
+  return (row as unknown as VolvoxEpochRow) ?? null;
 }
