@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   _buildMcpChildEnvForTest,
@@ -45,6 +47,11 @@ test("MCP stdio trust confirmation is abort-aware", () => {
 
   assert.equal(options.timeout, 120_000);
   assert.equal(options.signal, controller.signal);
+});
+
+test("MCP stdio trust prompt opts into confirm-on-timeout fallback", () => {
+  const source = readFileSync(join(import.meta.dirname, "..", "..", "mcp-client", "index.ts"), "utf-8");
+  assert.match(source, /confirmOnTimeout:\s*true/);
 });
 
 test("MCP stdio trust auto-approval is enabled for autoloop/headless env", () => {

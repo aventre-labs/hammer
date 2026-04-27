@@ -273,6 +273,70 @@ test('memory-tools: memory_query ignores superseded memories by default', () => 
   closeDatabase();
 });
 
+test('memory-tools: memory_query supports VOLVOX filters and exposes compact metadata', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'germline eligible memory' });
+  createMemory({ category: 'pattern', content: 'dormant private memory' });
+  const adapter = _getAdapter()!;
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'GERMLINE', volvox_lifecycle_phase = 'mature', volvox_role_stability = 0.85, volvox_propagation_eligible = 1 WHERE id = 'MEM001'",
+  ).run();
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'DORMANT', volvox_lifecycle_phase = 'dormant', volvox_role_stability = 0.2 WHERE id = 'MEM002'",
+  ).run();
+
+  const result = executeMemoryQuery({ query: 'memory', volvoxCellType: 'GERMLINE', propagationEligible: true, includeDormant: false });
+  assert.ok(!result.isError);
+  assert.match(result.content[0].text, /\[volvox cell=GERMLINE phase=mature eligible=true\]/);
+  const hits = result.details.hits as Array<{ id: string; volvox: { cellType: string; lifecyclePhase: string; propagationEligible: boolean } }>;
+  assert.deepEqual(hits.map((hit) => hit.id), ['MEM001']);
+  assert.deepEqual(hits[0].volvox, {
+    cellType: 'GERMLINE',
+    roleStability: 0.85,
+    lifecyclePhase: 'mature',
+    propagationEligible: true,
+    activationCount: 0,
+    activationRate: 0,
+    dormancyCycles: 0,
+    generation: 0,
+    offspringCount: 0,
+    connectionDensity: 0,
+    crossLayerConnections: 0,
+    fitness: 0,
+  });
+  assert.deepEqual(result.details.volvoxSummary, {
+    cellTypes: { GERMLINE: 1 },
+    lifecyclePhases: { mature: 1 },
+    propagationEligible: 1,
+    dormant: 0,
+    archived: 0,
+  });
+
+  const dormant = executeMemoryQuery({ query: '', includeDormant: true, volvoxLifecyclePhase: 'dormant' });
+  assert.ok(!dormant.isError);
+  const dormantHits = dormant.details.hits as Array<{ id: string }>;
+  assert.deepEqual(dormantHits.map((hit) => hit.id), ['MEM002']);
+
+  closeDatabase();
+});
+
+test('memory-tools: memory_query rejects malformed VOLVOX filters', () => {
+  openDatabase(':memory:');
+  createMemory({ category: 'pattern', content: 'filter validation memory' });
+
+  const badCell = executeMemoryQuery({ query: 'memory', volvoxCellType: 'germ_line' });
+  assert.ok(badCell.isError);
+  assert.equal(badCell.details.error, 'invalid_volvox_filter');
+  assert.equal(badCell.details.field, 'volvoxCellType');
+
+  const badPropagation = executeMemoryQuery({ query: 'memory', propagationEligible: 'yes' as never });
+  assert.ok(badPropagation.isError);
+  assert.equal(badPropagation.details.field, 'propagationEligible');
+
+  closeDatabase();
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // gsd_graph
 // ═══════════════════════════════════════════════════════════════════════════

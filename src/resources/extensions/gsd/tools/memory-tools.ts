@@ -203,6 +203,10 @@ export interface MemoryQueryParams {
   reinforce_hits?: boolean;
   trinityLayer?: unknown;
   trinityLens?: { ity?: unknown; pathy?: unknown } | null;
+  volvoxCellType?: unknown;
+  volvoxLifecyclePhase?: unknown;
+  propagationEligible?: unknown;
+  includeDormant?: unknown;
 }
 
 export interface MemoryQueryHit {
@@ -219,6 +223,7 @@ export interface MemoryQueryHit {
   trinity_score: number;
   trinity_rank: number | null;
   trinity_layer_match: boolean;
+  volvox: ReturnType<typeof normalizeMemoryVolvoxForDetails>;
 }
 
 export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResult {
@@ -231,6 +236,8 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
   const scopeFilter = params.scope?.trim() || undefined;
   const tagFilter = params.tag?.trim().toLowerCase() || undefined;
   const trinityLayer = normalizeQueryTrinityLayer(params.trinityLayer);
+  const volvoxFilters = normalizeQueryVolvoxFilters(params);
+  if (volvoxFilters.error) return volvoxFilters.error;
 
   try {
     let ranked: RankedMemory[] = [];
@@ -243,6 +250,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
         tag: tagFilter,
         include_superseded: includeSuperseded,
         ...(trinityLayer ? { trinityLayer } : {}),
+        ...volvoxFilters.filters,
         trinityLens: normalizeQueryTrinityLens(params.trinityLens),
       });
     } else {
@@ -255,7 +263,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
           if (scopeFilter && m.scope !== scopeFilter) return false;
           if (tagFilter && !m.tags.map((t) => t.toLowerCase()).includes(tagFilter)) return false;
           if (trinityLayer && m.trinity?.layer !== trinityLayer) return false;
-          return true;
+          return memoryPassesVolvoxFilters(m, volvoxFilters.filters);
         })
         .slice(0, k)
         .map((memory) => ({
@@ -289,6 +297,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
         sourceUnitType: r.memory.source_unit_type,
         sourceUnitId: r.memory.source_unit_id,
       }),
+      volvox: normalizeMemoryVolvoxForDetails(r.memory.volvox),
     }));
 
     if (params.reinforce_hits) {
@@ -297,7 +306,7 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
 
     const summary = hits.length === 0
       ? "No matching memories."
-      : hits.map((h) => `- [${h.id}] (${h.category}) ${h.content}`).join("\n");
+      : hits.map((h) => `- [${h.id}] (${h.category}) ${h.content}${formatVolvoxSummarySuffix(h.volvox)}`).join("\n");
 
     return {
       content: [{ type: "text", text: summary }],
@@ -307,7 +316,9 @@ export function executeMemoryQuery(params: MemoryQueryParams): ToolExecutionResu
         k,
         returned: hits.length,
         ...(trinityLayer ? { trinityLayer } : {}),
+        ...volvoxFilters.filters,
         hits,
+        volvoxSummary: summarizeVolvoxHits(hits),
       },
     };
   } catch (err) {
@@ -339,6 +350,140 @@ function normalizeQueryTrinityLens(value: unknown): { ity: Record<string, number
     ity: normalizeTrinityVector(raw.ity),
     pathy: normalizeTrinityVector(raw.pathy),
   };
+}
+
+type NormalizedVolvoxFilters = {
+  volvoxCellType?: NonNullable<Memory["volvox"]>["cellType"];
+  volvoxLifecyclePhase?: NonNullable<Memory["volvox"]>["lifecyclePhase"];
+  propagationEligible?: boolean;
+  includeDormant?: boolean;
+};
+
+const VALID_VOLVOX_CELL_TYPES = new Set(["UNDIFFERENTIATED", "SOMATIC_SENSOR", "SOMATIC_MOTOR", "STRUCTURAL", "GERMLINE", "DORMANT"]);
+const VALID_VOLVOX_LIFECYCLE_PHASES = new Set(["embryonic", "juvenile", "mature", "dormant", "archived"]);
+
+function normalizeQueryVolvoxFilters(params: MemoryQueryParams): { filters: NormalizedVolvoxFilters; error?: ToolExecutionResult } {
+  const filters: NormalizedVolvoxFilters = {};
+  const cellType = normalizeVolvoxCellTypeParam(params.volvoxCellType);
+  if (cellType.error) return { filters, error: cellType.error };
+  if (cellType.value) filters.volvoxCellType = cellType.value;
+
+  const lifecyclePhase = normalizeVolvoxLifecyclePhaseParam(params.volvoxLifecyclePhase);
+  if (lifecyclePhase.error) return { filters, error: lifecyclePhase.error };
+  if (lifecyclePhase.value) filters.volvoxLifecyclePhase = lifecyclePhase.value;
+
+  if (params.propagationEligible !== undefined) {
+    if (typeof params.propagationEligible !== "boolean") {
+      return { filters, error: invalidVolvoxFilter("propagationEligible", "Use a boolean true/false value.") };
+    }
+    filters.propagationEligible = params.propagationEligible;
+  }
+
+  if (params.includeDormant !== undefined) {
+    if (typeof params.includeDormant !== "boolean") {
+      return { filters, error: invalidVolvoxFilter("includeDormant", "Use a boolean true/false value.") };
+    }
+    filters.includeDormant = params.includeDormant;
+  }
+
+  return { filters };
+}
+
+function normalizeVolvoxCellTypeParam(value: unknown): { value?: NormalizedVolvoxFilters["volvoxCellType"]; error?: ToolExecutionResult } {
+  if (value == null || value === "") return {};
+  if (typeof value !== "string") return { error: invalidVolvoxFilter("volvoxCellType", "Use one of the canonical VOLVOX cell type strings.") };
+  const normalized = value.trim().toUpperCase();
+  if (!VALID_VOLVOX_CELL_TYPES.has(normalized)) {
+    return { error: invalidVolvoxFilter("volvoxCellType", `Unknown cell type "${value}".`) };
+  }
+  return { value: normalized as NormalizedVolvoxFilters["volvoxCellType"] };
+}
+
+function normalizeVolvoxLifecyclePhaseParam(value: unknown): { value?: NormalizedVolvoxFilters["volvoxLifecyclePhase"]; error?: ToolExecutionResult } {
+  if (value == null || value === "") return {};
+  if (typeof value !== "string") return { error: invalidVolvoxFilter("volvoxLifecyclePhase", "Use one of embryonic, juvenile, mature, dormant, archived.") };
+  const normalized = value.trim().toLowerCase();
+  if (!VALID_VOLVOX_LIFECYCLE_PHASES.has(normalized)) {
+    return { error: invalidVolvoxFilter("volvoxLifecyclePhase", `Unknown lifecycle phase "${value}".`) };
+  }
+  return { value: normalized as NormalizedVolvoxFilters["volvoxLifecyclePhase"] };
+}
+
+function invalidVolvoxFilter(field: string, detail: string): ToolExecutionResult {
+  return {
+    content: [{ type: "text", text: `Error: invalid VOLVOX filter ${field}. ${detail}` }],
+    details: { operation: "memory_query", error: "invalid_volvox_filter", field, remediation: "Use canonical VOLVOX filters exposed by memory_query." },
+    isError: true,
+  };
+}
+
+function memoryPassesVolvoxFilters(memory: Memory, filters: NormalizedVolvoxFilters): boolean {
+  if (filters.volvoxCellType && memory.volvox?.cellType !== filters.volvoxCellType) return false;
+  if (filters.volvoxLifecyclePhase && memory.volvox?.lifecyclePhase !== filters.volvoxLifecyclePhase) return false;
+  if (filters.propagationEligible !== undefined && memory.volvox?.propagationEligible !== filters.propagationEligible) return false;
+  if (filters.includeDormant === false && (memory.volvox?.cellType === "DORMANT" || memory.volvox?.lifecyclePhase === "dormant" || memory.volvox?.lifecyclePhase === "archived")) return false;
+  return true;
+}
+
+function normalizeMemoryVolvoxForDetails(metadata: Memory["volvox"]): {
+  cellType: string;
+  roleStability: number;
+  lifecyclePhase: string;
+  propagationEligible: boolean;
+  lastEpochId?: string;
+  lastEpochAt?: string;
+  archivedAt?: string;
+  activationCount: number;
+  activationRate: number;
+  dormancyCycles: number;
+  generation: number;
+  offspringCount: number;
+  connectionDensity: number;
+  crossLayerConnections: number;
+  fitness: number;
+  kirkStep?: number;
+} {
+  return {
+    cellType: metadata?.cellType ?? "UNDIFFERENTIATED",
+    roleStability: metadata?.roleStability ?? 0,
+    lifecyclePhase: metadata?.lifecyclePhase ?? "embryonic",
+    propagationEligible: metadata?.propagationEligible ?? false,
+    ...(metadata?.lastEpochId ? { lastEpochId: metadata.lastEpochId } : {}),
+    ...(metadata?.lastEpochAt ? { lastEpochAt: metadata.lastEpochAt } : {}),
+    ...(metadata?.archivedAt ? { archivedAt: metadata.archivedAt } : {}),
+    activationCount: metadata?.activationCount ?? 0,
+    activationRate: metadata?.activationRate ?? 0,
+    dormancyCycles: metadata?.dormancyCycles ?? 0,
+    generation: metadata?.generation ?? 0,
+    offspringCount: metadata?.offspringCount ?? 0,
+    connectionDensity: metadata?.connectionDensity ?? 0,
+    crossLayerConnections: metadata?.crossLayerConnections ?? 0,
+    fitness: metadata?.fitness ?? 0,
+    ...(metadata?.kirkStep === undefined ? {} : { kirkStep: metadata.kirkStep }),
+  };
+}
+
+function summarizeVolvoxHits(hits: MemoryQueryHit[]): { cellTypes: Record<string, number>; lifecyclePhases: Record<string, number>; propagationEligible: number; dormant: number; archived: number } {
+  const cellTypes: Record<string, number> = {};
+  const lifecyclePhases: Record<string, number> = {};
+  let propagationEligible = 0;
+  let dormant = 0;
+  let archived = 0;
+  for (const hit of hits) {
+    cellTypes[hit.volvox.cellType] = (cellTypes[hit.volvox.cellType] ?? 0) + 1;
+    lifecyclePhases[hit.volvox.lifecyclePhase] = (lifecyclePhases[hit.volvox.lifecyclePhase] ?? 0) + 1;
+    if (hit.volvox.propagationEligible) propagationEligible++;
+    if (hit.volvox.cellType === "DORMANT" || hit.volvox.lifecyclePhase === "dormant") dormant++;
+    if (hit.volvox.lifecyclePhase === "archived" || hit.volvox.archivedAt) archived++;
+  }
+  return { cellTypes, lifecyclePhases, propagationEligible, dormant, archived };
+}
+
+function formatVolvoxSummarySuffix(volvox: MemoryQueryHit["volvox"]): string {
+  const parts = [`cell=${volvox.cellType}`, `phase=${volvox.lifecyclePhase}`];
+  if (volvox.propagationEligible) parts.push("eligible=true");
+  if (volvox.lifecyclePhase === "dormant" || volvox.cellType === "DORMANT") parts.push("dormant=true");
+  return ` [volvox ${parts.join(" ")}]`;
 }
 
 function includeSupersededMemories(rankedActive: Memory[]): Memory[] {
@@ -401,6 +546,25 @@ function includeSupersededMemories(rankedActive: Memory[]): Memory[] {
         tags,
         structured_fields: structuredFields,
         trinity,
+        volvox: normalizeMemoryVolvoxForDetails({
+          cellType: row["volvox_cell_type"] as never,
+          roleStability: row["volvox_role_stability"] as number,
+          lifecyclePhase: row["volvox_lifecycle_phase"] as never,
+          propagationEligible: row["volvox_propagation_eligible"] === 1,
+          lastEpochId: row["volvox_last_epoch_id"] as string | undefined,
+          lastEpochAt: row["volvox_last_epoch_at"] as string | undefined,
+          archivedAt: row["volvox_archived_at"] as string | undefined,
+          activationCount: row["volvox_activation_count"] as number,
+          activationRate: row["volvox_activation_rate"] as number,
+          propagationCount: row["volvox_propagation_count"] as number,
+          dormancyCycles: row["volvox_dormancy_cycles"] as number,
+          generation: row["volvox_generation"] as number,
+          offspringCount: row["volvox_offspring_count"] as number,
+          connectionDensity: row["volvox_connection_density"] as number,
+          crossLayerConnections: row["volvox_cross_layer_connections"] as number,
+          fitness: row["volvox_fitness"] as number,
+          kirkStep: row["volvox_kirk_step"] as number | undefined,
+        } as Memory["volvox"]) as Memory["volvox"],
       };
     });
   } catch {
@@ -423,6 +587,7 @@ export interface GraphNode {
   content: string;
   confidence: number;
   trinity?: TrinityMetadata;
+  volvox?: MemoryQueryHit["volvox"];
   provenanceSummary?: MemoryGraphProvenanceSummary;
 }
 
@@ -505,6 +670,7 @@ export function executeGsdGraph(params: GsdGraphParams): ToolExecutionResult {
           category: n.category,
           content: n.content,
           trinity: n.trinity,
+          volvox: n.volvox,
           provenanceSummary: n.provenanceSummary,
         })),
         edges: edges.map((e) => ({ from: e.from, to: e.to, rel: e.rel })),

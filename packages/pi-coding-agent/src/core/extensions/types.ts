@@ -86,6 +86,8 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+	/** When true, selector/confirm timeout chooses the currently highlighted option instead of cancelling. */
+	confirmOnTimeout?: boolean;
 	/** When true, the user can select multiple options. The return type becomes `string[]`. */
 	allowMultiple?: boolean;
 	/** When true, text input dialogs should hide typed characters if supported by the client surface. */

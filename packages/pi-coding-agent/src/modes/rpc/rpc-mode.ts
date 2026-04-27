@@ -219,7 +219,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			),
 
 		confirm: (title, message, opts) =>
-			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
+			createDialogPromise(opts, opts?.confirmOnTimeout ? true : false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
 				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
 			),
 

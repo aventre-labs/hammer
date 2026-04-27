@@ -15,6 +15,32 @@ import {
 } from "../tools/memory-tools.js";
 
 export function registerMemoryTools(pi: ExtensionAPI): void {
+  const memoryRelations = Type.Union([
+    Type.Literal("related_to"),
+    Type.Literal("depends_on"),
+    Type.Literal("contradicts"),
+    Type.Literal("elaborates"),
+    Type.Literal("supersedes"),
+    Type.Literal("offspring_of"),
+  ]);
+
+  const volvoxCellTypeSchema = Type.Union([
+    Type.Literal("UNDIFFERENTIATED"),
+    Type.Literal("SOMATIC_SENSOR"),
+    Type.Literal("SOMATIC_MOTOR"),
+    Type.Literal("STRUCTURAL"),
+    Type.Literal("GERMLINE"),
+    Type.Literal("DORMANT"),
+  ], { description: "Optional VOLVOX cell type filter." });
+
+  const volvoxLifecyclePhaseSchema = Type.Union([
+    Type.Literal("embryonic"),
+    Type.Literal("juvenile"),
+    Type.Literal("mature"),
+    Type.Literal("dormant"),
+    Type.Literal("archived"),
+  ], { description: "Optional VOLVOX lifecycle phase filter." });
+
   // ─── capture_thought ────────────────────────────────────────────────────
 
   pi.registerTool({
@@ -139,6 +165,10 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
           description: "Query-side -pathy vector lens used as a ranking boost.",
         })),
       }, { description: "Optional Trinity vector lens for deterministic ranking preference." })),
+      volvoxCellType: Type.Optional(volvoxCellTypeSchema),
+      volvoxLifecyclePhase: Type.Optional(volvoxLifecyclePhaseSchema),
+      propagationEligible: Type.Optional(Type.Boolean({ description: "Only include memories whose VOLVOX propagation eligibility matches this value." })),
+      includeDormant: Type.Optional(Type.Boolean({ description: "When true, include dormant rows; when false, exclude dormant and archived lifecycle rows." })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const ok = await ensureDbOpen();
@@ -173,13 +203,7 @@ export function registerMemoryTools(pi: ExtensionAPI): void {
       }),
       memoryId: Type.Optional(Type.String({ description: "Memory ID (required when mode=query)" })),
       depth: Type.Optional(Type.Number({ description: "Hops to traverse (0–5, default 1)", minimum: 0, maximum: 5 })),
-      rel: Type.Optional(Type.Union([
-        Type.Literal("related_to"),
-        Type.Literal("depends_on"),
-        Type.Literal("contradicts"),
-        Type.Literal("elaborates"),
-        Type.Literal("supersedes"),
-      ], { description: "Only include edges with this relation type" })),
+      rel: Type.Optional(memoryRelations),
     }),
     async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const ok = await ensureDbOpen();

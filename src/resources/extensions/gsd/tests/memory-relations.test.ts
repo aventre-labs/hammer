@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { closeDatabase, openDatabase } from '../gsd-db.ts';
+import { closeDatabase, openDatabase, _getAdapter } from '../gsd-db.ts';
 import { applyMemoryActions, createMemory, supersedeMemory } from '../memory-store.ts';
 import {
   createMemoryRelation,
@@ -21,6 +21,7 @@ test('memory-relations: isValidRelation recognises the canonical set', () => {
   for (const rel of VALID_RELATIONS) {
     assert.ok(isValidRelation(rel));
   }
+  assert.ok(VALID_RELATIONS.includes('offspring_of'), 'offspring_of should be a canonical VOLVOX relation');
   assert.equal(isValidRelation('bogus'), false);
   assert.equal(isValidRelation(null), false);
 });
@@ -169,6 +170,31 @@ test('memory-relations: traverseGraph nodes carry Trinity metadata', () => {
   assert.equal(first?.provenanceSummary?.sourceRelationCount, 1);
   assert.deepStrictEqual(first?.provenanceSummary?.sourceRelations, [{ type: 'derived_from', targetId: 'T03-PLAN', targetKind: 'task-plan', weight: 0.75 }]);
   assert.equal(second?.trinity?.layer, 'knowledge', 'legacy/default graph nodes keep deterministic Trinity metadata');
+
+  closeDatabase();
+});
+
+test('memory-relations: traverseGraph nodes carry VOLVOX metadata and offspring edges', () => {
+  openDatabase(':memory:');
+  createMemory({ category: 'pattern', content: 'parent lifecycle node' });
+  createMemory({ category: 'pattern', content: 'offspring lifecycle node' });
+  const adapter = _getAdapter()!;
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'GERMLINE', volvox_lifecycle_phase = 'mature', volvox_role_stability = 0.9, volvox_propagation_eligible = 1 WHERE id = 'MEM001'",
+  ).run();
+  adapter.prepare(
+    "UPDATE memories SET volvox_cell_type = 'SOMATIC_SENSOR', volvox_lifecycle_phase = 'juvenile', volvox_role_stability = 0.4 WHERE id = 'MEM002'",
+  ).run();
+  assert.equal(createMemoryRelation('MEM001', 'MEM002', 'offspring_of', 0.95), true);
+
+  const graph = traverseGraph('MEM001', 1);
+  const parent = graph.nodes.find((n) => n.id === 'MEM001');
+  const child = graph.nodes.find((n) => n.id === 'MEM002');
+  assert.equal(parent?.volvox?.cellType, 'GERMLINE');
+  assert.equal(parent?.volvox?.lifecyclePhase, 'mature');
+  assert.equal(parent?.volvox?.propagationEligible, true);
+  assert.equal(child?.volvox?.cellType, 'SOMATIC_SENSOR');
+  assert.ok(graph.edges.some((edge) => edge.rel === 'offspring_of' && edge.from === 'MEM001' && edge.to === 'MEM002'));
 
   closeDatabase();
 });

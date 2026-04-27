@@ -16,6 +16,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { registerIAMTools } from '../resources/extensions/gsd/bootstrap/iam-tools.ts';
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 const EXT_DIR = resolve(import.meta.dirname, "../resources/extensions/gsd");
@@ -50,6 +51,14 @@ test("manifest: hammer_milestone_generate_id is advertised in provides.tools", (
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const tools: string[] = manifest.provides?.tools ?? [];
   assert.ok(tools.includes("hammer_milestone_generate_id"), "provides.tools must include 'hammer_milestone_generate_id'");
+});
+
+test("manifest: VOLVOX IAM tools are advertised as hammer_* canonical names", () => {
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  const tools: string[] = manifest.provides?.tools ?? [];
+  for (const name of ["hammer_volvox_epoch", "hammer_volvox_status", "hammer_volvox_diagnose"]) {
+    assert.ok(tools.includes(name), `provides.tools must include '${name}'`);
+  }
 });
 
 // ── Tool registration source tests ────────────────────────────────────────────
@@ -169,6 +178,37 @@ test("memory-tools: capture_thought and memory_query are preserved as-is", () =>
   const src = readFileSync(resolve(BOOTSTRAP_DIR, "memory-tools.ts"), "utf-8");
   assert.ok(src.includes('name: "capture_thought"'), "memory-tools must still register capture_thought");
   assert.ok(src.includes('name: "memory_query"'), "memory-tools must still register memory_query");
+});
+
+test("iam-tools: VOLVOX canonical tools and gsd_* aliases are registered", () => {
+  const src = readFileSync(resolve(BOOTSTRAP_DIR, "iam-tools.ts"), "utf-8");
+  for (const [canonical, alias] of [
+    ["hammer_volvox_epoch", "gsd_volvox_epoch"],
+    ["hammer_volvox_status", "gsd_volvox_status"],
+    ["hammer_volvox_diagnose", "gsd_volvox_diagnose"],
+  ] as const) {
+    assert.ok(src.includes(`name: "${canonical}"`), `iam-tools must register ${canonical} as canonical`);
+    assert.ok(src.includes(`"${alias}"`), `iam-tools must register ${alias} as a legacy alias`);
+    assert.ok(src.includes(`"${alias}", "${canonical}"`), `${alias} must alias ${canonical}`);
+  }
+});
+
+test("iam-tools: VOLVOX legacy aliases share execute handlers with canonical tools", () => {
+  const tools: Array<{ name: string; execute: unknown }> = [];
+  const pi = { registerTool(tool: { name: string; execute: unknown }) { tools.push(tool); } };
+  registerIAMTools(pi as never);
+
+  for (const [canonical, alias] of [
+    ["hammer_volvox_epoch", "gsd_volvox_epoch"],
+    ["hammer_volvox_status", "gsd_volvox_status"],
+    ["hammer_volvox_diagnose", "gsd_volvox_diagnose"],
+  ] as const) {
+    const canonicalTool = tools.find((tool) => tool.name === canonical);
+    const aliasTool = tools.find((tool) => tool.name === alias);
+    assert.ok(canonicalTool, `${canonical} should be registered`);
+    assert.ok(aliasTool, `${alias} should be registered`);
+    assert.equal(aliasTool?.execute, canonicalTool?.execute, `${alias} must share ${canonical}'s execute function`);
+  }
 });
 
 test("query-tools: canonical names are hammer_milestone_status and hammer_checkpoint_db", () => {

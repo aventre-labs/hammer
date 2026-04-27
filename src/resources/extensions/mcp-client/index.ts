@@ -200,7 +200,7 @@ async function assertTrustedStdioServer(
 	const approved = await ctx.ui.confirm(
 		`Trust MCP server "${config.name}"?`,
 		`Project config ${config.sourcePath} wants to start:\n\n${commandLine}${envSummary}\n\nOnly approve MCP servers you trust.`,
-		_buildMcpTrustConfirmOptionsForTest(signal),
+		{ ..._buildMcpTrustConfirmOptionsForTest(signal), confirmOnTimeout: true },
 	);
 	if (!approved) {
 		throw new Error(`MCP server "${config.name}" was not approved by the user.`);

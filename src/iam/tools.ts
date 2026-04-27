@@ -15,7 +15,13 @@ import {
   normalizeTrinityMetadata,
   normalizeTrinityVector,
 } from "./trinity.js";
+import {
+  VOLVOX_CELL_TYPES,
+  VOLVOX_LIFECYCLE_PHASES,
+  normalizeVolvoxMetadata,
+} from "./volvox.js";
 import type { TrinityLayer, TrinityMetadata, TrinityVectorKey } from "./trinity.js";
+import type { VolvoxCellType, VolvoxEpochResult, VolvoxLifecyclePhase } from "./volvox.js";
 import type {
   GraphNode,
   IAMActiveMemoryEntry,
@@ -50,6 +56,9 @@ export const IAM_PUBLIC_TOOL_NAMES = [
   "remember",
   "provenance",
   "check",
+  "volvox_epoch",
+  "volvox_status",
+  "volvox_diagnose",
 ] as const;
 
 const SPIRAL_DEFERRED_REASON = "Omega spiral requires LLM executor not yet wired";
@@ -66,6 +75,10 @@ const DB_UNAVAILABLE_ERROR: IAMError = {
 type TrinityQueryParams = {
   trinityLayer?: unknown;
   trinityLens?: unknown;
+  volvoxCellType?: unknown;
+  volvoxLifecyclePhase?: unknown;
+  propagationEligible?: unknown;
+  includeDormant?: unknown;
 };
 
 type TrinityRememberParams = {
@@ -150,9 +163,51 @@ function normalizeQueryOptions(params: TrinityQueryParams): IAMMemoryQueryOption
   const options: IAMMemoryQueryOptions = {};
   const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
   const trinityLens = normalizeIAMTrinityLens(params.trinityLens);
+  const volvoxCellType = normalizeOptionalVolvoxCellType(params.volvoxCellType);
+  const volvoxLifecyclePhase = normalizeOptionalVolvoxLifecyclePhase(params.volvoxLifecyclePhase);
   if (trinityLayer) options.trinityLayer = trinityLayer;
   if (trinityLens) options.trinityLens = trinityLens;
-  return options.trinityLayer || options.trinityLens ? options : undefined;
+  if (volvoxCellType) options.volvoxCellType = volvoxCellType;
+  if (volvoxLifecyclePhase) options.volvoxLifecyclePhase = volvoxLifecyclePhase;
+  if (typeof params.propagationEligible === "boolean") options.propagationEligible = params.propagationEligible;
+  if (typeof params.includeDormant === "boolean") options.includeDormant = params.includeDormant;
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
+function normalizeOptionalVolvoxCellType(value: unknown): VolvoxCellType | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toUpperCase();
+  return (VOLVOX_CELL_TYPES as readonly string[]).includes(normalized)
+    ? (normalized as VolvoxCellType)
+    : undefined;
+}
+
+function normalizeOptionalVolvoxLifecyclePhase(value: unknown): VolvoxLifecyclePhase | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (VOLVOX_LIFECYCLE_PHASES as readonly string[]).includes(normalized)
+    ? (normalized as VolvoxLifecyclePhase)
+    : undefined;
+}
+
+function validateVolvoxQueryParams(params: TrinityQueryParams): IAMResult<IAMToolOutput> | null {
+  if (params.volvoxCellType !== undefined && !normalizeOptionalVolvoxCellType(params.volvoxCellType)) {
+    return persistenceFailed(
+      `Invalid volvoxCellType filter. Use one of: ${VOLVOX_CELL_TYPES.join(", ")}.`,
+    );
+  }
+  if (params.volvoxLifecyclePhase !== undefined && !normalizeOptionalVolvoxLifecyclePhase(params.volvoxLifecyclePhase)) {
+    return persistenceFailed(
+      `Invalid volvoxLifecyclePhase filter. Use one of: ${VOLVOX_LIFECYCLE_PHASES.join(", ")}.`,
+    );
+  }
+  if (params.propagationEligible !== undefined && typeof params.propagationEligible !== "boolean") {
+    return persistenceFailed("Invalid propagationEligible filter. Use a boolean true/false value.");
+  }
+  if (params.includeDormant !== undefined && typeof params.includeDormant !== "boolean") {
+    return persistenceFailed("Invalid includeDormant filter. Use a boolean true/false value.");
+  }
+  return null;
 }
 
 function normalizeEntryTrinity<T extends { category: string; trinity?: unknown }>(entry: T): T {
@@ -164,8 +219,20 @@ function normalizeEntryTrinity<T extends { category: string; trinity?: unknown }
   };
 }
 
+function normalizeEntryVolvox<T extends { volvox?: unknown }>(entry: T): T {
+  if (!hasOwn(entry, "volvox")) return entry;
+  return {
+    ...entry,
+    volvox: normalizeVolvoxMetadata(entry.volvox),
+  };
+}
+
+function normalizeMemoryEntry<T extends { category: string; trinity?: unknown; volvox?: unknown }>(entry: T): T {
+  return normalizeEntryVolvox(normalizeEntryTrinity(entry));
+}
+
 function normalizeGraphNode(node: GraphNode): GraphNode {
-  const normalized = normalizeEntryTrinity(node);
+  const normalized = normalizeMemoryEntry(node);
   if (!normalized.trinity) return normalized;
   return {
     ...normalized,
@@ -217,12 +284,13 @@ function countByCategory(
 }
 
 function activeMemoryToListEntry(memory: IAMActiveMemoryEntry): IAMMemoryListEntry {
-  return normalizeEntryTrinity({
+  return normalizeMemoryEntry({
     id: memory.id,
     content: memory.content,
     score: memory.confidence,
     category: memory.category,
     ...(hasOwn(memory, "trinity") ? { trinity: memory.trinity } : {}),
+    ...(hasOwn(memory, "volvox") ? { volvox: memory.volvox } : {}),
   });
 }
 
@@ -238,6 +306,48 @@ function countByLayer(
     layers[layer] = (layers[layer] ?? 0) + 1;
   }
   return layers;
+}
+
+function countByVolvoxCellType(
+  memories: Array<{ volvox?: unknown }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const memory of memories) {
+    const cellType = hasOwn(memory, "volvox")
+      ? normalizeVolvoxMetadata(memory.volvox).cellType
+      : "UNDIFFERENTIATED";
+    counts[cellType] = (counts[cellType] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function countByVolvoxLifecycle(
+  memories: Array<{ volvox?: unknown }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const memory of memories) {
+    const phase = hasOwn(memory, "volvox")
+      ? normalizeVolvoxMetadata(memory.volvox).lifecyclePhase
+      : "embryonic";
+    counts[phase] = (counts[phase] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function countVolvoxEligible(
+  memories: Array<{ volvox?: unknown }>,
+): number {
+  return memories.filter((memory) => hasOwn(memory, "volvox") && normalizeVolvoxMetadata(memory.volvox).propagationEligible).length;
+}
+
+function memoryPassesVolvoxOptions(memory: { volvox?: unknown }, options: IAMMemoryQueryOptions | undefined): boolean {
+  if (!options) return true;
+  const metadata = normalizeVolvoxMetadata(memory.volvox);
+  if (options.volvoxCellType && metadata.cellType !== options.volvoxCellType) return false;
+  if (options.volvoxLifecyclePhase && metadata.lifecyclePhase !== options.volvoxLifecyclePhase) return false;
+  if (options.propagationEligible !== undefined && metadata.propagationEligible !== options.propagationEligible) return false;
+  if (options.includeDormant === false && (metadata.cellType === "DORMANT" || metadata.lifecyclePhase === "dormant" || metadata.lifecyclePhase === "archived")) return false;
+  return true;
 }
 
 function formatCategorySummary(
@@ -379,25 +489,29 @@ export async function executeIAMCanonicalSpiral(
 
 export async function executeIAMRecall(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number; category?: string; trinityLayer?: unknown; trinityLens?: unknown },
+  params: { query: string; k?: number; category?: string; trinityLayer?: unknown; trinityLens?: unknown; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
   const memories = adapters
     .queryMemories(params.query, clampLimit(params.k, 10), params.category, normalizeQueryOptions(params))
-    .map(normalizeEntryTrinity);
+    .map(normalizeMemoryEntry);
   return ok({ kind: "memory-list", memories });
 }
 
 export async function executeIAMQuick(
   adapters: IAMToolAdapters,
-  params: { query: string },
+  params: { query: string; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
-  const memories = adapters.queryMemories(params.query, 1).slice(0, 1).map(normalizeEntryTrinity);
+  const memories = adapters.queryMemories(params.query, 1, undefined, normalizeQueryOptions(params)).slice(0, 1).map(normalizeMemoryEntry);
   return ok({ kind: "memory-list", memories });
 }
 
@@ -409,7 +523,7 @@ export async function executeIAMRefract(
   if (unavailable) return unavailable;
 
   const memories = adapters.queryMemories(params.query, 5).map((memory) => ({
-    ...normalizeEntryTrinity(memory),
+    ...normalizeMemoryEntry(memory),
     content: `[${params.lens} lens] ${memory.content}`,
   }));
   return ok({ kind: "memory-list", memories });
@@ -455,22 +569,26 @@ export async function executeIAMRemember(
     content: params.content,
     category: params.category,
     trinity,
+    volvox: normalizeVolvoxMetadata(null),
   });
 }
 
 export async function executeIAMHarvest(
   adapters: IAMToolAdapters,
-  params: { limit?: number; category?: string; trinityLayer?: unknown },
+  params: { limit?: number; category?: string; trinityLayer?: unknown; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
   const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
   const active = adapters
-    .getActiveMemories(clampLimit(params.limit, 30))
-    .map(normalizeEntryTrinity)
+    .getActiveMemories(clampLimit(params.limit, 30), normalizeQueryOptions(params))
+    .map(normalizeMemoryEntry)
     .filter((memory) => !params.category || memory.category === params.category)
-    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer);
+    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer)
+    .filter((memory) => memoryPassesVolvoxOptions(memory, normalizeQueryOptions(params)));
   const categories = countByCategory(active);
   const summary = formatCategorySummary(categories, active.length);
   const memories = active.map((memory) => ({
@@ -483,38 +601,53 @@ export async function executeIAMHarvest(
 
 export async function executeIAMCluster(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown },
+  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
   const memories = adapters
     .queryMemories(params.query, clampLimit(params.k, 20), undefined, normalizeQueryOptions(params))
-    .map(normalizeEntryTrinity);
+    .map(normalizeMemoryEntry);
   return ok({
     kind: "knowledge-map",
     categories: countByCategory(memories),
     layers: countByLayer(memories),
+    volvox: {
+      cellTypes: countByVolvoxCellType(memories),
+      lifecyclePhases: countByVolvoxLifecycle(memories),
+      propagationEligible: countVolvoxEligible(memories),
+    },
     total: memories.length,
   });
 }
 
 export async function executeIAMLandscape(
   adapters: IAMToolAdapters,
-  params: { limit?: number; trinityLayer?: unknown },
+  params: { limit?: number; trinityLayer?: unknown; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
   const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
   const memories = adapters
-    .getActiveMemories(clampLimit(params.limit, 50))
-    .map(normalizeEntryTrinity)
-    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer);
+    .getActiveMemories(clampLimit(params.limit, 50), normalizeQueryOptions(params))
+    .map(normalizeMemoryEntry)
+    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer)
+    .filter((memory) => memoryPassesVolvoxOptions(memory, normalizeQueryOptions(params)));
   return ok({
     kind: "knowledge-map",
     categories: countByCategory(memories),
     layers: countByLayer(memories),
+    volvox: {
+      cellTypes: countByVolvoxCellType(memories),
+      lifecyclePhases: countByVolvoxLifecycle(memories),
+      propagationEligible: countVolvoxEligible(memories),
+    },
     total: memories.length,
   });
 }
@@ -528,10 +661,10 @@ export async function executeIAMBridge(
 
   const limit = clampLimit(params.k, 10);
   const combined = new Map<string, IAMMemoryListEntry>();
-  for (const memory of adapters.queryMemories(params.queryA, limit).map(normalizeEntryTrinity)) {
+  for (const memory of adapters.queryMemories(params.queryA, limit).map(normalizeMemoryEntry)) {
     combined.set(memory.id, memory);
   }
-  for (const memory of adapters.queryMemories(params.queryB, limit).map(normalizeEntryTrinity)) {
+  for (const memory of adapters.queryMemories(params.queryB, limit).map(normalizeMemoryEntry)) {
     if (!combined.has(memory.id)) {
       combined.set(memory.id, memory);
     }
@@ -549,12 +682,12 @@ export async function executeIAMCompare(
 
   const limit = clampLimit(params.k, 10);
   const memoriesA = adapters.queryMemories(params.queryA, limit).map((memory) => ({
-    ...normalizeEntryTrinity(memory),
+    ...normalizeMemoryEntry(memory),
     id: `A:${memory.id}`,
     content: `[A:${params.queryA}] ${memory.content}`,
   }));
   const memoriesB = adapters.queryMemories(params.queryB, limit).map((memory) => ({
-    ...normalizeEntryTrinity(memory),
+    ...normalizeMemoryEntry(memory),
     id: `B:${memory.id}`,
     content: `[B:${params.queryB}] ${memory.content}`,
   }));
@@ -663,14 +796,16 @@ function formatScore(value: number): string {
 
 export async function executeIAMTension(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown },
+  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown; volvoxCellType?: unknown; volvoxLifecyclePhase?: unknown; propagationEligible?: unknown; includeDormant?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
+  const invalidVolvox = validateVolvoxQueryParams(params);
+  if (invalidVolvox) return invalidVolvox;
 
   const memories = adapters
     .queryMemories(params.query, clampLimit(params.k, 10), undefined, normalizeQueryOptions(params))
-    .map(normalizeEntryTrinity)
+    .map(normalizeMemoryEntry)
     .map((memory, index) => {
       const tension = trinityTensionSignals(memory);
       return {
@@ -688,6 +823,82 @@ export async function executeIAMTension(
     })
     .map((entry) => entry.memory);
   return ok({ kind: "memory-list", memories });
+}
+
+export async function executeIAMVolvoxEpoch(
+  adapters: IAMToolAdapters,
+  params: { trigger?: unknown; dryRun?: unknown; thresholds?: unknown; now?: unknown } = {},
+): Promise<IAMResult<IAMToolOutput>> {
+  const unavailable = requireDb(adapters);
+  if (unavailable) return unavailable;
+  if (!adapters.runVolvoxEpoch) return executorNotWired("hammer_volvox_epoch");
+  if (params.thresholds !== undefined && (params.thresholds == null || typeof params.thresholds !== "object" || Array.isArray(params.thresholds))) {
+    return persistenceFailed("Invalid VOLVOX thresholds payload. Provide an object with numeric threshold overrides or omit thresholds.");
+  }
+
+  try {
+    const epoch = await adapters.runVolvoxEpoch({
+      ...(typeof params.trigger === "string" && params.trigger.trim() ? { trigger: params.trigger.trim() } : {}),
+      ...(typeof params.dryRun === "boolean" ? { dryRun: params.dryRun } : {}),
+      ...(params.thresholds === undefined ? {} : { thresholds: params.thresholds as Record<string, unknown> }),
+      ...(typeof params.now === "string" && params.now.trim() ? { now: params.now.trim() } : {}),
+    });
+    return ok({ kind: "volvox-epoch", epoch });
+  } catch (cause) {
+    return persistenceFailed("VOLVOX epoch execution failed. Inspect hammer_volvox_diagnose for persisted diagnostics before retrying.", cause);
+  }
+}
+
+export async function executeIAMVolvoxStatus(
+  adapters: IAMToolAdapters,
+  _params: Record<string, never> = {},
+): Promise<IAMResult<IAMToolOutput>> {
+  const unavailable = requireDb(adapters);
+  if (unavailable) return unavailable;
+  if (!adapters.getVolvoxStatus) return executorNotWired("hammer_volvox_status");
+
+  try {
+    const status = await adapters.getVolvoxStatus();
+    const latestEpoch = status.epochResult ?? status.latestEpoch;
+    return ok({
+      kind: "volvox-status",
+      ...(latestEpoch ? { epoch: latestEpoch } : {}),
+      memories: status.memories.map(normalizeMemoryEntry),
+      diagnostics: status.diagnostics,
+    });
+  } catch (cause) {
+    return persistenceFailed("VOLVOX status read failed. Ensure the Hammer database is open and schema v25 migrations completed.", cause);
+  }
+}
+
+export async function executeIAMVolvoxDiagnose(
+  adapters: IAMToolAdapters,
+  params: { memoryId?: unknown; includeInfo?: unknown } = {},
+): Promise<IAMResult<IAMToolOutput>> {
+  const unavailable = requireDb(adapters);
+  if (unavailable) return unavailable;
+  if (!adapters.diagnoseVolvox) return executorNotWired("hammer_volvox_diagnose");
+
+  try {
+    const diagnostics = await adapters.diagnoseVolvox({
+      ...(typeof params.memoryId === "string" && params.memoryId.trim() ? { memoryId: params.memoryId.trim() } : {}),
+      ...(typeof params.includeInfo === "boolean" ? { includeInfo: params.includeInfo } : {}),
+    });
+    return ok({ kind: "volvox-diagnostics", diagnostics: diagnostics.diagnostics, blocking: diagnostics.blocking });
+  } catch (cause) {
+    return persistenceFailed("VOLVOX diagnostics read failed. Inspect database availability and retry hammer_volvox_diagnose.", cause);
+  }
+}
+
+function executorNotWired(toolName: string): IAMResult<IAMToolOutput> {
+  return {
+    ok: false,
+    error: {
+      iamErrorKind: "executor-not-wired",
+      remediation: `${toolName} requires VOLVOX memory-store adapters from the Hammer extension runtime. Wire run/status/diagnose adapters before calling this tool.`,
+      persistenceStatus: "not-attempted",
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

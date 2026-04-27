@@ -16,7 +16,8 @@ import {
   executeIAMProvenance, executeIAMExplore, executeIAMTension,
   executeIAMRune, executeIAMValidate, executeIAMAssess,
   executeIAMCompile, executeIAMCheck, executeIAMSpiral,
-  executeIAMCanonicalSpiral,
+  executeIAMCanonicalSpiral, executeIAMVolvoxEpoch,
+  executeIAMVolvoxStatus, executeIAMVolvoxDiagnose,
 } from "../../src/iam/tools.js";
 import type { TrinityMetadata } from "../../src/iam/trinity.js";
 import type { IAMError, IAMResult, IAMToolAdapters, IAMToolOutput } from "../../src/iam/types.js";
@@ -47,8 +48,34 @@ const TRINITY_B: TrinityMetadata = {
   validation: { state: "contested", score: 0.25 },
 };
 
-const MEM_A = { id: "m001", content: "hammer is aware", score: 0.9, category: "architecture", trinity: TRINITY_A };
-const MEM_B = { id: "m002", content: "IAM governs", score: 0.7, category: "convention", trinity: TRINITY_B };
+const MEM_A = {
+  id: "m001",
+  content: "hammer is aware",
+  score: 0.9,
+  category: "architecture",
+  trinity: TRINITY_A,
+  volvox: {
+    cellType: "GERMLINE" as const,
+    roleStability: 0.85,
+    lifecyclePhase: "mature" as const,
+    propagationEligible: true,
+    lastEpochId: "epoch-1",
+    lastEpochAt: "2026-04-27T00:00:00.000Z",
+  },
+};
+const MEM_B = {
+  id: "m002",
+  content: "IAM governs",
+  score: 0.7,
+  category: "convention",
+  trinity: TRINITY_B,
+  volvox: {
+    cellType: "DORMANT" as const,
+    roleStability: 0.2,
+    lifecyclePhase: "dormant" as const,
+    propagationEligible: false,
+  },
+};
 
 const ACTIVE_MEM_A = { ...MEM_A, confidence: 0.9 };
 const ACTIVE_MEM_B = { ...MEM_B, confidence: 0.7 };
@@ -73,7 +100,71 @@ const EXPECTED_TOOL_NAMES = [
   "remember",
   "provenance",
   "check",
+  "volvox_epoch",
+  "volvox_status",
+  "volvox_diagnose",
 ] as const;
+
+const stubVolvoxEpoch = {
+  epochId: "volvox-test-epoch",
+  status: "completed" as const,
+  trigger: "manual",
+  startedAt: "2026-04-27T00:00:00.000Z",
+  completedAt: "2026-04-27T00:00:00.000Z",
+  thresholds: {
+    activationRate: 0.5,
+    offspringCount: 3,
+    crossLayerConnections: 3,
+    connectionDensity: 5,
+    dormancyCycles: 10,
+    dormantArchiveCycles: 30,
+    stableRole: 0.9,
+    propagationStability: 0.8,
+  },
+  thresholdsJson: JSON.stringify({
+    activationRate: 0.5,
+    offspringCount: 3,
+    crossLayerConnections: 3,
+    connectionDensity: 5,
+    dormancyCycles: 10,
+    dormantArchiveCycles: 30,
+    stableRole: 0.9,
+    propagationStability: 0.8,
+  }),
+  phases: ["normalize", "classify", "stabilize", "propagate", "diagnose"] as const,
+  records: [],
+  diffs: [],
+  diagnostics: [],
+  diagnosticsJson: "[]",
+  counts: {
+    processed: 0,
+    changed: 0,
+    diagnostics: 0,
+    blockingDiagnostics: 0,
+    byCellType: {
+      UNDIFFERENTIATED: 0,
+      SOMATIC_SENSOR: 0,
+      SOMATIC_MOTOR: 0,
+      STRUCTURAL: 0,
+      GERMLINE: 0,
+      DORMANT: 0,
+    },
+    propagationEligible: 0,
+    archived: 0,
+  },
+};
+
+const stubVolvoxDiagnostic = {
+  epochId: "volvox-test-epoch",
+  memoryId: "m002",
+  code: "false-germline" as const,
+  severity: "blocking" as const,
+  phase: "diagnose" as const,
+  message: "Somatic memory claimed propagation eligibility.",
+  remediation: "Run hammer_volvox_diagnose and clear propagation eligibility before retrying the epoch.",
+  timestamp: "2026-04-27T00:00:00.000Z",
+  metadata: { cellType: "SOMATIC_SENSOR" },
+};
 
 const stubAdapters: IAMToolAdapters = {
   isDbAvailable: () => true,
@@ -81,6 +172,10 @@ const stubAdapters: IAMToolAdapters = {
     [MEM_A, MEM_B]
       .filter((memory) => !category || memory.category === category)
       .filter((memory) => !options?.trinityLayer || memory.trinity.layer === options.trinityLayer)
+      .filter((memory) => !options?.volvoxCellType || memory.volvox.cellType === options.volvoxCellType)
+      .filter((memory) => !options?.volvoxLifecyclePhase || memory.volvox.lifecyclePhase === options.volvoxLifecyclePhase)
+      .filter((memory) => options?.propagationEligible === undefined || memory.volvox.propagationEligible === options.propagationEligible)
+      .filter((memory) => options?.includeDormant !== false || memory.volvox.cellType !== "DORMANT")
       .slice(0, k),
   getActiveMemories: (limit = 30) => [ACTIVE_MEM_A, ACTIVE_MEM_B].slice(0, limit),
   createMemory: (fields) => `created-${fields.category}-001`,
@@ -91,6 +186,7 @@ const stubAdapters: IAMToolAdapters = {
       content: "test node",
       confidence: 0.8,
       trinity: TRINITY_A,
+      volvox: MEM_A.volvox,
       provenanceSummary: {
         sourceUnitType: "task",
         sourceUnitId: "M001/S04/T01",
@@ -100,6 +196,12 @@ const stubAdapters: IAMToolAdapters = {
     }],
     edges: [{ fromId: startId, toId: "m999", relation: "related_to" }],
   }),
+  runVolvoxEpoch: (options) => ({
+    ...stubVolvoxEpoch,
+    trigger: options?.trigger ?? stubVolvoxEpoch.trigger,
+  }),
+  getVolvoxStatus: () => ({ latestEpoch: stubVolvoxEpoch, memories: [MEM_A], diagnostics: [stubVolvoxDiagnostic] }),
+  diagnoseVolvox: () => ({ diagnostics: [stubVolvoxDiagnostic], blocking: [stubVolvoxDiagnostic] }),
 };
 
 const noDbAdapters: IAMToolAdapters = {
@@ -218,6 +320,51 @@ test("executeIAMQuick returns at most one top memory", async () => {
   assert.equal(output.memories.length, 1);
   assert.equal(output.memories[0].id, "m001");
   assert.equal(output.memories[0].score, 0.9);
+  assert.equal(output.memories[0].volvox?.cellType, "GERMLINE");
+});
+
+test("executeIAMRecall passes VOLVOX filters through the adapter and preserves metadata", async () => {
+  let seenOptions: unknown;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    queryMemories: (_q, _k, _category, options) => {
+      seenOptions = options;
+      return [MEM_A];
+    },
+  };
+
+  const output = assertKind(
+    assertOk(
+      await executeIAMRecall(adapters, {
+        query: "hammer",
+        volvoxCellType: "germline",
+        volvoxLifecyclePhase: "mature",
+        propagationEligible: true,
+        includeDormant: false,
+      }),
+      "recall VOLVOX filters",
+    ),
+    "memory-list",
+  );
+
+  assert.deepEqual(seenOptions, {
+    volvoxCellType: "GERMLINE",
+    volvoxLifecyclePhase: "mature",
+    propagationEligible: true,
+    includeDormant: false,
+  });
+  assert.equal(output.memories[0].volvox?.cellType, "GERMLINE");
+  assert.equal(output.memories[0].volvox?.propagationEligible, true);
+});
+
+test("executeIAMRecall rejects malformed VOLVOX filters with remediation", async () => {
+  const error = assertError(
+    await executeIAMRecall(stubAdapters, { query: "hammer", volvoxCellType: "not-a-cell" }),
+    "persistence-failed",
+    "recall bad VOLVOX filter",
+  );
+
+  assert.ok(error.remediation.includes("volvoxCellType"));
 });
 
 test("executeIAMRefract reflects the requested lens in memory content", async () => {
@@ -364,6 +511,8 @@ test("executeIAMProvenance walks graph provenance from a memory id", async () =>
   assert.equal(output.nodes.length, 1);
   assert.equal(output.nodes[0].id, "m001");
   assert.equal(output.nodes[0].trinity?.layer, "knowledge");
+  assert.equal(output.nodes[0].volvox?.cellType, "GERMLINE");
+  assert.equal(output.nodes[0].volvox?.propagationEligible, true);
   assert.equal(output.nodes[0].provenanceSummary?.sourceUnitId, "M001/S04/T01");
   assert.equal(output.nodes[0].provenanceSummary?.sourceRelationCount, 1);
   assert.equal(output.edges.length, 1);
@@ -424,6 +573,53 @@ test("executeIAMTension ranks contested and vector-opposed memories ahead of pla
   assert.ok(output.memories[1].content.includes("hammer is aware"));
 });
 
+test("executeIAMVolvoxEpoch delegates to the VOLVOX adapter and returns epoch diagnostics", async () => {
+  let seenOptions: unknown;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    runVolvoxEpoch: (options) => {
+      seenOptions = options;
+      return {
+        ...stubVolvoxEpoch,
+        status: "blocked",
+        diagnostics: [stubVolvoxDiagnostic],
+        diagnosticsJson: JSON.stringify([stubVolvoxDiagnostic]),
+      };
+    },
+  };
+
+  const output = assertKind(
+    assertOk(await executeIAMVolvoxEpoch(adapters, { trigger: "manual-test", dryRun: true, thresholds: { activationRate: 0.6 } }), "volvox epoch"),
+    "volvox-epoch",
+  );
+
+  assert.deepEqual(seenOptions, { trigger: "manual-test", dryRun: true, thresholds: { activationRate: 0.6 } });
+  assert.equal(output.epoch.status, "blocked");
+  assert.equal(output.epoch.diagnostics[0].code, "false-germline");
+});
+
+test("executeIAMVolvoxStatus delegates to the status adapter and preserves metadata", async () => {
+  const output = assertKind(
+    assertOk(await executeIAMVolvoxStatus(stubAdapters, {}), "volvox status"),
+    "volvox-status",
+  );
+
+  assert.equal(output.epoch?.epochId, "volvox-test-epoch");
+  assert.equal(output.memories[0].volvox?.cellType, "GERMLINE");
+  assert.equal(output.diagnostics[0].memoryId, "m002");
+});
+
+test("executeIAMVolvoxDiagnose delegates to the diagnostics adapter", async () => {
+  const output = assertKind(
+    assertOk(await executeIAMVolvoxDiagnose(stubAdapters, { memoryId: "m002", includeInfo: true }), "volvox diagnose"),
+    "volvox-diagnostics",
+  );
+
+  assert.equal(output.diagnostics.length, 1);
+  assert.equal(output.blocking.length, 1);
+  assert.equal(output.blocking[0].code, "false-germline");
+});
+
 // ── Group B: DB-unavailable and persistence-failure paths ───────────────────
 
 test("executeIAMRecall returns a structured persistence-failed error when DB is unavailable", async () => {
@@ -465,6 +661,45 @@ test("executeIAMRemember returns persistence-failed when createMemory cannot per
 
   assert.equal(error.persistenceStatus, "not-attempted");
   assert.ok(error.remediation.includes("hammer_remember"));
+});
+
+test("VOLVOX tools return executor-not-wired when adapters omit lifecycle methods", async () => {
+  const unwired: IAMToolAdapters = {
+    queryMemories: stubAdapters.queryMemories,
+    getActiveMemories: stubAdapters.getActiveMemories,
+    createMemory: stubAdapters.createMemory,
+    traverseGraph: stubAdapters.traverseGraph,
+    isDbAvailable: stubAdapters.isDbAvailable,
+  };
+
+  for (const [name, result] of [
+    ["hammer_volvox_epoch", await executeIAMVolvoxEpoch(unwired, { trigger: "manual" })],
+    ["hammer_volvox_status", await executeIAMVolvoxStatus(unwired, {})],
+    ["hammer_volvox_diagnose", await executeIAMVolvoxDiagnose(unwired, {})],
+  ] as const) {
+    const error = assertError(result, "executor-not-wired", name);
+    assert.ok(error.remediation.includes(name));
+  }
+});
+
+test("VOLVOX tools report DB unavailable before adapter execution", async () => {
+  const error = assertError(
+    await executeIAMVolvoxStatus(noDbAdapters, {}),
+    "persistence-failed",
+    "volvox status no db",
+  );
+
+  assert.equal(error.persistenceStatus, "not-attempted");
+});
+
+test("executeIAMVolvoxEpoch rejects malformed threshold payloads", async () => {
+  const error = assertError(
+    await executeIAMVolvoxEpoch(stubAdapters, { thresholds: "unsafe" }),
+    "persistence-failed",
+    "volvox bad thresholds",
+  );
+
+  assert.ok(error.remediation.includes("thresholds"));
 });
 
 // ── Group C: IAM governance tools ────────────────────────────────────────────
@@ -552,7 +787,7 @@ test("executeIAMCheck reports the native IAM catalog and DB availability", async
   assert.deepEqual(output.tools, [...EXPECTED_TOOL_NAMES]);
   assert.equal(output.tools.length, EXPECTED_TOOL_NAMES.length);
   assert.equal(new Set(output.tools).size, output.tools.length);
-  assert.equal(output.tools.length, 19);
+  assert.equal(output.tools.length, 22);
   assert.equal(typeof output.kernelVersion, "string");
   assert.ok(output.kernelVersion.length > 0);
   assert.equal(output.dbAvailable, true);

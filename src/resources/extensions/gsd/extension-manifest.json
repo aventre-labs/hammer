@@ -33,6 +33,9 @@
       "hammer_harvest",
       "hammer_remember",
       "hammer_provenance",
+      "hammer_volvox_epoch",
+      "hammer_volvox_status",
+      "hammer_volvox_diagnose",
       "hammer_check"
     ],
     "commands": ["hammer", "kill", "worktree", "exit"],

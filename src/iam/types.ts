@@ -16,6 +16,7 @@ import type {
   VolvoxDiagnostic,
   VolvoxEpochResult,
   VolvoxMetadata,
+  VolvoxThresholds,
 } from "./volvox.js";
 
 // ---------------------------------------------------------------------------
@@ -272,7 +273,7 @@ export type IAMToolOutput =
   | { kind: "rune-contract"; rune: RuneContract }
   | { kind: "rune-list"; runes: RuneContract[] }
   | { kind: "savesuccess-report"; scorecard: SavesuccessScorecard; report: string; success: boolean }
-  | { kind: "knowledge-map"; categories: Record<string, number>; layers?: Record<string, number>; total: number }
+  | { kind: "knowledge-map"; categories: Record<string, number>; layers?: Record<string, number>; volvox?: { cellTypes: Record<string, number>; lifecyclePhases: Record<string, number>; propagationEligible: number }; total: number }
   | { kind: "graph-walk"; nodes: GraphNode[]; edges: GraphEdge[] }
   | { kind: "volvox-epoch"; epoch: VolvoxEpochResult }
   | { kind: "volvox-status"; epoch?: VolvoxEpochResult; memories: IAMMemoryListEntry[]; diagnostics: VolvoxDiagnostic[] }
@@ -288,6 +289,10 @@ export interface IAMTrinityLens {
 export interface IAMMemoryQueryOptions {
   trinityLayer?: TrinityLayer;
   trinityLens?: IAMTrinityLens;
+  volvoxCellType?: VolvoxMetadata["cellType"];
+  volvoxLifecyclePhase?: VolvoxMetadata["lifecyclePhase"];
+  propagationEligible?: boolean;
+  includeDormant?: boolean;
 }
 
 export type IAMCreateMemoryTrinityInput = Partial<TrinityMetadata> | null;
@@ -302,10 +307,20 @@ export interface IAMCreateMemoryFields {
   trinity?: IAMCreateMemoryTrinityInput;
 }
 
+export interface IAMToolVolvoxStatus {
+  latestEpoch: VolvoxEpochResult | null;
+  memories: IAMMemoryListEntry[];
+  diagnostics: VolvoxDiagnostic[];
+  epochResult?: VolvoxEpochResult | null;
+}
+
 export interface IAMToolAdapters {
   queryMemories: (query: string, k?: number, category?: string, options?: IAMMemoryQueryOptions) => IAMMemoryListEntry[];
-  getActiveMemories: (limit?: number) => IAMActiveMemoryEntry[];
+  getActiveMemories: (limit?: number, options?: IAMMemoryQueryOptions) => IAMActiveMemoryEntry[];
   createMemory: (fields: IAMCreateMemoryFields) => string | null;
   traverseGraph: (startId: string, depth?: number) => { nodes: GraphNode[]; edges: Array<{ fromId: string; toId: string; relation: string }> };
+  runVolvoxEpoch?: (options?: { trigger?: string; now?: string | Date; thresholds?: Partial<VolvoxThresholds> | null; dryRun?: boolean }) => VolvoxEpochResult | Promise<VolvoxEpochResult>;
+  getVolvoxStatus?: () => IAMToolVolvoxStatus | Promise<IAMToolVolvoxStatus>;
+  diagnoseVolvox?: (params?: { memoryId?: string; includeInfo?: boolean }) => { diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] } | Promise<{ diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] }>;
   isDbAvailable: () => boolean;
 }

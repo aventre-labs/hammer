@@ -9,6 +9,8 @@ import {
   queryMemoriesRanked,
   getActiveMemoriesRanked,
   createMemory,
+  runVolvoxEpoch,
+  getVolvoxStatus,
 } from "../memory-store.js";
 import { traverseGraph } from "../memory-relations.js";
 import {
@@ -31,12 +33,16 @@ import {
   executeIAMCheck,
   executeIAMSpiral,
   executeIAMCanonicalSpiral,
+  executeIAMVolvoxEpoch,
+  executeIAMVolvoxStatus,
+  executeIAMVolvoxDiagnose,
 } from "../../../../iam/tools.js";
 import type {
   IAMError,
   IAMResult,
   IAMToolAdapters,
   IAMToolOutput,
+  IAMToolVolvoxStatus,
 } from "../../../../iam/types.js";
 
 function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
@@ -49,11 +55,20 @@ function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
         ...(category ? { category } : {}),
         ...(options?.trinityLayer ? { trinityLayer: options.trinityLayer } : {}),
         ...(options?.trinityLens ? { trinityLens: options.trinityLens } : {}),
+        ...(options?.volvoxCellType ? { volvoxCellType: options.volvoxCellType } : {}),
+        ...(options?.volvoxLifecyclePhase ? { volvoxLifecyclePhase: options.volvoxLifecyclePhase } : {}),
+        ...(options?.propagationEligible === undefined ? {} : { propagationEligible: options.propagationEligible }),
+        ...(options?.includeDormant === undefined ? {} : { includeDormant: options.includeDormant }),
       })
-        .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, category: r.memory.category, trinity: r.memory.trinity })),
-    getActiveMemories: (limit = 30) =>
-      getActiveMemoriesRanked(limit)
-        .map((m) => ({ id: m.id, content: m.content, confidence: m.confidence, category: m.category, trinity: m.trinity })),
+        .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, category: r.memory.category, trinity: r.memory.trinity, volvox: r.memory.volvox })),
+    getActiveMemories: (limit = 30, options) =>
+      getActiveMemoriesRanked(limit, {
+        ...(options?.volvoxCellType ? { volvoxCellType: options.volvoxCellType } : {}),
+        ...(options?.volvoxLifecyclePhase ? { volvoxLifecyclePhase: options.volvoxLifecyclePhase } : {}),
+        ...(options?.propagationEligible === undefined ? {} : { propagationEligible: options.propagationEligible }),
+        ...(options?.includeDormant === undefined ? {} : { includeDormant: options.includeDormant }),
+      })
+        .map((m) => ({ id: m.id, content: m.content, confidence: m.confidence, category: m.category, trinity: m.trinity, volvox: m.volvox })),
     createMemory: (fields) => createMemory(fields),
     traverseGraph: (startId, depth = 2) => {
       const graph = traverseGraph(startId, depth);
@@ -64,9 +79,48 @@ function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
           content: n.content,
           confidence: n.confidence,
           trinity: n.trinity,
+          volvox: n.volvox,
           provenanceSummary: n.provenanceSummary,
         })),
         edges: graph.edges.map((e) => ({ fromId: e.from, toId: e.to, relation: e.rel })),
+      };
+    },
+    runVolvoxEpoch: (options) => runVolvoxEpoch(options),
+    getVolvoxStatus: () => {
+      const status = getVolvoxStatus();
+      const latestEpoch: IAMToolVolvoxStatus["latestEpoch"] = status.latestEpoch
+        ? {
+            epochId: status.latestEpoch.id,
+            status: status.latestEpoch.status === "failed" ? "blocked" : "completed",
+            trigger: status.latestEpoch.trigger,
+            startedAt: status.latestEpoch.startedAt,
+            completedAt: status.latestEpoch.completedAt ?? status.latestEpoch.startedAt,
+            thresholds: status.latestEpoch.thresholds as never,
+            thresholdsJson: JSON.stringify(status.latestEpoch.thresholds ?? {}),
+            phases: ["normalize", "classify", "stabilize", "propagate", "diagnose"] as const,
+            records: [],
+            diffs: [],
+            diagnostics: status.latestEpoch.diagnostics,
+            diagnosticsJson: JSON.stringify(status.latestEpoch.diagnostics),
+            counts: status.latestEpoch.counts as never,
+          }
+        : null;
+      return {
+        latestEpoch,
+        epochResult: latestEpoch,
+        memories: status.memories.map((m) => ({ id: m.id, content: m.content, score: m.confidence, category: m.category, trinity: m.trinity, volvox: m.volvox })),
+        diagnostics: status.diagnostics,
+      };
+    },
+    diagnoseVolvox: (params) => {
+      const status = getVolvoxStatus();
+      const diagnostics = params?.memoryId
+        ? status.diagnostics.filter((diagnostic) => diagnostic.memoryId === params.memoryId)
+        : status.diagnostics;
+      const visible = params?.includeInfo ? diagnostics : diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
+      return {
+        diagnostics: visible,
+        blocking: visible.filter((diagnostic) => diagnostic.severity === "blocking"),
       };
     },
   };
@@ -148,6 +202,41 @@ const trinityValidationStateSchema = Type.Union([
   Type.Literal("deprecated"),
 ], { description: "Optional Trinity validation state." });
 
+const volvoxCellTypeSchema = Type.Union([
+  Type.Literal("UNDIFFERENTIATED"),
+  Type.Literal("SOMATIC_SENSOR"),
+  Type.Literal("SOMATIC_MOTOR"),
+  Type.Literal("STRUCTURAL"),
+  Type.Literal("GERMLINE"),
+  Type.Literal("DORMANT"),
+], { description: "Optional VOLVOX cell type filter." });
+
+const volvoxLifecyclePhaseSchema = Type.Union([
+  Type.Literal("embryonic"),
+  Type.Literal("juvenile"),
+  Type.Literal("mature"),
+  Type.Literal("dormant"),
+  Type.Literal("archived"),
+], { description: "Optional VOLVOX lifecycle phase filter." });
+
+const volvoxThresholdsSchema = Type.Object({
+  activationRate: Type.Optional(Type.Number({ minimum: 0 })),
+  offspringCount: Type.Optional(Type.Number({ minimum: 0 })),
+  crossLayerConnections: Type.Optional(Type.Number({ minimum: 0 })),
+  connectionDensity: Type.Optional(Type.Number({ minimum: 0 })),
+  dormancyCycles: Type.Optional(Type.Number({ minimum: 0 })),
+  dormantArchiveCycles: Type.Optional(Type.Number({ minimum: 0 })),
+  stableRole: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  propagationStability: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+}, { additionalProperties: false, description: "Optional VOLVOX threshold overrides. Malformed values are rejected or normalized by the IAM executor." });
+
+const volvoxQueryParameters = {
+  volvoxCellType: Type.Optional(volvoxCellTypeSchema),
+  volvoxLifecyclePhase: Type.Optional(volvoxLifecyclePhaseSchema),
+  propagationEligible: Type.Optional(Type.Boolean({ description: "Filter by VOLVOX propagation eligibility." })),
+  includeDormant: Type.Optional(Type.Boolean({ description: "When false, exclude dormant/archived VOLVOX rows." })),
+};
+
 const trinityMetadataSchema = Type.Object({
   layer: Type.Optional(trinityLayerSchema),
   ity: Type.Optional(trinityVectorSchema),
@@ -174,6 +263,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       category: Type.Optional(Type.String({ description: "Filter by category" })),
       trinityLayer: Type.Optional(trinityLayerSchema),
       trinityLens: Type.Optional(trinityLensSchema),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -192,6 +282,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_quick when one highly relevant memory is enough."],
     parameters: Type.Object({
       query: Type.String({ description: "Keywords to search for" }),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -265,6 +356,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       memoryId: Type.String({ description: "Memory ID to start from" }),
       depth: Type.Optional(Type.Number({ description: "Traversal depth (0–5, default 2)", minimum: 0, maximum: 5 })),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -326,6 +418,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       k: Type.Optional(Type.Number({ description: "Max results (default 20, max 100)", minimum: 1, maximum: 100 })),
       trinityLayer: Type.Optional(trinityLayerSchema),
       trinityLens: Type.Optional(trinityLensSchema),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -345,6 +438,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 50, max 100)", minimum: 1, maximum: 100 })),
       trinityLayer: Type.Optional(trinityLayerSchema),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -366,6 +460,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       k: Type.Optional(Type.Number({ description: "Max results (default 10, max 100)", minimum: 1, maximum: 100 })),
       trinityLayer: Type.Optional(trinityLayerSchema),
       trinityLens: Type.Optional(trinityLensSchema),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -453,6 +548,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 30, max 100)", minimum: 1, maximum: 100 })),
       category: Type.Optional(Type.String({ description: "Filter active memories by category" })),
       trinityLayer: Type.Optional(trinityLayerSchema),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -501,6 +597,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       memoryId: Type.String({ description: "Memory ID to start from" }),
       depth: Type.Optional(Type.Number({ description: "Traversal depth (0–5, default 3)", minimum: 0, maximum: 5 })),
+      ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -510,6 +607,61 @@ export function registerIAMTools(pi: ExtensionAPI): void {
   pi.registerTool(provenanceTool);
   // legacy alias for compatibility — legacy-alias
   registerAlias(pi, provenanceTool, "gsd_provenance", "hammer_provenance");
+
+  const volvoxEpochTool = {
+    name: "hammer_volvox_epoch",
+    label: "IAM VOLVOX Epoch",
+    description: "Run or dry-run the Hammer VOLVOX lifecycle epoch over memory rows.",
+    promptSnippet: "Run a VOLVOX lifecycle epoch",
+    promptGuidelines: ["Use hammer_volvox_epoch to update or dry-run lifecycle classification. Inspect hammer_volvox_diagnose if diagnostics block the epoch."],
+    parameters: Type.Object({
+      trigger: Type.Optional(Type.String({ description: "Epoch trigger label (default manual)." })),
+      dryRun: Type.Optional(Type.Boolean({ description: "When true, compute but do not persist lifecycle changes." })),
+      thresholds: Type.Optional(volvoxThresholdsSchema),
+    }),
+    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
+      const dbAvailable = await ensureDbOpen();
+      return runIAMTool(executeIAMVolvoxEpoch, buildAdapters(!!dbAvailable), params);
+    },
+  };
+  pi.registerTool(volvoxEpochTool);
+  // legacy alias for compatibility — legacy-alias
+  registerAlias(pi, volvoxEpochTool, "gsd_volvox_epoch", "hammer_volvox_epoch");
+
+  const volvoxStatusTool = {
+    name: "hammer_volvox_status",
+    label: "IAM VOLVOX Status",
+    description: "Read latest VOLVOX epoch status, memory lifecycle summary, and diagnostics.",
+    promptSnippet: "Inspect VOLVOX lifecycle status",
+    promptGuidelines: ["Use hammer_volvox_status to inspect latest epoch state without dumping raw audit JSON."],
+    parameters: Type.Object({}),
+    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
+      const dbAvailable = await ensureDbOpen();
+      return runIAMTool(executeIAMVolvoxStatus, buildAdapters(!!dbAvailable), params);
+    },
+  };
+  pi.registerTool(volvoxStatusTool);
+  // legacy alias for compatibility — legacy-alias
+  registerAlias(pi, volvoxStatusTool, "gsd_volvox_status", "hammer_volvox_status");
+
+  const volvoxDiagnoseTool = {
+    name: "hammer_volvox_diagnose",
+    label: "IAM VOLVOX Diagnose",
+    description: "Return structured VOLVOX diagnostics, optionally scoped to a memory id.",
+    promptSnippet: "Inspect VOLVOX lifecycle diagnostics",
+    promptGuidelines: ["Use hammer_volvox_diagnose when epoch/status reports blocking or malformed lifecycle diagnostics."],
+    parameters: Type.Object({
+      memoryId: Type.Optional(Type.String({ description: "Optional memory id to filter diagnostics." })),
+      includeInfo: Type.Optional(Type.Boolean({ description: "Include informational diagnostics; default false." })),
+    }),
+    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
+      const dbAvailable = await ensureDbOpen();
+      return runIAMTool(executeIAMVolvoxDiagnose, buildAdapters(!!dbAvailable), params);
+    },
+  };
+  pi.registerTool(volvoxDiagnoseTool);
+  // legacy alias for compatibility — legacy-alias
+  registerAlias(pi, volvoxDiagnoseTool, "gsd_volvox_diagnose", "hammer_volvox_diagnose");
 
   const checkTool = {
     name: "hammer_check",

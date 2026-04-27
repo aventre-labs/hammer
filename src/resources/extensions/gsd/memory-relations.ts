@@ -6,6 +6,8 @@
 // through the single-writer gate in `gsd-db.ts`.
 
 import type { TrinityMetadata, TrinitySourceRelation } from "../../../iam/trinity.js";
+import type { VolvoxMetadata } from "../../../iam/volvox.js";
+import { normalizeVolvoxMetadata } from "../../../iam/volvox.js";
 import {
   buildDefaultTrinityMetadata,
   normalizeTrinityMetadata,
@@ -25,7 +27,8 @@ export type RelationType =
   | "depends_on"
   | "contradicts"
   | "elaborates"
-  | "supersedes";
+  | "supersedes"
+  | "offspring_of";
 
 export const VALID_RELATIONS: readonly RelationType[] = [
   "related_to",
@@ -33,6 +36,7 @@ export const VALID_RELATIONS: readonly RelationType[] = [
   "contradicts",
   "elaborates",
   "supersedes",
+  "offspring_of",
 ];
 
 export interface MemoryRelation {
@@ -58,6 +62,7 @@ export interface MemoryGraphNode {
   content: string;
   confidence: number;
   trinity?: TrinityMetadata;
+  volvox?: VolvoxMetadata;
   provenanceSummary?: MemoryGraphProvenanceSummary;
 }
 
@@ -160,7 +165,11 @@ export function traverseGraph(startId: string, depth: number): MemoryGraph {
 
       const nodeRow = adapter
         .prepare(
-          "SELECT id, category, content, confidence, source_unit_type, source_unit_id, superseded_by, trinity_layer, trinity_ity, trinity_pathy, trinity_provenance, trinity_validation_state, trinity_validation_score FROM memories WHERE id = :id",
+          `SELECT id, category, content, confidence, source_unit_type, source_unit_id, superseded_by,
+                  trinity_layer, trinity_ity, trinity_pathy, trinity_provenance, trinity_validation_state, trinity_validation_score,
+                  volvox_cell_type, volvox_role_stability, volvox_lifecycle_phase, volvox_propagation_eligible,
+                  volvox_last_epoch_id, volvox_last_epoch_at, volvox_archived_at
+             FROM memories WHERE id = :id`,
         )
         .get({ ":id": id });
       if (!nodeRow) continue;
@@ -191,6 +200,7 @@ export function traverseGraph(startId: string, depth: number): MemoryGraph {
         content: nodeRow["content"] as string,
         confidence: nodeRow["confidence"] as number,
         trinity,
+        volvox: rowToVolvoxMetadata(nodeRow),
         provenanceSummary: buildProvenanceSummary(trinity),
       });
 
@@ -264,6 +274,18 @@ function buildProvenanceSummary(metadata: TrinityMetadata): MemoryGraphProvenanc
     sourceRelationCount: provenance.sourceRelations.length,
     sourceRelations: provenance.sourceRelations,
   };
+}
+
+function rowToVolvoxMetadata(row: Record<string, unknown>): VolvoxMetadata {
+  return normalizeVolvoxMetadata({
+    cellType: row["volvox_cell_type"],
+    roleStability: row["volvox_role_stability"],
+    lifecyclePhase: row["volvox_lifecycle_phase"],
+    propagationEligible: row["volvox_propagation_eligible"] === 1 || row["volvox_propagation_eligible"] === true,
+    lastEpochId: row["volvox_last_epoch_id"],
+    lastEpochAt: row["volvox_last_epoch_at"],
+    archivedAt: row["volvox_archived_at"],
+  });
 }
 
 function rowToRelation(row: Record<string, unknown>): MemoryRelation {

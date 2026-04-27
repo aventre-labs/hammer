@@ -16,6 +16,8 @@ export const SEPARATOR_PREFIX = "───";
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
 	timeout?: number;
+	/** Select the highlighted option instead of cancelling when the timeout expires. */
+	confirmOnTimeout?: boolean;
 }
 
 export class ExtensionSelectorComponent extends Container {
@@ -54,7 +56,16 @@ export class ExtensionSelectorComponent extends Container {
 				opts.timeout,
 				opts.tui,
 				(s) => this.titleText.setText(theme.fg("accent", `${this.baseTitle} (${s}s)`)),
-				() => this.onCancelCallback(),
+				() => {
+					if (opts.confirmOnTimeout) {
+						const selected = this.options[this.selectedIndex];
+						if (selected && !this.isSeparator(this.selectedIndex)) {
+							this.onSelectCallback(selected);
+							return;
+						}
+					}
+					this.onCancelCallback();
+				},
 			);
 		}
 
