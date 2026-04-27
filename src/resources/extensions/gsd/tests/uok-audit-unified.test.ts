@@ -7,10 +7,11 @@ import { emitJournalEvent } from "../journal.ts";
 import { saveActivityLog } from "../activity-log.ts";
 import { initMetrics, resetMetrics, snapshotUnitMetrics } from "../metrics.ts";
 import { setLogBasePath, logWarning } from "../workflow-logger.ts";
+import { gsdRoot } from "../paths.ts";
 import { setUnifiedAuditEnabled } from "../uok/audit-toggle.ts";
 
 function readAuditEvents(basePath: string): Array<Record<string, unknown>> {
-  const file = join(basePath, ".gsd", "audit", "events.jsonl");
+  const file = join(gsdRoot(basePath), "audit", "events.jsonl");
   if (!existsSync(file)) return [];
   const raw = readFileSync(file, "utf-8");
   return raw

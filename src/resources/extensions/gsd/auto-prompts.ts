@@ -38,7 +38,7 @@ import { logWarning } from "./workflow-logger.js";
 import { inlineGraphSubgraph } from "./graph-context.js";
 import { buildExtractionStepsBlock } from "./commands-extract-learnings.js";
 import { warnIfManifestHasMissingSkills } from "./skill-manifest.js";
-import { formatIAMSubagentContractMarker } from "./iam-subagent-policy.js";
+import { formatIamSubagentPrompt } from "./iam-subagent-policy.js";
 
 // ─── Preamble Cap ─────────────────────────────────────────────────────────────
 
@@ -88,6 +88,22 @@ function capPreamble(preamble: string): string {
   const budget = Math.min(MAX_PREAMBLE_CHARS, resolvePromptBudgets().inlineContextBudgetChars);
   if (preamble.length <= budget) return preamble;
   return truncateAtSectionBoundary(preamble, budget).content;
+}
+
+function optionalLines(lines: Array<string | null | undefined>): string[] {
+  return lines.filter((line): line is string => typeof line === "string" && line.trim().length > 0);
+}
+
+function taskSummaryRelPath(base: string, mid: string, sid: string, tid: string): string {
+  return `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
+}
+
+function taskPlanRelPath(base: string, mid: string, sid: string, tid: string): string {
+  return `${relSlicePath(base, mid, sid)}/tasks/${tid}-PLAN.md`;
+}
+
+function parentUnitToken(parentUnit: string): string {
+  return parentUnit.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 // ─── Executor Constraints ─────────────────────────────────────────────────────
@@ -2455,8 +2471,224 @@ export async function buildReassessRoadmapPrompt(
   });
 }
 
-function prependIAMSubagentMarker(prompt: string, role: string, envelopeId: string): string {
-  return [formatIAMSubagentContractMarker(role, envelopeId), "", prompt].join("\n");
+function formatReactiveTaskIoSummary(node: { inputFiles: string[]; outputFiles: string[]; dependsOn: string[] } | undefined): string {
+  if (!node) return "Task IO unavailable — graph metadata could not resolve this task; treat dependency claims as ambiguous.";
+  const inputs = node.inputFiles.length > 0 ? node.inputFiles.map((path) => `\`${path}\``).join(", ") : "(none declared — graph-ambiguous input boundary)";
+  const outputs = node.outputFiles.length > 0 ? node.outputFiles.map((path) => `\`${path}\``).join(", ") : "(none declared — graph-ambiguous output boundary)";
+  const deps = node.dependsOn.length > 0 ? node.dependsOn.join(", ") : "(none)";
+  return [
+    `- Inputs: ${inputs}`,
+    `- Expected outputs: ${outputs}`,
+    `- Derived dependencies: ${deps}`,
+  ].join("\n");
+}
+
+function buildReactiveTaskPromptEnvelope(params: {
+  taskPrompt: string;
+  base: string;
+  mid: string;
+  sid: string;
+  tid: string;
+  title: string;
+  parentUnit: string;
+  node: { inputFiles: string[]; outputFiles: string[]; dependsOn: string[] } | undefined;
+  depPaths: string[];
+  graphContext: string;
+  metrics: { taskCount: number; edgeCount: number; readySetSize: number; ambiguous: boolean };
+}): string {
+  const outputFiles = params.node?.outputFiles ?? [];
+  const expectedArtifacts = [
+    {
+      id: `${params.tid}-task-summary`,
+      kind: "task-summary" as const,
+      description: `Task ${params.tid} must call gsd_complete_task and render its task summary.`,
+      path: taskSummaryRelPath(params.base, params.mid, params.sid, params.tid),
+    },
+    {
+      id: `${params.tid}-completion-tool-call`,
+      kind: "tool-call" as const,
+      description: `Task ${params.tid} must complete via gsd_complete_task rather than parent-batch completion.`,
+      toolName: "gsd_complete_task",
+    },
+    ...outputFiles.map((path, index) => ({
+      id: `${params.tid}-output-${index + 1}`,
+      kind: "workflow-output" as const,
+      description: `Expected output file from task IO: ${path}`,
+      path,
+    })),
+  ];
+  const optionalOmissions = optionalLines([
+    params.node ? null : `Reactive graph metadata did not contain ${params.tid}; dependency/output claims are ambiguous.`,
+    params.node && params.node.inputFiles.length === 0 ? `Task ${params.tid} has no declared input files; preserve graph ambiguity diagnostics and avoid unsafe dependency claims.` : null,
+    params.node && params.node.outputFiles.length === 0 ? `Task ${params.tid} has no declared expected output files; mutation boundary is limited to the task summary and completion tool call.` : null,
+    params.depPaths.length === 0 ? `No dependency summary paths were available for task ${params.tid}.` : null,
+  ]);
+
+  const envelopeBody = [
+    "## Reactive Task IO Context",
+    formatReactiveTaskIoSummary(params.node),
+    "",
+    "## Dependency Summary Paths",
+    params.depPaths.length > 0 ? params.depPaths.map((path) => `- \`${path}\``).join("\n") : "- (none available)",
+    "",
+    "## Reactive Graph Metrics",
+    `- Tasks: ${params.metrics.taskCount}`,
+    `- Edges: ${params.metrics.edgeCount}`,
+    `- Ready set size: ${params.metrics.readySetSize}`,
+    `- Ambiguous: ${params.metrics.ambiguous}`,
+    "",
+    params.taskPrompt,
+  ].join("\n");
+
+  return formatIamSubagentPrompt({
+    role: "task-executor",
+    envelopeId: `${parentUnitToken(params.parentUnit)}-${params.tid}-env`,
+    parentUnit: params.parentUnit,
+    objective: `Execute ${params.tid}: ${params.title} under reactive task-output boundaries.`,
+    mutationBoundary: "task-expected-output-only",
+    expectedArtifacts,
+    provenanceSources: [
+      {
+        id: `${params.tid}-task-plan`,
+        kind: "task-plan",
+        source: "task plan IO summary",
+        summary: formatReactiveTaskIoSummary(params.node).replace(/\n/g, " "),
+        path: taskPlanRelPath(params.base, params.mid, params.sid, params.tid),
+      },
+      {
+        id: `${params.sid}-reactive-graph`,
+        kind: "plan",
+        source: "reactive graph derivation",
+        summary: `tasks=${params.metrics.taskCount}; edges=${params.metrics.edgeCount}; ready=${params.metrics.readySetSize}; ambiguous=${params.metrics.ambiguous}`,
+      },
+      ...params.depPaths.map((path, index) => ({
+        id: `${params.tid}-dependency-summary-${index + 1}`,
+        kind: "summary" as const,
+        source: "dependency task summary",
+        summary: `Carry-forward dependency summary for ${params.tid}.`,
+        path,
+      })),
+    ],
+    allowedPaths: [...outputFiles, taskSummaryRelPath(params.base, params.mid, params.sid, params.tid)],
+    allowedToolCalls: ["gsd_complete_task"],
+    graphMutation: params.metrics.ambiguous || !params.node || params.node.inputFiles.length === 0 || params.node.outputFiles.length === 0 ? "read-only" : "none",
+    optionalOmissions,
+    failureDiagnostics: [
+      `If task IO is missing or ambiguous, report the ambiguity and do not claim unrelated output-file mutation authority.`,
+      `If an expected output cannot be produced, name ${params.tid}, the output path, parent unit ${params.parentUnit}, mutation boundary task-expected-output-only, and remediation.`,
+    ],
+    promptBody: envelopeBody,
+  });
+}
+
+function buildResearchPromptEnvelope(params: {
+  slicePrompt: string;
+  base: string;
+  mid: string;
+  slice: { id: string; title: string };
+  parentUnit: string;
+  omegaContext: string | null;
+}): string {
+  const researchPath = relSliceFile(params.base, params.mid, params.slice.id, "RESEARCH");
+  const expectedOmegaManifest = `${relSlicePath(params.base, params.mid, params.slice.id)}/omega/<runId>/phase-manifest.json`;
+  return formatIamSubagentPrompt({
+    role: "research-scout",
+    envelopeId: `${parentUnitToken(params.parentUnit)}-${params.slice.id}-env`,
+    parentUnit: params.parentUnit,
+    objective: `Research ${params.slice.id}: ${params.slice.title} and return per-slice Omega evidence.`,
+    mutationBoundary: "research-artifact-only",
+    expectedArtifacts: [
+      {
+        id: `${params.slice.id}-research-report`,
+        kind: "research-report",
+        description: `Write the slice research artifact for ${params.slice.id}.`,
+        path: researchPath,
+      },
+      {
+        id: `${params.slice.id}-omega-manifest`,
+        kind: "manifest",
+        description: "Return the per-slice Omega phase manifest path, runId, artifactDir, stageCount=10, and synthesis reference.",
+        path: expectedOmegaManifest,
+      },
+    ],
+    provenanceSources: [
+      {
+        id: `${params.slice.id}-omega-contract`,
+        kind: "omega-stage",
+        source: "S06 Omega Phase Contract",
+        summary: "Each research-slice subagent must run hammer_canonical_spiral before gsd_summary_save and report per-slice manifest evidence.",
+        path: expectedOmegaManifest,
+      },
+      ...(params.omegaContext && !/Status:\*\* omitted/i.test(params.omegaContext) ? [{
+        id: `${params.slice.id}-omega-phase-context`,
+        kind: "omega-stage" as const,
+        source: "compact upstream Omega phase artifact context",
+        summary: "S06 Omega phase routing context was available and is included below for reference.",
+      }] : []),
+    ],
+    allowedPaths: [researchPath, expectedOmegaManifest],
+    allowedToolCalls: ["hammer_canonical_spiral", "gsd_summary_save"],
+    graphMutation: "none",
+    optionalOmissions: params.omegaContext && !/Status:\*\* omitted/i.test(params.omegaContext) ? [] : [`No upstream Omega phase artifact context was found for ${params.slice.id}; the per-slice Omega manifest remains required.`],
+    failureDiagnostics: [
+      `Missing ${params.slice.id} research output or Omega manifest is a blocker for this research subagent.`,
+      `Report role research-scout, envelope id, parent unit ${params.parentUnit}, expected artifact, mutation boundary research-artifact-only, and remediation on failure.`,
+    ],
+    promptBody: [
+      ...(params.omegaContext ? [params.omegaContext, ""] : []),
+      params.slicePrompt,
+    ].join("\n"),
+  });
+}
+
+function buildGatePromptEnvelope(params: {
+  subPrompt: string;
+  base: string;
+  mid: string;
+  sid: string;
+  gateId: string;
+  question: string;
+  parentUnit: string;
+  slicePlanRelPath: string;
+}): string {
+  return formatIamSubagentPrompt({
+    role: "gate-evaluator",
+    envelopeId: `${parentUnitToken(params.parentUnit)}-${params.gateId}-env`,
+    parentUnit: params.parentUnit,
+    objective: `Evaluate quality gate ${params.gateId}: ${params.question}`,
+    mutationBoundary: "quality-gate-result-only",
+    expectedArtifacts: [
+      {
+        id: `${params.gateId}-gate-result`,
+        kind: "gate-result",
+        description: `Persist gate ${params.gateId} with gsd_save_gate_result only.`,
+        toolName: "gsd_save_gate_result",
+      },
+      {
+        id: `${params.gateId}-audit-diagnostic`,
+        kind: "diagnostic",
+        description: "Return concise findings and remediation if the gate flags or cannot be evaluated.",
+        required: false,
+      },
+    ],
+    provenanceSources: [
+      {
+        id: `${params.sid}-slice-plan`,
+        kind: "slice-plan",
+        source: "slice plan gate evidence",
+        summary: `Quality gate ${params.gateId} is evaluated only from the supplied slice plan and gate guidance.`,
+        path: params.slicePlanRelPath,
+      },
+    ],
+    allowedPaths: [],
+    allowedToolCalls: ["gsd_save_gate_result"],
+    graphMutation: "none",
+    failureDiagnostics: [
+      `Forbid unrelated graph, memory, source, or planning mutations; gate ${params.gateId} may only emit gsd_save_gate_result and diagnostics.`,
+      `On malformed evidence, name ${params.gateId}, parent unit ${params.parentUnit}, mutation boundary quality-gate-result-only, and remediation.`,
+    ],
+    promptBody: params.subPrompt,
+  });
 }
 
 // ─── Reactive Execute Prompt ──────────────────────────────────────────────
@@ -2493,6 +2725,7 @@ export async function buildReactiveExecutePrompt(
   // Build individual subagent prompts for each ready task
   const subagentSections: string[] = [];
   const readyTaskListLines: string[] = [];
+  const parentUnit = `${mid}/${sid}/reactive+${readyTaskIds.join(",")}`;
 
   for (const tid of readyTaskIds) {
     const node = graph.find((n) => n.id === tid);
@@ -2513,7 +2746,19 @@ export async function buildReactiveExecutePrompt(
         modelRegistry: opts?.modelRegistry,
       },
     );
-    const markedTaskPrompt = prependIAMSubagentMarker(taskPrompt, "task-executor", `${mid}-${sid}-reactive-${tid}-env`);
+    const envelopedTaskPrompt = buildReactiveTaskPromptEnvelope({
+      taskPrompt,
+      base,
+      mid,
+      sid,
+      tid,
+      title: tTitle,
+      parentUnit,
+      node,
+      depPaths,
+      graphContext,
+      metrics,
+    });
 
     const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
@@ -2522,7 +2767,7 @@ export async function buildReactiveExecutePrompt(
       `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
-      markedTaskPrompt,
+      envelopedTaskPrompt,
       "```",
     ].join("\n"));
   }
@@ -2600,16 +2845,32 @@ export async function buildParallelResearchSlicesPrompt(
   // Build individual research-slice prompts for each slice
   const subagentSections: string[] = [];
   const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
+  const parentUnit = `${mid}/parallel-research`;
   for (const slice of slices) {
     const slicePrompt = await buildResearchSlicePrompt(mid, midTitle, slice.id, slice.title, basePath);
-    const markedSlicePrompt = prependIAMSubagentMarker(slicePrompt, "research-scout", `${mid}-${slice.id}-research-env`);
+    const omegaContext = formatOmegaPhaseArtifactsForPrompt(basePath, [
+      {
+        unitType: "research-slice",
+        unitId: `${mid}/${slice.id}`,
+        label: `${slice.id} upstream Omega context`,
+        expectedTargetArtifactPath: relSliceFile(basePath, mid, slice.id, "RESEARCH"),
+      },
+    ]);
+    const envelopedSlicePrompt = buildResearchPromptEnvelope({
+      slicePrompt,
+      base: basePath,
+      mid,
+      slice,
+      parentUnit,
+      omegaContext,
+    });
     subagentSections.push([
       `### ${slice.id}: ${slice.title}`,
       "",
       `Use this as the prompt for a \`subagent\` call${modelSuffix} (agent: \`gsd-executor\` or the default agent):`,
       "",
       "```",
-      markedSlicePrompt,
+      envelopedSlicePrompt,
       "```",
     ].join("\n"));
   }
@@ -2677,7 +2938,17 @@ export async function buildGateEvaluatePrompt(
       "- `rationale`: one-sentence justification",
       "- `findings`: detailed markdown findings (or empty if omitted)",
     ].join("\n");
-    const markedSubPrompt = prependIAMSubagentMarker(subPrompt, "gate-evaluator", `${mid}-${sid}-gate-${def.id}-env`);
+    const parentUnit = `${mid}/${sid}/gates+${gateDefs.map((gate) => gate.id).join(",")}`;
+    const envelopedSubPrompt = buildGatePromptEnvelope({
+      subPrompt,
+      base,
+      mid,
+      sid,
+      gateId: def.id,
+      question: def.question,
+      parentUnit,
+      slicePlanRelPath: relSliceFile(base, mid, sid, "PLAN"),
+    });
 
     const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
@@ -2686,7 +2957,7 @@ export async function buildGateEvaluatePrompt(
       `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
-      markedSubPrompt,
+      envelopedSubPrompt,
       "```",
     ].join("\n"));
   }

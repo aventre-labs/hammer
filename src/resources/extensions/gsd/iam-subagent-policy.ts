@@ -1,9 +1,56 @@
+import type {
+  IAMContextArtifactKind,
+  IAMExpectedArtifactKind,
+  IAMSubagentRoleName,
+} from "../../../iam/context-envelope.js";
+import { getIAMSubagentRoleContract } from "../../../iam/context-envelope.js";
 import type { SubagentsPolicy } from "./unit-context-manifest.js";
 
 export interface IAMSubagentPromptMarker {
   readonly role: string | null;
   readonly envelopeId: string | null;
   readonly malformed: boolean;
+}
+
+export type IAMSubagentMutationBoundaryLabel =
+  | "read-only"
+  | "research-artifact-only"
+  | "quality-gate-result-only"
+  | "task-expected-output-only"
+  | "validation-artifact-only"
+  | "workflow-output-only";
+
+export interface IAMSubagentPromptArtifact {
+  readonly id: string;
+  readonly kind: IAMExpectedArtifactKind;
+  readonly description: string;
+  readonly path?: string;
+  readonly toolName?: string;
+  readonly required?: boolean;
+}
+
+export interface IAMSubagentPromptContextReference {
+  readonly id: string;
+  readonly kind: IAMContextArtifactKind;
+  readonly source: string;
+  readonly summary: string;
+  readonly path?: string;
+}
+
+export interface FormatIamSubagentPromptInput {
+  readonly role: IAMSubagentRoleName;
+  readonly envelopeId: string;
+  readonly parentUnit: string;
+  readonly objective: string;
+  readonly mutationBoundary: IAMSubagentMutationBoundaryLabel;
+  readonly expectedArtifacts: readonly IAMSubagentPromptArtifact[];
+  readonly provenanceSources: readonly IAMSubagentPromptContextReference[];
+  readonly allowedPaths?: readonly string[];
+  readonly allowedToolCalls?: readonly string[];
+  readonly graphMutation?: "none" | "read-only" | "append-only" | "upsert";
+  readonly optionalOmissions?: readonly string[];
+  readonly failureDiagnostics?: readonly string[];
+  readonly promptBody: string;
 }
 
 export interface IAMSubagentInputEntry {
@@ -40,6 +87,93 @@ export function isIAMSubagentTool(toolName: string): boolean {
 
 export function formatIAMSubagentContractMarker(role: string, envelopeId: string): string {
   return `IAM_SUBAGENT_CONTRACT: role=${role}; envelopeId=${envelopeId}`;
+}
+
+export function formatIamSubagentPrompt(input: FormatIamSubagentPromptInput): string {
+  assertKnownRole(input.role);
+  assertNonEmpty("envelopeId", input.envelopeId);
+  assertNonEmpty("parentUnit", input.parentUnit);
+  assertNonEmpty("objective", input.objective);
+  assertNonEmpty("mutationBoundary", input.mutationBoundary);
+  assertNonEmpty("promptBody", input.promptBody);
+  if (input.expectedArtifacts.length === 0) {
+    throw new Error("expectedArtifacts must contain at least one artifact");
+  }
+  if (input.provenanceSources.length === 0) {
+    throw new Error("provenanceSources must contain at least one context reference");
+  }
+
+  const expectedArtifacts = input.expectedArtifacts.map((artifact) => {
+    assertNonEmpty("expectedArtifacts[].id", artifact.id);
+    assertNonEmpty(`expectedArtifacts[${artifact.id}].description`, artifact.description);
+    return `- \`${artifact.id}\` (\`${artifact.kind}\`) — ${artifact.description}${artifact.path ? ` Path: \`${artifact.path}\`.` : ""}${artifact.toolName ? ` Tool: \`${artifact.toolName}\`.` : ""}${artifact.required === false ? " Required: no." : " Required: yes."}`;
+  });
+  const provenanceSources = input.provenanceSources.map((source) => {
+    assertNonEmpty("provenanceSources[].id", source.id);
+    assertNonEmpty(`provenanceSources[${source.id}].source`, source.source);
+    assertNonEmpty(`provenanceSources[${source.id}].summary`, source.summary);
+    return `- \`${source.id}\` (\`${source.kind}\`) — ${source.source}: ${source.summary}${source.path ? ` Path: \`${source.path}\`.` : ""}`;
+  });
+  const allowedPaths = input.allowedPaths?.length
+    ? input.allowedPaths.map((path) => `- \`${path}\``)
+    : ["- (none declared)"];
+  const allowedToolCalls = input.allowedToolCalls?.length
+    ? input.allowedToolCalls.map((tool) => `- \`${tool}\``)
+    : ["- (none declared)"];
+  const omissions = input.optionalOmissions?.length
+    ? input.optionalOmissions.map((omission) => `- ${omission}`)
+    : ["- (none)"];
+  const diagnostics = input.failureDiagnostics?.length
+    ? input.failureDiagnostics.map((diagnostic) => `- ${diagnostic}`)
+    : ["- If you cannot satisfy an expected artifact, return a failure report naming the role, envelope id, parent unit, expected artifact, mutation boundary, and remediation."];
+  const graphMutation = input.graphMutation ?? "none";
+
+  return [
+    formatIAMSubagentContractMarker(input.role, input.envelopeId),
+    "",
+    "## IAM Context Envelope",
+    `- **Role:** \`${input.role}\``,
+    `- **Envelope ID:** \`${input.envelopeId}\``,
+    `- **Parent Unit:** \`${input.parentUnit}\``,
+    `- **Objective:** ${input.objective}`,
+    `- **Mutation Boundary:** \`${input.mutationBoundary}\``,
+    `- **Graph Mutation:** \`${graphMutation}\``,
+    "",
+    "### Expected Artifacts",
+    ...expectedArtifacts,
+    "",
+    "### Provenance Sources",
+    ...provenanceSources,
+    "",
+    "### Allowed Paths",
+    ...allowedPaths,
+    "",
+    "### Allowed Tool Calls",
+    ...allowedToolCalls,
+    "",
+    "## Optional Context Omissions",
+    ...omissions,
+    "",
+    "## Failure Diagnostics",
+    ...diagnostics,
+    "",
+    "## IAM Return Schema",
+    "Return a concise audit payload with these fields before any prose summary:",
+    "```yaml",
+    `role: ${input.role}`,
+    `envelopeId: ${input.envelopeId}`,
+    `parentUnit: ${input.parentUnit}`,
+    "expectedArtifacts:",
+    ...input.expectedArtifacts.map((artifact) => `  - id: ${artifact.id}\n    kind: ${artifact.kind}\n    status: present|missing|invalid\n    path: ${artifact.path ?? "<if applicable>"}\n    toolName: ${artifact.toolName ?? "<if applicable>"}`),
+    `mutationBoundary: ${input.mutationBoundary}`,
+    `graphMutationStatus: ${graphMutation}`,
+    "remediation: <required when any expected artifact is missing or invalid>",
+    "```",
+    "",
+    "---",
+    "",
+    input.promptBody.trim(),
+  ].join("\n");
 }
 
 export function parseIAMSubagentContractMarker(prompt: string): IAMSubagentPromptMarker {
@@ -225,6 +359,19 @@ function malformedInputViolation(path: string, reason: string): IAMSubagentPolic
     envelopeId: null,
     markerStatus: "malformed",
   };
+}
+
+function assertKnownRole(role: string): asserts role is IAMSubagentRoleName {
+  const contract = getIAMSubagentRoleContract(role);
+  if (!contract.ok) {
+    throw new Error(contract.error.remediation);
+  }
+}
+
+function assertNonEmpty(name: string, value: string): void {
+  if (value.trim().length === 0) {
+    throw new Error(`${name} is required`);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
