@@ -1,7 +1,7 @@
 /**
  * TUI Command Flow Tests for import-claude
  *
- * Tests R015: validates the TUI command flow for /gsd prefs import-claude.
+ * Tests R015: validates the TUI command flow for /hammer prefs import-claude.
  * These tests currently use mock UI, and marketplace availability is still
  * derived from real/local marketplace roots. Follow-up work should route these
  * through portable marketplace fixtures that mirror Claude Code's
@@ -112,6 +112,23 @@ function createMockContext(selections: string[]): {
 // Tests
 // ============================================================================
 
+describe('TUI prompt wording', () => {
+	it('uses Hammer/Pi wording for the initial import prompt even when marketplace fixtures are unavailable', async () => {
+		const { ctx, selectCalls } = createMockContext(['Cancel']);
+		const readPrefs = () => ({ version: 1 });
+		const writePrefs = async () => {};
+
+		await runClaudeImportFlow(ctx, 'global', readPrefs, writePrefs);
+
+		assert.ok(selectCalls.length >= 1, 'Should have at least one select call');
+		assert.equal(
+			selectCalls[0]!.prompt,
+			'Import Claude assets into Hammer/Pi config',
+			'First prompt should be about Hammer/Pi asset selection'
+		);
+	});
+});
+
 const skipReason = !marketplacesAvailable()
 	? fixtureSetup.skipReason ?? 'Marketplace repos not found for TUI testing'
 	: undefined;
@@ -220,9 +237,10 @@ describe(
 
 				// Should have asked about asset type
 				assert.ok(selectCalls.length >= 1, 'Should have at least one select call');
-				assert.ok(
-					selectCalls[0]!.prompt.includes('Import Claude assets'),
-					'First prompt should be about asset selection'
+				assert.equal(
+					selectCalls[0]!.prompt,
+					'Import Claude assets into Hammer/Pi config',
+					'First prompt should be about Hammer/Pi asset selection'
 				);
 			});
 

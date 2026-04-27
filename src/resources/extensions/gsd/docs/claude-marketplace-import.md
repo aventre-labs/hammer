@@ -1,25 +1,29 @@
-# Claude Marketplace Import
+# Claude Marketplace Import for Hammer
 
-This document describes the Claude marketplace import feature in GSD: what it reads, what it imports, what it persists, and what it does not translate into active GSD/Pi runtime behavior.
+This document explains how Hammer imports Claude Code marketplace content into Hammer/Pi: what it reads, what it imports, what it persists, and which Claude plugin metadata remains non-runtime documentation.
+
+Hammer/Pi keeps this import IAM-aware. Imported skills can influence agent behavior only through normal Hammer/Pi skill and preference surfaces; they do not bypass role provenance, verification gates, marketplace safety checks, or no-degradation rules.
 
 ---
 
 ## What this feature does
 
-GSD can read Claude Code marketplace catalogs, inspect the plugins they reference, and import selected Claude skills into GSD/Pi while preserving Claude-style namespace identity.
+Hammer can read Claude Code marketplace catalogs, inspect the plugins they reference, and import selected Claude skills into Hammer/Pi while preserving Claude-style namespace identity.
 
 The interactive entry point is:
 
 ```text
-/gsd prefs import-claude
+/hammer prefs import-claude
 ```
 
 You can also choose scope explicitly:
 
 ```text
-/gsd prefs import-claude global
-/gsd prefs import-claude project
+/hammer prefs import-claude global
+/hammer prefs import-claude project
 ```
+
+Legacy command bridge: `/gsd prefs import-claude` may still be accepted as a compatibility alias by older command dispatch layers, but new docs, automation, and screenshots should use `/hammer prefs import-claude`.
 
 ---
 
@@ -37,44 +41,44 @@ A marketplace contains a catalog at:
 .claude-plugin/marketplace.json
 ```
 
-Anthropic distinguishes between:
+Claude distinguishes between:
 
-- **Marketplace source** — where Claude fetches `marketplace.json`
-- **Plugin source** — where Claude fetches each plugin listed in that marketplace
+- **Marketplace source** — where Claude fetches `marketplace.json`.
+- **Plugin source** — where Claude fetches each plugin listed in that marketplace.
 - **Installed plugin cache** — Claude copies installed plugin payloads into:
 
 ```text
 ~/.claude/plugins/cache
 ```
 
-Anthropic also documents user-added marketplace sources under:
+Claude also documents user-added marketplace sources under:
 
 ```text
 ~/.claude/plugins/marketplaces
 ```
 
-GSD aligns its Claude import flow to that model.
+Hammer aligns its Claude import flow to that model.
 
 ---
 
-## Where GSD looks
+## Where Hammer looks
 
-For Claude plugin and marketplace material, GSD prefers Claude-managed locations first:
+For Claude plugin and marketplace material, Hammer/Pi prefers Claude-managed locations first:
 
 1. `~/.claude/plugins/marketplaces`
 2. `~/.claude/plugins/cache`
 3. `~/.claude/plugins`
 
-After that, GSD still allows local clone-style convenience paths such as sibling repos or `~/repos/...` paths. Those fallbacks remain supported for developer workflows, but they are not the primary Claude storage model.
+After that, Hammer/Pi still allows local clone-style convenience paths such as sibling repositories or `~/repos/...` paths. Those fallbacks remain supported for developer workflows, but they are not the primary Claude storage model.
 
 ---
 
-## What GSD imports
+## What Hammer imports
 
-### Imported into GSD/Pi settings
+### Imported into Hammer/Pi settings
 
-- Claude skills discovered directly from configured skill roots
-- Marketplace-derived skills
+- Claude skills discovered directly from configured skill roots.
+- Marketplace-derived skills.
 
 Imported marketplace skills preserve canonical namespace identity, for example:
 
@@ -85,14 +89,18 @@ scientific-method:experiment-protocol
 
 ### Discovered, modeled, and validated
 
-- Marketplace-derived agents
+- Marketplace-derived agents.
 
 ### Discovered but not translated into active Pi-native runtime behavior
+
+Some Claude plugin metadata is discovered and validated for visibility, but does not currently map into active Hammer/Pi runtime surfaces:
 
 - hooks
 - MCP server definitions
 - LSP server definitions
-- other plugin metadata that does not currently map directly into active GSD/Pi runtime surfaces
+- other plugin metadata without a Hammer/Pi runtime mapping
+
+This is intentional non-runtime behavior. Component metadata that is not mapped into Hammer/Pi settings remains documented and inspectable, but it is not silently activated.
 
 ---
 
@@ -105,13 +113,13 @@ The import flow does the following:
 3. inspect discovered plugins and inventory their components
 4. let you select components to import
 5. validate the selection for canonical conflicts and ambiguity
-6. persist imported resources into GSD/Pi settings
+6. persist imported resources into Hammer/Pi settings
 
 ---
 
 ## Namespace behavior
 
-GSD preserves Claude plugin namespace semantics rather than flattening plugin components into anonymous global names.
+Hammer preserves Claude plugin namespace semantics rather than flattening plugin components into anonymous global names.
 
 ### Canonical references
 
@@ -122,11 +130,11 @@ Canonical references remain available for imported components:
 
 ### Shorthand
 
-GSD supports shorthand lookup when it is unambiguous.
+Hammer supports shorthand lookup when it is unambiguous.
 
 ### Local-first resolution
 
-When a namespaced component refers to another component by bare name, GSD tries the same plugin namespace first before broader lookup.
+When a namespaced component refers to another component by bare name, Hammer tries the same plugin namespace first before broader lookup.
 
 ---
 
@@ -138,7 +146,7 @@ Claude plugin agent directories are markdown agent-definition directories, for e
 .../plugins/python3-development/agents
 ```
 
-GSD does **not** persist imported marketplace agent directories into:
+Hammer does **not** persist imported marketplace agent directories into:
 
 ```json
 settings.packages
@@ -154,7 +162,7 @@ Persisting an `.../agents` directory into `settings.packages` can cause Pi start
 Cannot find module '.../agents'
 ```
 
-GSD now avoids writing those entries.
+Hammer avoids writing those entries.
 
 ---
 
@@ -162,7 +170,7 @@ GSD now avoids writing those entries.
 
 ### Skills
 
-Imported skills are persisted into Pi skill settings. Depending on the selection path, they may also be added to GSD preferences.
+Imported skills are persisted into Pi skill settings. Depending on the selection path, they may also be added to Hammer preferences.
 
 ### Marketplace agents
 
@@ -172,13 +180,13 @@ Marketplace agents remain part of the import model and validation surface, but t
 
 ## Diagnostics
 
-GSD distinguishes between:
+Hammer distinguishes between:
 
 - **canonical conflicts** — hard errors
 - **shorthand overlaps** — warnings when canonical names remain distinct
 - **alias conflicts** — diagnostics for alias collisions or shadowing
 
-This allows imported marketplace content to be validated without reporting valid overlap as fatal breakage.
+This allows imported marketplace content to be validated without reporting valid overlap as fatal breakage. Diagnostics should name the conflicting canonical references, describe the remediation, and avoid printing secrets.
 
 ---
 
@@ -186,24 +194,24 @@ This allows imported marketplace content to be validated without reporting valid
 
 This feature has been verified in three ways:
 
-1. **Contract/unit tests** for parsing, namespacing, resolution, diagnostics, and import behavior
-2. **Portable integration-style tests** using local or cloned marketplace fixtures
-3. **Real host validation** against the installed `gsd` binary and actual Claude-managed directories on the host machine
+1. **Contract/unit tests** for parsing, namespacing, resolution, diagnostics, and import behavior.
+2. **Portable integration-style tests** using local or cloned marketplace fixtures.
+3. **Real host validation** against the installed Hammer binary and actual Claude-managed directories on the host machine.
 
 Real host validation included:
 
-- clean startup of the installed `gsd` binary after fixing stale bad settings
+- clean startup of the installed Hammer binary after fixing stale bad settings
 - successful invocation of an imported skill (`/stinkysnake`)
-- successful execution of `/gsd prefs import-claude global`
+- successful execution of `/hammer prefs import-claude global`
 - verification that imported marketplace agent directories were **not** reintroduced into `settings.packages`
 
 ---
 
 ## Current limitations
 
-- GSD does not yet translate every Claude plugin component type into active Pi-native runtime behavior
-- marketplace-derived agents are not persisted as package roots, by design
-- clone-style local fallbacks still exist for developer convenience, even though Claude-managed marketplace/plugin locations are preferred first
+- Hammer does not yet translate every Claude plugin component type into active Pi-native runtime behavior.
+- Marketplace-derived agents are not persisted as package roots, by design.
+- Clone-style local fallbacks still exist for developer convenience, even though Claude-managed marketplace/plugin locations are preferred first.
 
 ---
 

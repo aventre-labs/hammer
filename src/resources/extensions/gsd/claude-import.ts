@@ -518,7 +518,7 @@ export async function runClaudeImportFlow(
   const { marketplaces, flat } = categorizePluginRoots(pluginRoots);
 
   // Determine import mode
-  const assetChoice = await ctx.ui.select("Import Claude assets into GSD/Pi config", [
+  const assetChoice = await ctx.ui.select("Import Claude assets into Hammer/Pi config", [
     "Skills + plugins",
     "Skills only",
     "Plugins only",
@@ -541,7 +541,7 @@ export async function runClaudeImportFlow(
     const selectedSkills = await chooseMany(ctx, `Claude skills → ${scope} preferences`, discoveredSkills);
 
     if (selectedSkills.length > 0) {
-      const prefMode = await ctx.ui.select("How should GSD treat the imported skills?", [
+      const prefMode = await ctx.ui.select("How should Hammer treat the imported skills?", [
         "Always use when relevant",
         "Prefer when relevant",
         "Do not modify skill preferences",
@@ -690,7 +690,7 @@ export async function runClaudeImportFlow(
   ];
   if (importedSkillsCount > 0) {
     lines.push(`- Skill paths added to Pi settings (${scope}) for availability`);
-    lines.push(`- Skill refs added to GSD preferences (${scope}) when selected`);
+    lines.push(`- Skill refs added to Hammer preferences (${scope}) when selected`);
   }
   if (importedPluginsCount > 0) {
     lines.push(`- Plugin/package paths added to Pi settings (${scope}) packages`);
