@@ -34,7 +34,11 @@ import {
   removeSessionStatus,
   sendSignal,
   cleanupStaleSessions,
+  createWorkerIAMMetadata,
+  validateWorkerIAMMetadata,
+  workerIAMEnv,
   type SessionStatus,
+  type WorkerIAMMetadata,
 } from "./session-status-io.js";
 import {
   analyzeParallelEligibility,
@@ -56,6 +60,7 @@ export interface WorkerInfo {
   startedAt: number;
   state: "running" | "paused" | "stopped" | "error";
   cost: number;
+  iam: WorkerIAMMetadata;
   cleanup?: () => void;
 }
 
@@ -65,6 +70,33 @@ export interface OrchestratorState {
   config: ParallelConfig;
   totalCost: number;
   startedAt: number;
+}
+
+function buildMilestoneWorkerIAM(milestoneId: string): WorkerIAMMetadata {
+  return createWorkerIAMMetadata({
+    role: "orchestrator-worker",
+    milestoneId,
+    workerId: milestoneId,
+  });
+}
+
+function sessionStatusForWorker(worker: WorkerInfo, stateOverride?: WorkerInfo["state"]): SessionStatus {
+  const diagnostics = validateWorkerIAMMetadata(worker.iam);
+  if (diagnostics.length > 0) {
+    throw new Error(`Invalid milestone worker IAM metadata for ${worker.milestoneId}: ${diagnostics.join("; ")}`);
+  }
+  return {
+    milestoneId: worker.milestoneId,
+    pid: worker.pid,
+    state: stateOverride ?? worker.state,
+    currentUnit: null,
+    completedUnits: 0,
+    cost: worker.cost,
+    lastHeartbeat: Date.now(),
+    startedAt: worker.startedAt,
+    worktreePath: worker.worktreePath,
+    iam: worker.iam,
+  };
 }
 
 // ─── Module State ──────────────────────────────────────────────────────────
@@ -90,6 +122,7 @@ export interface PersistedState {
     startedAt: number;
     state: "running" | "paused" | "stopped" | "error";
     cost: number;
+    iam?: WorkerIAMMetadata;
   }>;
   totalCost: number;
   startedAt: number;
@@ -120,6 +153,7 @@ export function persistState(basePath: string): void {
         startedAt: w.startedAt,
         state: w.state,
         cost: w.cost,
+        iam: w.iam,
       })),
       totalCost: state.totalCost,
       startedAt: state.startedAt,
@@ -243,6 +277,7 @@ function restoreRuntimeState(basePath: string): boolean {
         startedAt: w.startedAt,
         state: diskStatus?.state ?? w.state,
         cost: diskStatus?.cost ?? w.cost,
+        iam: diskStatus?.iam ?? w.iam ?? buildMilestoneWorkerIAM(w.milestoneId),
       });
     }
 
@@ -277,6 +312,7 @@ function restoreRuntimeState(basePath: string): boolean {
       startedAt: status.startedAt,
       state: status.state,
       cost: status.cost,
+      iam: status.iam ?? buildMilestoneWorkerIAM(status.milestoneId),
     });
     state.totalCost += status.cost;
   }
@@ -405,6 +441,7 @@ export async function startParallel(
         startedAt: w.startedAt,
         state: "running",
         cost: w.cost,
+        iam: w.iam ?? buildMilestoneWorkerIAM(w.milestoneId),
       });
       adopted.push(w.milestoneId);
     }
@@ -486,6 +523,7 @@ export async function startParallel(
         startedAt: now,
         state: "running",
         cost: 0,
+        iam: buildMilestoneWorkerIAM(mid),
       };
 
       state.workers.set(mid, worker);
@@ -497,17 +535,7 @@ export async function startParallel(
       }
 
       // Write session status with real PID (or 0 if spawn failed)
-      writeSessionStatus(basePath, {
-        milestoneId: mid,
-        pid: worker.pid,
-        state: worker.state,
-        currentUnit: null,
-        completedUnits: 0,
-        cost: 0,
-        lastHeartbeat: now,
-        startedAt: now,
-        worktreePath: wtPath,
-      });
+      writeSessionStatus(basePath, sessionStatusForWorker(worker));
 
       started.push(mid);
     } catch (err) {
@@ -587,26 +615,27 @@ export function spawnWorker(
   const binPath = resolveGsdBin();
   if (!binPath) return false;
 
+  const workerEnv: Record<string, string | undefined> = {
+    ...process.env,
+    GSD_MILESTONE_LOCK: milestoneId,
+    // Pass the real project root so workers don't need to re-derive it.
+    // Without this, process.cwd() resolves symlinks and the worktree
+    // path heuristic can match the user-level ~/.gsd instead of the
+    // project .gsd, causing writes to ~ and corrupting user config.
+    GSD_PROJECT_ROOT: basePath,
+    // Prevent workers from spawning their own parallel sessions
+    GSD_PARALLEL_WORKER: "1",
+    ...workerIAMEnv(worker.iam),
+  };
+
+  // Apply worker model override if configured, so workers use a cheaper
+  // model (e.g. Haiku) rather than inheriting the coordinator's model.
+  if (state.config.worker_model) {
+    workerEnv.GSD_WORKER_MODEL = state.config.worker_model;
+  }
+
   let child: ChildProcess;
   try {
-    const workerEnv: Record<string, string | undefined> = {
-      ...process.env,
-      GSD_MILESTONE_LOCK: milestoneId,
-      // Pass the real project root so workers don't need to re-derive it.
-      // Without this, process.cwd() resolves symlinks and the worktree
-      // path heuristic can match the user-level ~/.gsd instead of the
-      // project .gsd, causing writes to ~ and corrupting user config.
-      GSD_PROJECT_ROOT: basePath,
-      // Prevent workers from spawning their own parallel sessions
-      GSD_PARALLEL_WORKER: "1",
-    };
-
-    // Apply worker model override if configured, so workers use a cheaper
-    // model (e.g. Haiku) rather than inheriting the coordinator's model.
-    if (state.config.worker_model) {
-      workerEnv.GSD_WORKER_MODEL = state.config.worker_model;
-    }
-
     child = spawn(process.execPath, [binPath, "headless", "--json", "auto"], {
       cwd: worker.worktreePath,
       env: workerEnv,
@@ -667,17 +696,7 @@ export function spawnWorker(
   }
 
   // Update session status with real PID
-  writeSessionStatus(basePath, {
-    milestoneId,
-    pid: worker.pid,
-    state: "running",
-    currentUnit: null,
-    completedUnits: 0,
-    cost: worker.cost,
-    lastHeartbeat: Date.now(),
-    startedAt: worker.startedAt,
-    worktreePath: worker.worktreePath,
-  });
+  writeSessionStatus(basePath, sessionStatusForWorker(worker, "running"));
 
   // Store cleanup function to remove all listeners from the child process.
   // This prevents listener accumulation when workers are respawned, since
@@ -710,17 +729,7 @@ export function spawnWorker(
     }
 
     // Update session status and persist orchestrator state for crash recovery
-    writeSessionStatus(basePath, {
-      milestoneId,
-      pid: w.pid,
-      state: w.state,
-      currentUnit: null,
-      completedUnits: 0,
-      cost: w.cost,
-      lastHeartbeat: Date.now(),
-      startedAt: w.startedAt,
-      worktreePath: w.worktreePath,
-    });
+    writeSessionStatus(basePath, sessionStatusForWorker(w));
     persistState(basePath);
   });
 
@@ -801,17 +810,7 @@ function processWorkerLine(basePath: string, milestoneId: string, line: string):
     // Update session status file so dashboard sees live cost
     const worker = state.workers.get(milestoneId);
     if (worker) {
-      writeSessionStatus(basePath, {
-        milestoneId,
-        pid: worker.pid,
-        state: worker.state,
-        currentUnit: null,
-        completedUnits: 0,
-        cost: worker.cost,
-        lastHeartbeat: Date.now(),
-        startedAt: worker.startedAt,
-        worktreePath: worker.worktreePath,
-      });
+      writeSessionStatus(basePath, sessionStatusForWorker(worker));
     }
   }
 
@@ -820,17 +819,7 @@ function processWorkerLine(basePath: string, milestoneId: string, line: string):
     // GSD auto-mode sends notifications about current unit
     const worker = state.workers.get(milestoneId);
     if (worker) {
-      writeSessionStatus(basePath, {
-        milestoneId,
-        pid: worker.pid,
-        state: worker.state,
-        currentUnit: null,
-        completedUnits: 0,
-        cost: worker.cost,
-        lastHeartbeat: Date.now(),
-        startedAt: worker.startedAt,
-        worktreePath: worker.worktreePath,
-      });
+      writeSessionStatus(basePath, sessionStatusForWorker(worker));
     }
   }
 }

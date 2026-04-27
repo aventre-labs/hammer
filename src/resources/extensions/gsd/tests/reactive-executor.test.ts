@@ -369,6 +369,31 @@ test("completed tasks are not re-dispatched on next iteration", async () => {
   }
 });
 
+test("reactive state persists selected task ids and graph metrics without IAM envelope bloat", () => {
+  const repo = mkdtempSync(join(tmpdir(), "gsd-reactive-iam-compact-"));
+  mkdirSync(join(repo, ".gsd", "runtime"), { recursive: true });
+  try {
+    const state: ReactiveExecutionState = {
+      sliceId: "S07",
+      completed: ["T01"],
+      dispatched: ["T02", "T03"],
+      graphSnapshot: { taskCount: 6, edgeCount: 4, readySetSize: 2, ambiguous: false },
+      updatedAt: "2026-04-27T18:00:00.000Z",
+    };
+
+    saveReactiveState(repo, "M001", "S07", state);
+    const raw = readFileSync(join(repo, ".gsd", "runtime", "M001-S07-reactive.json"), "utf-8");
+    const loaded = loadReactiveState(repo, "M001", "S07");
+
+    assert.deepEqual(loaded?.dispatched, ["T02", "T03"]);
+    assert.deepEqual(loaded?.graphSnapshot, { taskCount: 6, edgeCount: 4, readySetSize: 2, ambiguous: false });
+    assert.equal(raw.includes("HAMMER_IAM_ENVELOPE_ID"), false);
+    assert.equal(raw.includes("IAM Context Envelope"), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // ─── Batch Verification ───────────────────────────────────────────────────
 
 test("verifyExpectedArtifact: reactive-execute passes when all dispatched summaries exist", async () => {

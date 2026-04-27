@@ -29,6 +29,10 @@ import {
   consumeSignal,
   isSessionStale,
   cleanupStaleSessions,
+  createWorkerIAMMetadata,
+  formatWorkerIAMDiagnostic,
+  validateWorkerIAMMetadata,
+  workerIAMEnv,
   type SessionStatus,
 } from "../session-status-io.js";
 
@@ -124,6 +128,98 @@ describe("session-status-io: status roundtrip", () => {
     assert.ok(readSessionStatus(base, "M001"));
     removeSessionStatus(base, "M001");
     assert.equal(readSessionStatus(base, "M001"), null);
+  });
+  it("write then read preserves IAM worker metadata", () => {
+    const status = makeStatus({
+      iam: createWorkerIAMMetadata({
+        role: "orchestrator-worker",
+        milestoneId: "M001",
+        workerId: "M001",
+      }),
+    });
+    writeSessionStatus(base, status);
+
+    const read = readSessionStatus(base, "M001");
+    assert.ok(read?.iam);
+    assert.equal(read.iam.role, "orchestrator-worker");
+    assert.equal(read.iam.envelopeId, "iam-worker/M001/M001");
+    assert.equal(read.iam.transport, "env-status-file");
+    assert.equal(read.iam.parentUnit, "M001");
+    assert.equal(read.iam.diagnostic, "Child-process workers use env/status-file IAM envelopes; in-process subagent calls use prompt/tool-input envelopes.");
+  });
+
+  it("legacy status without IAM metadata still parses", () => {
+    writeSessionStatus(base, makeStatus());
+    const read = readSessionStatus(base, "M001");
+    assert.ok(read);
+    assert.equal(read.iam, undefined);
+  });
+
+  it("invalid IAM worker role is rejected without corrupting other status reads", () => {
+    writeSessionStatus(base, makeStatus({ milestoneId: "M001" }));
+    const invalid = makeStatus({
+      milestoneId: "M002",
+      iam: {
+        role: "not-a-worker" as any,
+        envelopeId: "iam-worker/M002/M002",
+        parentUnit: "M002",
+        transport: "env-status-file",
+        diagnostic: "invalid fixture",
+      },
+    });
+    writeFileSync(
+      join(base, ".gsd", "parallel", "M002.status.json"),
+      JSON.stringify(invalid, null, 2),
+      "utf-8",
+    );
+
+    assert.equal(readSessionStatus(base, "M002"), null);
+    const all = readAllSessionStatuses(base);
+    assert.deepEqual(all.map((s) => s.milestoneId), ["M001"]);
+  });
+
+  it("worker IAM env and diagnostics expose compact role/envelope metadata", () => {
+    const iam = createWorkerIAMMetadata({
+      role: "workflow-worker",
+      milestoneId: "M001",
+      sliceId: "S02",
+      workerId: "S02",
+    });
+    assert.deepEqual(workerIAMEnv(iam), {
+      HAMMER_IAM_ROLE: "workflow-worker",
+      HAMMER_IAM_ENVELOPE_ID: "iam-worker/M001/S02/S02",
+    });
+    assert.deepEqual(validateWorkerIAMMetadata(iam), []);
+    assert.match(formatWorkerIAMDiagnostic(iam), /env\/status-file IAM envelope/);
+    assert.match(formatWorkerIAMDiagnostic(iam), /prompt\/tool-input envelopes/);
+  });
+
+  it("worker IAM validation reports missing id and invalid role", () => {
+    assert.deepEqual(
+      validateWorkerIAMMetadata({
+        role: "not-a-worker" as any,
+        envelopeId: "",
+        parentUnit: "",
+        transport: "env-status-file",
+        diagnostic: "",
+      }),
+      [
+        "invalid IAM worker role: not-a-worker",
+        "missing IAM worker envelope id",
+        "missing IAM worker parent unit",
+        "missing IAM worker diagnostic",
+      ],
+    );
+    assert.deepEqual(
+      validateWorkerIAMMetadata({
+        role: "workflow-worker",
+        envelopeId: "iam-worker/M001/S02",
+        parentUnit: "M001/S02",
+        transport: "env-status-file",
+        diagnostic: "diagnostic present",
+      }),
+      ["malformed IAM worker envelope id: iam-worker/M001/S02"],
+    );
   });
 });
 
@@ -343,6 +439,44 @@ describe("parallel-orchestrator: lifecycle", () => {
       `expected running or error, got ${status.state}`);
   });
 
+  it("startParallel writes IAM worker metadata without changing legacy lock env semantics", async () => {
+    await startParallel(base, ["M001"], undefined);
+    const status = readSessionStatus(base, "M001");
+    assert.ok(status?.iam);
+    assert.equal(status.iam.role, "orchestrator-worker");
+    assert.equal(status.iam.envelopeId, "iam-worker/M001/M001");
+    assert.equal(status.iam.transport, "env-status-file");
+    assert.match(status.iam.diagnostic, /env\/status-file IAM envelopes/);
+    const expectedEnv = workerIAMEnv(status.iam);
+    assert.equal(expectedEnv.HAMMER_IAM_ROLE, "orchestrator-worker");
+    assert.equal(expectedEnv.HAMMER_IAM_ENVELOPE_ID, "iam-worker/M001/M001");
+
+    const workers = getWorkerStatuses();
+    assert.equal(workers[0]?.iam.envelopeId, status.iam.envelopeId);
+    assert.equal(process.env.GSD_MILESTONE_LOCK, undefined);
+    assert.equal(process.env.GSD_PARALLEL_WORKER, undefined);
+  });
+
+  it("startParallel preserves worker_model override while adding IAM status metadata", async () => {
+    await startParallel(base, ["M777"], {
+      parallel: {
+        enabled: true,
+        max_workers: 1,
+        merge_strategy: "per-milestone",
+        auto_merge: "confirm",
+        worker_model: "haiku-test",
+      },
+    } as any);
+
+    const orchestratorState = getOrchestratorState();
+    assert.equal(orchestratorState?.config.worker_model, "haiku-test");
+    const status = readSessionStatus(base, "M777");
+    assert.ok(status?.iam);
+    assert.equal(status.iam.role, "orchestrator-worker");
+    assert.equal(status.iam.envelopeId, "iam-worker/M777/M777");
+    assert.equal(status.iam.parentUnit, "M777");
+  });
+
   it("stopParallel stops all workers", async () => {
     await startParallel(base, ["M001", "M002"], undefined);
     await stopParallel(base);
@@ -550,6 +684,11 @@ function makeWorker(overrides: Partial<WorkerInfo> = {}): WorkerInfo {
     startedAt: Date.now() - 60_000,
     state: "stopped",
     cost: 2.50,
+    iam: createWorkerIAMMetadata({
+      role: "orchestrator-worker",
+      milestoneId: overrides.milestoneId ?? "M001",
+      workerId: overrides.milestoneId ?? "M001",
+    }),
     ...overrides,
   };
 }

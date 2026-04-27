@@ -37,6 +37,7 @@ import type { WorkerInfo } from "../../parallel-orchestrator.ts";
 import {
   writeSessionStatus,
   readSessionStatus,
+  createWorkerIAMMetadata,
 } from "../../session-status-io.ts";
 import {
   openDatabase,
@@ -77,6 +78,11 @@ function makeWorker(overrides: Partial<WorkerInfo> = {}): WorkerInfo {
     startedAt: Date.now(),
     state: "stopped",
     cost: 1.5,
+    iam: createWorkerIAMMetadata({
+      role: "orchestrator-worker",
+      milestoneId: overrides.milestoneId ?? "M001",
+      workerId: overrides.milestoneId ?? "M001",
+    }),
     ...overrides,
   };
 }

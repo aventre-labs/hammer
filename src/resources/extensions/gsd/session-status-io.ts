@@ -7,9 +7,12 @@
  *
  * Atomic writes (write to .tmp, then rename) prevent partial reads.
  * Signal files let the coordinator send pause/resume/stop/rebase to workers.
- * Stale detection combines PID liveness checks with heartbeat timeouts.
+ * Stale detection combines PID liveness checks with heartbeat timeouts. IAM
+ * worker envelopes for child processes are intentionally compact: role +
+ * deterministic envelope id in env vars and status files, not prompt bodies.
  */
 
+import type { IAMSubagentRoleName } from "../../../iam/context-envelope.js";
 import {
   unlinkSync,
   readdirSync,
@@ -22,6 +25,14 @@ import { loadJsonFileOrNull, writeJsonFileAtomic } from "./json-persistence.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
+export interface WorkerIAMMetadata {
+  role: Extract<IAMSubagentRoleName, "orchestrator-worker" | "workflow-worker">;
+  envelopeId: string;
+  parentUnit: string;
+  transport: "env-status-file";
+  diagnostic: string;
+}
+
 export interface SessionStatus {
   milestoneId: string;
   pid: number;
@@ -32,6 +43,12 @@ export interface SessionStatus {
   lastHeartbeat: number;
   startedAt: number;
   worktreePath: string;
+  /**
+   * Additive IAM metadata for child-process workers. Legacy status files may
+   * omit this field; when present, it must stay compact so large parallel
+   * batches do not persist prompt-sized envelopes into status records.
+   */
+  iam?: WorkerIAMMetadata;
 }
 
 export type SessionSignal = "pause" | "resume" | "stop" | "rebase";
@@ -48,9 +65,86 @@ const PARALLEL_DIR = "parallel";
 const STATUS_SUFFIX = ".status.json";
 const SIGNAL_SUFFIX = ".signal.json";
 const DEFAULT_STALE_TIMEOUT_MS = 30_000;
+const WORKER_IAM_DIAGNOSTIC = "Child-process workers use env/status-file IAM envelopes; in-process subagent calls use prompt/tool-input envelopes.";
+const WORKER_IAM_ROLES = new Set<WorkerIAMMetadata["role"]>(["orchestrator-worker", "workflow-worker"]);
+
+interface CreateWorkerIAMMetadataInput {
+  role: WorkerIAMMetadata["role"];
+  milestoneId: string;
+  workerId: string;
+  sliceId?: string;
+}
+
+export function createWorkerIAMMetadata(input: CreateWorkerIAMMetadataInput): WorkerIAMMetadata {
+  const parts = ["iam-worker", input.milestoneId, input.sliceId, input.workerId]
+    .filter((part): part is string => typeof part === "string" && part.length > 0);
+  return {
+    role: input.role,
+    envelopeId: parts.join("/"),
+    parentUnit: input.sliceId ? `${input.milestoneId}/${input.sliceId}` : input.milestoneId,
+    transport: "env-status-file",
+    diagnostic: WORKER_IAM_DIAGNOSTIC,
+  };
+}
+
+export function workerIAMEnv(iam: WorkerIAMMetadata): Record<"HAMMER_IAM_ROLE" | "HAMMER_IAM_ENVELOPE_ID", string> {
+  return {
+    HAMMER_IAM_ROLE: iam.role,
+    HAMMER_IAM_ENVELOPE_ID: iam.envelopeId,
+  };
+}
+
+export function validateWorkerIAMMetadata(iam: unknown): string[] {
+  if (iam === undefined) return [];
+  if (iam === null || typeof iam !== "object") return ["IAM worker metadata must be an object when present"];
+  const record = iam as Record<string, unknown>;
+  const diagnostics: string[] = [];
+
+  if (typeof record.role !== "string" || !WORKER_IAM_ROLES.has(record.role as WorkerIAMMetadata["role"])) {
+    diagnostics.push(`invalid IAM worker role: ${String(record.role)}`);
+  }
+  if (typeof record.envelopeId !== "string" || record.envelopeId.trim().length === 0) {
+    diagnostics.push("missing IAM worker envelope id");
+  } else {
+    const orchestratorPattern = /^iam-worker\/[^/]+\/[^/]+$/;
+    const workflowPattern = /^iam-worker\/[^/]+\/[^/]+\/[^/]+$/;
+    const role = typeof record.role === "string" ? record.role : "";
+    const envelopeMatchesRole = role === "workflow-worker"
+      ? workflowPattern.test(record.envelopeId)
+      : role === "orchestrator-worker"
+        ? orchestratorPattern.test(record.envelopeId)
+        : orchestratorPattern.test(record.envelopeId) || workflowPattern.test(record.envelopeId);
+    if (!envelopeMatchesRole) {
+      diagnostics.push(`malformed IAM worker envelope id: ${record.envelopeId}`);
+    }
+  }
+  if (typeof record.parentUnit !== "string" || record.parentUnit.trim().length === 0) {
+    diagnostics.push("missing IAM worker parent unit");
+  }
+  if (record.transport !== "env-status-file") {
+    diagnostics.push(`invalid IAM worker transport: ${String(record.transport)}`);
+  }
+  if (typeof record.diagnostic !== "string" || record.diagnostic.trim().length === 0) {
+    diagnostics.push("missing IAM worker diagnostic");
+  }
+
+  return diagnostics;
+}
+
+export function formatWorkerIAMDiagnostic(iam: WorkerIAMMetadata): string {
+  return `${iam.diagnostic} role=${iam.role}; envelopeId=${iam.envelopeId}; parentUnit=${iam.parentUnit}`;
+}
+
+function isWorkerIAMMetadata(data: unknown): data is WorkerIAMMetadata {
+  return validateWorkerIAMMetadata(data).length === 0;
+}
 
 function isSessionStatus(data: unknown): data is SessionStatus {
-  return data !== null && typeof data === "object" && "milestoneId" in data && "pid" in data;
+  if (data === null || typeof data !== "object" || !("milestoneId" in data) || !("pid" in data)) {
+    return false;
+  }
+  const record = data as Record<string, unknown>;
+  return record.iam === undefined || isWorkerIAMMetadata(record.iam);
 }
 
 function isSignalMessage(data: unknown): data is SignalMessage {

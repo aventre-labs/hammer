@@ -5,7 +5,8 @@
  * Mirrors the existing parallel-orchestrator.ts pattern at slice scope
  * instead of milestone scope. Workers are separate processes spawned via
  * child_process, each running in its own git worktree with GSD_SLICE_LOCK
- * + GSD_MILESTONE_LOCK env vars set.
+ * + GSD_MILESTONE_LOCK env vars set. IAM worker metadata is additive and
+ * compact: HAMMER_IAM_ROLE/HAMMER_IAM_ENVELOPE_ID plus status-file fields.
  *
  * Key differences from milestone-level parallelism:
  * - Scope: slices within one milestone, not milestones within a project
@@ -32,6 +33,11 @@ import { autoWorktreeBranch, runWorktreePostCreateHook } from "./auto-worktree.j
 import {
   writeSessionStatus,
   removeSessionStatus,
+  createWorkerIAMMetadata,
+  workerIAMEnv,
+  validateWorkerIAMMetadata,
+  type SessionStatus,
+  type WorkerIAMMetadata,
 } from "./session-status-io.js";
 import { hasFileConflict } from "./slice-parallel-conflict.js";
 import { getErrorMessage } from "./error-utils.js";
@@ -51,6 +57,7 @@ export interface SliceWorkerInfo {
   state: "running" | "stopped" | "error";
   completedUnits: number;
   cost: number;
+  iam: WorkerIAMMetadata;
   cleanup?: () => void;
 }
 
@@ -68,6 +75,34 @@ export interface StartSliceParallelOpts {
   maxWorkers?: number;
   budgetCeiling?: number;
   useExecutionGraph?: boolean;
+}
+
+function buildSliceWorkerIAM(milestoneId: string, sliceId: string): WorkerIAMMetadata {
+  return createWorkerIAMMetadata({
+    role: "workflow-worker",
+    milestoneId,
+    sliceId,
+    workerId: sliceId,
+  });
+}
+
+function sliceSessionStatusForWorker(worker: SliceWorkerInfo, stateOverride?: SliceWorkerInfo["state"]): SessionStatus {
+  const diagnostics = validateWorkerIAMMetadata(worker.iam);
+  if (diagnostics.length > 0) {
+    throw new Error(`Invalid slice worker IAM metadata for ${worker.milestoneId}/${worker.sliceId}: ${diagnostics.join("; ")}`);
+  }
+  return {
+    milestoneId: `${worker.milestoneId}/${worker.sliceId}`,
+    pid: worker.pid,
+    state: stateOverride ?? worker.state,
+    currentUnit: null,
+    completedUnits: worker.completedUnits,
+    cost: worker.cost,
+    lastHeartbeat: Date.now(),
+    startedAt: worker.startedAt,
+    worktreePath: worker.worktreePath,
+    iam: worker.iam,
+  };
 }
 
 // ─── Module State ──────────────────────────────────────────────────────────
@@ -94,6 +129,7 @@ interface PersistedSliceWorker {
   state: "running" | "stopped" | "error";
   completedUnits: number;
   cost: number;
+  iam?: WorkerIAMMetadata;
 }
 
 interface PersistedSliceState {
@@ -212,6 +248,7 @@ function persistSliceState(): void {
         state: w.state,
         completedUnits: w.completedUnits,
         cost: w.cost,
+        iam: w.iam,
       })),
       totalCost: sliceState.totalCost,
       budgetCeiling: sliceState.budgetCeiling,
@@ -341,6 +378,7 @@ export function isSliceParallelActive(basePath?: string): boolean {
       state: w.state,
       completedUnits: w.completedUnits,
       cost: w.cost,
+      iam: w.iam ?? buildSliceWorkerIAM(w.milestoneId, w.sliceId),
     });
   }
   return true;
@@ -422,6 +460,7 @@ export async function startSliceParallel(
         state: "running",
         completedUnits: 0,
         cost: 0,
+        iam: buildSliceWorkerIAM(milestoneId, slice.id),
       };
 
       sliceState.workers.set(slice.id, worker);
@@ -625,6 +664,7 @@ function spawnSliceWorker(
         GSD_PROJECT_ROOT: basePath,
         GSD_PARALLEL_WORKER: "1",
         GSD_SLICE_WORKER_TOKEN: worker.workerToken,
+        ...workerIAMEnv(worker.iam),
       },
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
@@ -680,17 +720,7 @@ function spawnSliceWorker(
   }
 
   // Update session status
-  writeSessionStatus(basePath, {
-    milestoneId: `${milestoneId}/${sliceId}`,
-    pid: worker.pid,
-    state: "running",
-    currentUnit: null,
-    completedUnits: worker.completedUnits,
-    cost: worker.cost,
-    lastHeartbeat: Date.now(),
-    startedAt: worker.startedAt,
-    worktreePath: worker.worktreePath,
-  });
+  writeSessionStatus(basePath, sliceSessionStatusForWorker(worker, "running"));
 
   // Store cleanup function
   worker.cleanup = () => {
@@ -719,17 +749,7 @@ function spawnSliceWorker(
         `\n[slice-orchestrator] worker exited with code ${code ?? "null"}\n`);
     }
 
-    writeSessionStatus(basePath, {
-      milestoneId: `${milestoneId}/${sliceId}`,
-      pid: w.pid,
-      state: w.state,
-      currentUnit: null,
-      completedUnits: w.completedUnits,
-      cost: w.cost,
-      lastHeartbeat: Date.now(),
-      startedAt: w.startedAt,
-      worktreePath: w.worktreePath,
-    });
+    writeSessionStatus(basePath, sliceSessionStatusForWorker(w));
 
     // Persist worker terminal state for crash recovery.
     // (Issue #4980 HIGH-8)

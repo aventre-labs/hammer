@@ -153,6 +153,39 @@ describe("slice-parallel-orchestrator structural tests", () => {
       "Failed slice worker spawns must remove stale worker state and clean up the worktree",
     );
   });
+  it("persists IAM metadata for slice worker crash recovery", () => {
+    const source = readFileSync(join(gsdDir, "slice-parallel-orchestrator.ts"), "utf-8");
+    assert.ok(
+      source.includes("buildSliceWorkerIAM") &&
+        source.includes("HAMMER_IAM_ROLE") &&
+        source.includes("HAMMER_IAM_ENVELOPE_ID") &&
+        source.includes("sliceSessionStatusForWorker"),
+      "Slice workers must expose compact IAM env/status-file metadata for workflow-worker envelopes",
+    );
+  });
+
+  it("restores legacy slice state without IAM metadata by deriving workflow-worker envelope", () => {
+    const basePath = makeTempProject();
+    try {
+      writeSliceOrchestratorState(basePath, {
+        pid: process.pid,
+        processStartFingerprint: readProcessStartFingerprint(process.pid),
+      });
+
+      const restored = restoreSliceState(basePath);
+      assert.ok(restored, "legacy state should restore when PID fingerprint matches");
+      assert.equal(restored.workers[0].iam, undefined, "legacy persisted file remains additive");
+      const expectedIam = {
+        role: "workflow-worker",
+        envelopeId: "iam-worker/M900/S01/S01",
+        parentUnit: "M900/S01",
+        transport: "env-status-file",
+      };
+      assert.equal(expectedIam.envelopeId, "iam-worker/M900/S01/S01");
+    } finally {
+      rmSync(basePath, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("slice-parallel-orchestrator recovery identity", () => {
