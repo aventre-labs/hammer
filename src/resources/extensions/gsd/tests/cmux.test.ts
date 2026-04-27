@@ -13,8 +13,9 @@ import {
   resolveCmuxConfig,
   shouldPromptToEnableCmux,
 } from "../../cmux/index.ts";
-import { autoEnableCmuxPreferences } from "../commands-cmux.ts";
+import { autoEnableCmuxPreferences, writeProjectCmuxPreferences } from "../commands-cmux.ts";
 import type { CmuxStateInput } from "../../shared/cmux-events.ts";
+import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 
 test("detectCmuxEnvironment requires workspace, surface, and socket", () => {
   const detected = detectCmuxEnvironment(
@@ -115,6 +116,28 @@ describe("autoEnableCmuxPreferences", () => {
     assert.ok(content.includes("notifications: true"), "should default notifications on");
     assert.ok(content.includes("sidebar: true"), "should default sidebar on");
     assert.ok(content.includes("splits: false"), "should default splits off");
+    assert.ok(content.includes("# Hammer Skill Preferences"), "should preserve existing Hammer body");
+    assert.ok(!content.includes("# GSD Skill Preferences"), "should not emit stale GSD fallback heading");
+    assert.ok(!content.includes("~/.gsd/agent/extensions/gsd/docs/preferences-reference.md"), "should not emit stale docs path");
+  });
+
+  test("writes Hammer fallback body when existing preferences have no markdown body", () => {
+    const prefsPath = path.join(tmp, ".gsd", "preferences.md");
+    fs.writeFileSync(prefsPath, [
+      "---",
+      "version: 1",
+      "---",
+      "",
+    ].join("\n"));
+
+    const result = autoEnableCmuxPreferences();
+    assert.equal(result, true);
+
+    const content = fs.readFileSync(prefsPath, "utf-8");
+    assert.ok(content.includes("# Hammer Skill Preferences"), "should emit Hammer fallback heading");
+    assert.ok(content.includes("~/.hammer/agent/extensions/gsd/docs/preferences-reference.md"), "should emit Hammer docs path");
+    assert.ok(!content.includes("# GSD Skill Preferences"), "should not emit stale GSD fallback heading");
+    assert.ok(!content.includes("~/.gsd/agent/extensions/gsd/docs/preferences-reference.md"), "should not emit stale docs path");
   });
 
   test("returns false when preferences file does not exist", () => {
@@ -143,6 +166,35 @@ describe("autoEnableCmuxPreferences", () => {
     assert.ok(content.includes("splits: true"), "should preserve existing splits: true");
     assert.ok(content.includes("browser: true"), "should preserve existing browser: true");
   });
+});
+
+test("writeProjectCmuxPreferences emits Hammer fallback body when creating preferences", async () => {
+  const tmp = fs.mkdtempSync(path.join(tmpdir(), "cmux-write-test-"));
+  const originalCwd = process.cwd();
+  const notifications: string[] = [];
+  const ctx = {
+    ui: { notify: (message: string) => notifications.push(message) },
+    waitForIdle: async () => undefined,
+    reload: async () => undefined,
+  } as unknown as ExtensionCommandContext;
+
+  try {
+    fs.mkdirSync(path.join(tmp, ".gsd"), { recursive: true });
+    process.chdir(tmp);
+    await writeProjectCmuxPreferences(ctx, (prefs) => {
+      prefs.cmux = { enabled: true };
+    });
+
+    const content = fs.readFileSync(path.join(tmp, ".gsd", "PREFERENCES.md"), "utf-8");
+    assert.ok(content.includes("enabled: true"), "should write cmux enabled preference");
+    assert.ok(content.includes("# Hammer Skill Preferences"), "should emit Hammer fallback heading");
+    assert.ok(content.includes("~/.hammer/agent/extensions/gsd/docs/preferences-reference.md"), "should emit Hammer docs path");
+    assert.ok(!content.includes("# GSD Skill Preferences"), "should not emit stale GSD fallback heading");
+    assert.ok(!content.includes("~/.gsd/agent/extensions/gsd/docs/preferences-reference.md"), "should not emit stale docs path");
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("buildCmuxStatusLabel and progress prefer deepest active unit", () => {

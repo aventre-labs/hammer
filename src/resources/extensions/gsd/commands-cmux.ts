@@ -6,7 +6,7 @@ import {
   loadEffectiveGSDPreferences,
   loadProjectGSDPreferences,
 } from "./preferences.js";
-import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./commands-prefs-wizard.js";
+import { ensurePreferencesFile, serializePreferencesToFrontmatter, DEFAULT_PREFERENCES_BODY } from "./commands-prefs-wizard.js";
 
 /**
  * Auto-enable cmux in project preferences when detected but never configured.
@@ -31,7 +31,7 @@ export function autoEnableCmuxPreferences(): boolean {
   prefs.version = prefs.version || 1;
 
   const frontmatter = serializePreferencesToFrontmatter(prefs);
-  let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+  let body = DEFAULT_PREFERENCES_BODY;
   const preserved = extractBodyAfterFrontmatter(readFileSync(path, "utf-8"));
   if (preserved) body = preserved;
 
@@ -48,7 +48,7 @@ function extractBodyAfterFrontmatter(content: string): string | null {
   return after.trim() ? after : null;
 }
 
-async function writeProjectCmuxPreferences(
+export async function writeProjectCmuxPreferences(
   ctx: ExtensionCommandContext,
   updater: (prefs: Record<string, unknown>) => void,
 ): Promise<void> {
@@ -61,7 +61,7 @@ async function writeProjectCmuxPreferences(
   prefs.version = prefs.version || 1;
 
   const frontmatter = serializePreferencesToFrontmatter(prefs);
-  let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+  let body = DEFAULT_PREFERENCES_BODY;
   if (existsSync(path)) {
     const preserved = extractBodyAfterFrontmatter(readFileSync(path, "utf-8"));
     if (preserved) body = preserved;

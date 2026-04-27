@@ -95,6 +95,14 @@ pre_dispatch_hooks: []
 #   rtk: false
 ---
 
-# GSD Skill Preferences
+# Hammer Skill Preferences
 
-See `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.
+Configure Hammer skill selection, IAM-aware execution defaults, and no-degradation preferences.
+
+Project preferences live in `.hammer/PREFERENCES.md`; global defaults live in `~/.hammer/PREFERENCES.md`.
+See `~/.hammer/agent/extensions/gsd/docs/preferences-reference.md` (legacy extension path segment) for full field documentation and examples.
+
+## Skill selection guidance
+
+- Prefer skills that preserve Hammer IAM role, provenance, verification, and artifact contracts.
+- No-degradation rule: preferences cannot weaken required tests, quality gates, state-namespace constraints, or higher-priority instructions.

@@ -307,8 +307,13 @@ test("ensurePreferences() creates .hammer/PREFERENCES.md for new Hammer project"
     assert.ok(existsSync(prefsPath), ".hammer/PREFERENCES.md must exist");
     const content = readFileSync(prefsPath, "utf8");
     assert.match(content, /Hammer Skill Preferences/, "PREFERENCES.md must mention Hammer");
+    assert.match(content, /IAM/, "PREFERENCES.md must mention IAM-aware execution");
+    assert.match(content, /no-degradation/i, "PREFERENCES.md must mention no-degradation guidance");
     assert.ok(!content.includes("GSD Skill Preferences"), "must not reference GSD product identity");
-    assert.match(content, /~\/.hammer\/agent\//, "path reference must use .hammer not .gsd");
+    assert.ok(!content.includes("~/.gsd/agent/extensions/gsd/docs/preferences-reference.md"), "must not reference stale docs path");
+    assert.match(content, /\.hammer\/PREFERENCES\.md/, "must name project .hammer preferences path");
+    assert.match(content, /~\/\.hammer\/PREFERENCES\.md/, "must name global .hammer preferences path");
+    assert.match(content, /~\/\.hammer\/agent\//, "path reference must use .hammer not .gsd");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -328,6 +333,12 @@ test("ensurePreferences() uses .gsd path for legacy projects (legacy import brid
       // gsdRoot returns .gsd for legacy projects, so PREFERENCES.md lands there
       const gsdPrefsPath = join(tmp, ".gsd", "PREFERENCES.md");
       assert.ok(existsSync(gsdPrefsPath), ".gsd/PREFERENCES.md must exist for legacy project");
+      const content = readFileSync(gsdPrefsPath, "utf8");
+      assert.match(content, /Hammer Skill Preferences/, "legacy path bridge must still create Hammer-first body");
+      assert.ok(!content.includes("GSD Skill Preferences"), "legacy path bridge must not emit stale GSD heading");
+      assert.ok(!content.includes("~/.gsd/agent/extensions/gsd/docs/preferences-reference.md"), "legacy path bridge must not emit stale docs path");
+      assert.match(content, /\.hammer\/PREFERENCES\.md/, "legacy path bridge must point prose at canonical .hammer project preferences");
+      assert.match(content, /~\/\.hammer\/PREFERENCES\.md/, "legacy path bridge must point prose at canonical .hammer global preferences");
     } finally {
       process.stderr.write = origWrite;
     }

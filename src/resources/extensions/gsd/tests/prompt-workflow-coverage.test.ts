@@ -31,6 +31,7 @@ test("tracks S08 and S09 prompt/workflow surfaces from git inventory", () => {
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/commands-workflow-templates.ts"), true);
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/unit-context-manifest.ts"), true);
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/templates/task-summary.md"), true);
+  assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/templates/PREFERENCES.md"), true);
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/docs/preferences-reference.md"), true);
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/generated-docs/example.md"), true);
   assert.equal(shouldScanSurfacePath("src/resources/extensions/gsd/generated-templates/example.md"), true);
@@ -49,6 +50,7 @@ test("S09 surfaces are scanned rather than allowlisted", () => {
     "src/resources/extensions/gsd/prompts/system.md",
     "gsd-orchestrator/SKILL.md",
     "src/resources/extensions/gsd/templates/task-summary.md",
+    "src/resources/extensions/gsd/templates/PREFERENCES.md",
     "src/resources/extensions/gsd/docs/preferences-reference.md",
     "README.md",
   ]);
@@ -57,6 +59,7 @@ test("S09 surfaces are scanned rather than allowlisted", () => {
     "gsd-orchestrator/SKILL.md",
     "src/resources/extensions/gsd/docs/preferences-reference.md",
     "src/resources/extensions/gsd/prompts/system.md",
+    "src/resources/extensions/gsd/templates/PREFERENCES.md",
     "src/resources/extensions/gsd/templates/task-summary.md",
   ]);
   assert.deepEqual(inventory.allowlistedFiles, []);
@@ -233,8 +236,20 @@ test("actual bundled prompt/workflow/S09 surfaces are covered; downstream rewrit
   );
   assert.equal(result.summary.allowlistedCount, 0);
   assert.equal((result.scannedFiles as string[]).includes("src/resources/extensions/gsd/templates/task-summary.md"), true);
+  assert.equal((result.scannedFiles as string[]).includes("src/resources/extensions/gsd/templates/PREFERENCES.md"), true);
   assert.equal((result.scannedFiles as string[]).includes("src/resources/extensions/gsd/docs/preferences-reference.md"), true);
   assert.equal((result.scannedFiles as string[]).includes("gsd-orchestrator/SKILL.md"), true);
+
+  const preferenceTemplateFindings = result.findings.filter(
+    (finding) => finding.filePath === "src/resources/extensions/gsd/templates/PREFERENCES.md",
+  );
+  assert.deepEqual(
+    preferenceTemplateFindings,
+    [],
+    `PREFERENCES.md template should be Hammer/IAM clean:\n${preferenceTemplateFindings
+      .map((finding) => `${finding.filePath}:${finding.lineNumber} [${finding.kind}] ${finding.excerpt}`)
+      .join("\n")}`,
+  );
 
   const nonS09Findings = result.findings.filter(
     (finding) =>

@@ -22,6 +22,22 @@ import {
 import { loadFile, saveFile, splitFrontmatter, parseFrontmatterMap } from "./files.js";
 import { runClaudeImportFlow } from "./claude-import.js";
 
+export const DEFAULT_PREFERENCES_BODY = [
+  "",
+  "# Hammer Skill Preferences",
+  "",
+  "Configure Hammer skill selection, IAM-aware execution defaults, and no-degradation preferences.",
+  "",
+  "Project preferences live in `.hammer/PREFERENCES.md`; global defaults live in `~/.hammer/PREFERENCES.md`.",
+  "See `~/.hammer/agent/extensions/gsd/docs/preferences-reference.md` (legacy extension path segment) for full field documentation and examples.",
+  "",
+  "## Skill selection guidance",
+  "",
+  "- Prefer skills that preserve Hammer IAM role, provenance, verification, and artifact contracts.",
+  "- No-degradation rule: preferences cannot weaken required tests, quality gates, state-namespace constraints, or higher-priority instructions.",
+  "",
+].join("\n");
+
 /** Extract body content after frontmatter closing delimiter, or null if none. */
 function extractBodyAfterFrontmatter(content: string): string | null {
   const closingIdx = content.indexOf("\n---", content.indexOf("---"));
@@ -287,7 +303,7 @@ export async function handleImportClaude(ctx: ExtensionCommandContext, scope: "g
   const writePrefs = async (prefs: Record<string, unknown>): Promise<void> => {
     prefs.version = prefs.version || 1;
     const frontmatter = serializePreferencesToFrontmatter(prefs);
-    let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+    let body = DEFAULT_PREFERENCES_BODY;
     if (existsSync(path)) {
       const preserved = extractBodyAfterFrontmatter(readFileSync(path, "utf-8"));
       if (preserved) body = preserved;
@@ -309,7 +325,7 @@ export async function handlePrefsMode(ctx: ExtensionCommandContext, scope: "glob
   prefs.version = prefs.version || 1;
   const frontmatter = serializePreferencesToFrontmatter(prefs);
 
-  let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+  let body = DEFAULT_PREFERENCES_BODY;
   if (existsSync(path)) {
     const preserved = extractBodyAfterFrontmatter(readFileSync(path, "utf-8"));
     if (preserved) body = preserved;
@@ -1623,7 +1639,7 @@ export async function writePreferencesFile(
   const frontmatter = serializePreferencesToFrontmatter(next);
 
   const fallbackBody = opts?.defaultBody
-    ?? "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+    ?? DEFAULT_PREFERENCES_BODY;
 
   // Preserve existing body content (everything after closing ---) so users
   // who edited the markdown body don't lose their notes.
@@ -1757,20 +1773,20 @@ export async function ensurePreferencesFile(
   if (!existsSync(path)) {
     const template = await loadFile(join(dirname(fileURLToPath(import.meta.url)), "templates", "PREFERENCES.md"));
     if (!template) {
-      ctx.ui.notify("Could not load GSD preferences template.", "error");
+      ctx.ui.notify("Could not load Hammer preferences template.", "error");
       return;
     }
     await saveFile(path, template);
-    ctx.ui.notify(`Created ${scope} GSD skill preferences at ${path}`, "info");
+    ctx.ui.notify(`Created ${scope} Hammer skill preferences at ${path}`, "info");
   } else {
-    ctx.ui.notify(`Using existing ${scope} GSD skill preferences at ${path}`, "info");
+    ctx.ui.notify(`Using existing ${scope} Hammer skill preferences at ${path}`, "info");
   }
 }
 
 /**
- * Handle `/gsd language [code]` — set or clear the global language preference.
+ * Handle `/hammer language [code]` — set or clear the global language preference.
  * Without an argument, shows the current setting.
- * Project-level override can be set by editing `.gsd/PREFERENCES.md` directly
+ * Project-level override can be set by editing `.hammer/PREFERENCES.md` directly
  * (project language overrides global when both are set).
  */
 export async function handleLanguage(args: string, ctx: ExtensionCommandContext): Promise<void> {
@@ -1782,9 +1798,9 @@ export async function handleLanguage(args: string, ctx: ExtensionCommandContext)
     const loaded = loadGlobalGSDPreferences();
     const current = loaded?.preferences.language;
     if (current) {
-      ctx.ui.notify(`Current language preference: ${current}\nUse /gsd language <name> to change, or /gsd language off to clear.`, "info");
+      ctx.ui.notify(`Current language preference: ${current}\nUse /hammer language <name> to change, or /hammer language off to clear.`, "info");
     } else {
-      ctx.ui.notify("No language preference set. Use /gsd language <name> to set one (e.g. /gsd language Chinese).", "info");
+      ctx.ui.notify("No language preference set. Use /hammer language <name> to set one (e.g. /hammer language Chinese).", "info");
     }
     return;
   }
@@ -1803,19 +1819,19 @@ export async function handleLanguage(args: string, ctx: ExtensionCommandContext)
     // Validate before writing — reject values that would fail on next load
     if (lang.length > 50 || /[\r\n]/.test(lang)) {
       ctx.ui.notify(
-        "Language value must be 50 characters or fewer with no newlines (e.g. /gsd language Chinese).",
+        "Language value must be 50 characters or fewer with no newlines (e.g. /hammer language Chinese).",
         "warning",
       );
       return;
     }
     prefs.language = lang;
-    ctx.ui.notify(`Language preference set to: ${lang}\nGSD will now respond in ${lang} across all sessions.`, "info");
+    ctx.ui.notify(`Language preference set to: ${lang}\nHammer will now respond in ${lang} across all sessions.`, "info");
   }
 
   const rawContent = existsSync(path) ? readFileSync(path, "utf-8") : `---\nversion: 1\n---\n`;
   const frontmatter = serializePreferencesToFrontmatter(prefs);
   const body = extractBodyAfterFrontmatter(rawContent)
-    ?? "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+    ?? DEFAULT_PREFERENCES_BODY;
   await saveFile(path, `---\n${frontmatter}---${body}`);
   await ctx.waitForIdle();
   await ctx.reload();

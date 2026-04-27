@@ -17,7 +17,7 @@ import {
   loadEffectiveGSDPreferences,
   loadGlobalGSDPreferences,
 } from "./preferences.js";
-import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./commands-prefs-wizard.js";
+import { ensurePreferencesFile, serializePreferencesToFrontmatter, DEFAULT_PREFERENCES_BODY } from "./commands-prefs-wizard.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ async function writeGlobalServiceTier(
   }
 
   const frontmatter = serializePreferencesToFrontmatter(prefs);
-  let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+  let body = DEFAULT_PREFERENCES_BODY;
   if (existsSync(path)) {
     const preserved = extractBodyAfterFrontmatter(readFileSync(path, "utf-8"));
     if (preserved) body = preserved;

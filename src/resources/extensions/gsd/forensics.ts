@@ -34,7 +34,7 @@ import { formatDuration } from "../shared/format-utils.js";
 import { getAutoWorktreePath } from "./auto-worktree.js";
 import { loadEffectiveGSDPreferences, loadGlobalGSDPreferences, getGlobalGSDPreferencesPath } from "./preferences.js";
 import { showNextAction } from "../shared/tui.js";
-import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./commands-prefs-wizard.js";
+import { ensurePreferencesFile, serializePreferencesToFrontmatter, DEFAULT_PREFERENCES_BODY } from "./commands-prefs-wizard.js";
 import { summarizeWorktreeTelemetry, percentile, type WorktreeTelemetrySummary } from "./worktree-telemetry.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ async function writeForensicsDedupPref(ctx: ExtensionCommandContext, enabled: bo
 
   const frontmatter = serializePreferencesToFrontmatter(prefs);
   const raw = existsSync(prefsPath) ? readFileSync(prefsPath, "utf-8") : "";
-  let body = "\n# GSD Skill Preferences\n\nSee `~/.gsd/agent/extensions/gsd/docs/preferences-reference.md` for full field documentation and examples.\n";
+  let body = DEFAULT_PREFERENCES_BODY;
   const start = raw.startsWith("---\n") ? 4 : raw.startsWith("---\r\n") ? 5 : -1;
   if (start !== -1) {
     const closingIdx = raw.indexOf("\n---", start);

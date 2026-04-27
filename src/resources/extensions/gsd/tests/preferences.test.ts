@@ -10,7 +10,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { HAMMER_HOME_ENV } from "../../../../hammer-identity/index.ts";
@@ -27,7 +27,7 @@ import {
   renderPreferencesForSystemPrompt,
   _resetParseWarningFlag,
 } from "../preferences.ts";
-import { formatConfiguredModel, toPersistedModelId } from "../commands-prefs-wizard.ts";
+import { formatConfiguredModel, toPersistedModelId, writePreferencesFile } from "../commands-prefs-wizard.ts";
 import { _resetLogs, peekLogs } from "../workflow-logger.ts";
 import type { GSDPreferences, GSDModelConfigV2, GSDPhaseModelConfig } from "../preferences.ts";
 
@@ -591,13 +591,21 @@ test("unrecognized format warning is emitted at most once (#2373)", () => {
   }
 });
 
-test("parsePreferencesMarkdown parses heading+list format without frontmatter (#2036)", () => {
-  // A GSD agent recovery session wrote preferences in markdown heading+list
-  // format instead of YAML frontmatter. Since the heading+list fallback parser
-  // was added, this format is now handled gracefully.
-  const content = "## Git\n\n- isolation: none\n";
+test("parsePreferencesMarkdown parses legacy heading+list format without frontmatter (#2036)", () => {
+  // A legacy recovery session wrote preferences in markdown heading+list
+  // format instead of YAML frontmatter. The heading+list fallback remains
+  // compatibility input so migration files still load even though new files
+  // render Hammer wording.
+  const content = "## GSD Skill Preferences\n\n## Git\n\n- isolation: none\n";
   const result = parsePreferencesMarkdown(content);
   assert.notEqual(result, null, "heading+list content should be parsed");
+  assert.deepStrictEqual(result!.git, { isolation: "none" });
+});
+
+test("parsePreferencesMarkdown parses Hammer heading+list format without frontmatter", () => {
+  const content = "## Hammer Skill Preferences\n\n## Git\n\n- isolation: none\n";
+  const result = parsePreferencesMarkdown(content);
+  assert.notEqual(result, null, "Hammer heading+list content should be parsed");
   assert.deepStrictEqual(result!.git, { isolation: "none" });
 });
 
@@ -1037,6 +1045,28 @@ test("language: project setting overrides global via loadEffectiveGSDPreferences
     else process.env.GSD_HOME = originalGsdHome;
     rmSync(tempProject, { recursive: true, force: true });
     rmSync(tempGsdHome, { recursive: true, force: true });
+  }
+});
+
+test("generated preference bodies are Hammer-first while legacy heading label remains parseable", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hammer-prefs-body-"));
+  const path = join(tmp, "PREFERENCES.md");
+
+  try {
+    await writePreferencesFile(path, { mode: "solo" }, null);
+    const content = readFileSync(path, "utf-8");
+    assert.match(content, /^# Hammer Skill Preferences/m);
+    assert.match(content, /\.hammer\/PREFERENCES\.md/);
+    assert.match(content, /~\/\.hammer\/PREFERENCES\.md/);
+    assert.match(content, /IAM-aware execution defaults/);
+    assert.match(content, /No-degradation rule/);
+    assert.doesNotMatch(content, /^# GSD Skill Preferences/m);
+    assert.doesNotMatch(content, /~\/\.gsd\/agent\/extensions\/gsd\/docs\/preferences-reference\.md/);
+
+    const legacy = parsePreferencesMarkdown("## GSD Skill Preferences\n\n## Git\n\n- isolation: none\n");
+    assert.deepStrictEqual(legacy!.git, { isolation: "none" });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 
