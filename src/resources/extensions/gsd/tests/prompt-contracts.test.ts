@@ -252,15 +252,14 @@ test("reassess-roadmap prompt references gsd_reassess_roadmap tool", () => {
   assert.match(prompt, /gsd_reassess_roadmap/);
 });
 
-test("validate-milestone prompt dispatches parallel reviewers", () => {
+test("validate-milestone prompt dispatches pre-rendered IAM reviewer prompts", () => {
   const prompt = readPrompt("validate-milestone");
-  assert.match(prompt, /Reviewer A/);
-  assert.match(prompt, /Reviewer B/);
-  assert.match(prompt, /Reviewer C/);
-  assert.match(prompt, /Requirements Coverage/);
-  assert.match(prompt, /Cross-Slice Integration/);
-  assert.match(prompt, /Assessment & Acceptance Criteria/);
-  assert.match(prompt, /assessment evidence/i);
+  assert.match(prompt, /\{\{reviewerPrompts\}\}/);
+  assert.match(prompt, /pre-rendered `reviewerPrompts` block/);
+  assert.match(prompt, /ALL THREE reviewers/i);
+  assert.match(prompt, /missing role id, envelope id, contextSourcesRead, expectedValidationSection, actualFindings, or noMutationClaim/i);
+  assert.match(prompt, /Timeout means reviewer failed and validation cannot pass without remediation/i);
+  assert.doesNotMatch(prompt, /Prompt: "Review milestone \{\{milestoneId\}\} requirements coverage/);
 });
 
 // ─── Prompt migration: replan-slice → gsd_replan_slice ────────────────

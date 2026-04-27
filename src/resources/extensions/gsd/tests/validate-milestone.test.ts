@@ -317,6 +317,62 @@ Test
   }
 });
 
+
+// ─── IAM validation reviewer envelopes ───────────────────────────────────
+
+test("buildValidateMilestonePrompt renders all validation reviewers through IAM envelopes", async () => {
+  const base = makeTmpBase();
+  try {
+    writeRoadmap(base, "M001", ALL_DONE_ROADMAP);
+    writeContext(base, "M001");
+    writeSliceSummary(base, "M001", "S01", "# S01 Summary\nDelivered.");
+    writeSliceAssessment(base, "M001", "S01", "---\nverdict: PASS\n---\n# Assessment\nEvidence captured.");
+
+    const prompt = await buildValidateMilestonePrompt("M001", "Test Milestone", base);
+
+    assert.match(prompt, /pre-rendered `reviewerPrompts` block/, "template should dispatch the reviewerPrompts variable");
+    assert.equal((prompt.match(/IAM_SUBAGENT_CONTRACT: role=validation-reviewer/g) ?? []).length, 3);
+    assert.match(prompt, /envelopeId=M001-validation-reviewer-A-env/);
+    assert.match(prompt, /envelopeId=M001-validation-reviewer-B-env/);
+    assert.match(prompt, /envelopeId=M001-validation-reviewer-C-env/);
+    assert.equal((prompt.match(/- \*\*Mutation Boundary:\*\* `validation-review-only`/g) ?? []).length, 3);
+    assert.equal((prompt.match(/- \*\*Graph Mutation:\*\* `read-only`/g) ?? []).length, 3);
+    assert.match(prompt, /role: validation-reviewer/);
+    assert.match(prompt, /envelopeId: M001-validation-reviewer-A-env/);
+    assert.match(prompt, /parentUnit: M001/);
+    assert.match(prompt, /noMutationClaim: <required; state no graph, memory, source, planning, or validation persistence mutation was performed>/);
+    assert.match(prompt, /contextSourcesRead:/);
+    assert.match(prompt, /expectedValidationSection: Requirements Coverage/);
+    assert.match(prompt, /expectedValidationSection: Cross-Slice Integration/);
+    assert.match(prompt, /expectedValidationSection: Assessment & Acceptance Criteria/);
+    assert.match(prompt, /actualFindings:/);
+    assert.match(prompt, /failureDiagnostics:/);
+    assert.match(prompt, /missing role id, envelope id, contextSourcesRead, expectedValidationSection, actualFindings, or noMutationClaim as incomplete reviewer output/i);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("buildValidateMilestonePrompt exposes validation reviewer failure diagnostics and malformed-output handling", async () => {
+  const base = makeTmpBase();
+  try {
+    writeRoadmap(base, "M001", ALL_DONE_ROADMAP);
+    writeContext(base, "M001");
+    writeSliceSummary(base, "M001", "S01", "# S01 Summary\nDelivered.");
+
+    const prompt = await buildValidateMilestonePrompt("M001", "Test Milestone", base);
+
+    assert.match(prompt, /report missing or malformed validation context without fabricating coverage/i);
+    assert.match(prompt, /malformed summary or assessment evidence/i);
+    assert.match(prompt, /Missing verdict, table, verification classes, role id, envelope id, or no-mutation claim/i);
+    assert.match(prompt, /Timeout means reviewer failed and validation cannot pass without remediation/i);
+    assert.match(prompt, /Exactly three validation-reviewer envelopes are dispatched/i);
+    assert.match(prompt, /reference inlined paths and sections compactly instead of duplicating the milestone context/i);
+  } finally {
+    cleanup(base);
+  }
+});
+
 // ─── Dispatch rule ────────────────────────────────────────────────────────
 
 test("dispatch rule matches validating-milestone phase", async () => {

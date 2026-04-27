@@ -2203,7 +2203,18 @@ export async function buildValidateMilestonePrompt(
   const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
 
   const validationOutputPath = join(base, `${relMilestonePath(base, mid)}/${mid}-VALIDATION.md`);
+  const validationOutputRelPath = `${relMilestonePath(base, mid)}/${mid}-VALIDATION.md`;
   const roadmapOutputPath = `${relMilestonePath(base, mid)}/${mid}-ROADMAP.md`;
+  const contextOutputPath = relMilestoneFile(base, mid, "CONTEXT");
+
+  const reviewerPrompts = buildValidateMilestoneReviewerPrompts({
+    mid,
+    base,
+    workingDirectory: base,
+    roadmapPath: roadmapOutputPath,
+    contextPath: contextOutputPath,
+    validationPath: validationOutputRelPath,
+  });
 
   // Every milestone validation turn owns MV01–MV04 unconditionally: the
   // registry is the source of truth for which gates the validator must
@@ -2224,6 +2235,7 @@ export async function buildValidateMilestonePrompt(
     validationPath: validationOutputPath,
     remediationRound: String(remediationRound),
     gatesToEvaluate,
+    reviewerPrompts,
     skillActivation: buildSkillActivationBlock({
       base,
       milestoneId: mid,
@@ -2689,6 +2701,199 @@ function buildGatePromptEnvelope(params: {
     ],
     promptBody: params.subPrompt,
   });
+}
+
+interface ValidationReviewerPromptSpec {
+  readonly label: string;
+  readonly title: string;
+  readonly envelopeSuffix: string;
+  readonly expectedValidationSection: string;
+  readonly objective: string;
+  readonly expectedArtifactId: string;
+  readonly expectedArtifactDescription: string;
+  readonly provenanceSummary: string;
+  readonly promptBody: string;
+}
+
+function formatValidationReviewerReturnSchema(params: {
+  mid: string;
+  envelopeId: string;
+  expectedValidationSection: string;
+}): string {
+  return [
+    "## Validation Reviewer Return Schema",
+    "Return this YAML audit payload before any prose or tables:",
+    "```yaml",
+    "role: validation-reviewer",
+    `envelopeId: ${params.envelopeId}`,
+    `parentUnit: ${params.mid}`,
+    `expectedValidationSection: ${params.expectedValidationSection}`,
+    "contextSourcesRead:",
+    "  - <path or inlined section title used as evidence>",
+    "actualFindings:",
+    "  verdict: PASS|NEEDS-ATTENTION|FAIL",
+    "  evidenceSummary: <concise evidence-backed summary>",
+    "noMutationClaim: <required; state no graph, memory, source, planning, or validation persistence mutation was performed>",
+    "failureDiagnostics:",
+    "  missingEvidence: []",
+    "  malformedEvidence: []",
+    "  unauthorizedMutationClaim: none|<details>",
+    "  remediation: <required when evidence is missing, malformed, or incomplete>",
+    "```",
+    "",
+    "If role, envelopeId, contextSourcesRead, expectedValidationSection, actualFindings, or noMutationClaim is missing, the parent validation must treat your output as incomplete.",
+    "If any evidence source is absent or malformed, report it in failureDiagnostics instead of fabricating coverage.",
+  ].join("\n");
+}
+
+function buildValidationReviewerPromptEnvelope(params: {
+  mid: string;
+  roadmapPath: string;
+  contextPath: string;
+  validationPath: string;
+  spec: ValidationReviewerPromptSpec;
+}): string {
+  const envelopeId = `${params.mid}-validation-reviewer-${params.spec.envelopeSuffix}-env`;
+  const returnSchema = formatValidationReviewerReturnSchema({
+    mid: params.mid,
+    envelopeId,
+    expectedValidationSection: params.spec.expectedValidationSection,
+  });
+
+  return formatIamSubagentPrompt({
+    role: "validation-reviewer",
+    envelopeId,
+    parentUnit: params.mid,
+    objective: params.spec.objective,
+    mutationBoundary: "validation-review-only",
+    expectedArtifacts: [
+      {
+        id: params.spec.expectedArtifactId,
+        kind: "milestone-validation",
+        description: params.spec.expectedArtifactDescription,
+        path: params.validationPath,
+      },
+      {
+        id: `${params.spec.expectedArtifactId}-failure-diagnostics`,
+        kind: "diagnostic",
+        description: "Report missing evidence, malformed reviewer output, or unauthorized mutation claims with remediation.",
+        required: false,
+      },
+    ],
+    provenanceSources: [
+      {
+        id: `${params.mid}-roadmap-validation-context`,
+        kind: "validation-report",
+        source: "inlined milestone roadmap, slice summaries, assessments, requirements, decisions, and context",
+        summary: params.spec.provenanceSummary,
+        path: params.roadmapPath,
+      },
+      {
+        id: `${params.mid}-milestone-context`,
+        kind: "validation-report",
+        source: "milestone context and acceptance criteria",
+        summary: "Acceptance criteria and milestone context are supplied in the parent prompt; read compactly by path/section when needed.",
+        path: params.contextPath,
+      },
+    ],
+    allowedPaths: [params.roadmapPath, params.contextPath, params.validationPath],
+    allowedToolCalls: [],
+    graphMutation: "read-only",
+    optionalOmissions: [
+      "Large milestone summaries are already in parent context; reference inlined paths and sections compactly instead of duplicating the milestone context.",
+      "Skipped slices are excluded from preloaded reviewer evidence and should not be counted as missing delivery evidence.",
+      "Previous validation/remediation context may be absent on remediation round 0; report absence only when needed for the reviewer section.",
+    ],
+    failureDiagnostics: [
+      "Report missing or malformed validation context without fabricating coverage; name role validation-reviewer, envelope id, parent unit, expected artifact, mutation boundary validation-review-only, and remediation.",
+      "Malformed summary or assessment evidence must be surfaced in failureDiagnostics.malformedEvidence with the path or section title.",
+      "Missing verdict, table, verification classes, role id, envelope id, or no-mutation claim makes the reviewer output incomplete and must be surfaced during synthesis.",
+      "Any graph, memory, source, planning, or validation persistence mutation claim is unauthorized under validation-review-only and must force failure diagnostics.",
+    ],
+    promptBody: [params.spec.promptBody, "", returnSchema].join("\n"),
+  });
+}
+
+function buildValidateMilestoneReviewerPrompts(params: {
+  mid: string;
+  base: string;
+  workingDirectory: string;
+  roadmapPath: string;
+  contextPath: string;
+  validationPath: string;
+}): string {
+  const specs: ValidationReviewerPromptSpec[] = [
+    {
+      label: "A",
+      title: "Requirements Coverage",
+      envelopeSuffix: "A",
+      expectedValidationSection: "Requirements Coverage",
+      objective: `Review milestone ${params.mid} requirements coverage using read-only milestone evidence.`,
+      expectedArtifactId: `${params.mid}-requirements-coverage-review`,
+      expectedArtifactDescription: "Reviewer A output for the Requirements Coverage validation section.",
+      provenanceSummary: "Requirements, slice summaries, and requirement-coverage evidence are inlined in the parent validation context.",
+      promptBody: [
+        `Review milestone ${params.mid} requirements coverage. Working directory: ${params.workingDirectory}.`,
+        "Use the inlined Requirements section when present; if it is omitted, report the omission in failureDiagnostics instead of fabricating coverage.",
+        "For each requirement, check the non-skipped slice SUMMARY evidence to determine if it is: COVERED (clearly demonstrated), PARTIAL (mentioned but not fully demonstrated), or MISSING (no evidence).",
+        "Output a markdown table with columns: Requirement | Status | Evidence.",
+        "End with a one-line verdict: PASS if all covered, NEEDS-ATTENTION if partials exist, FAIL if any missing.",
+      ].join("\n"),
+    },
+    {
+      label: "B",
+      title: "Cross-Slice Integration",
+      envelopeSuffix: "B",
+      expectedValidationSection: "Cross-Slice Integration",
+      objective: `Review milestone ${params.mid} cross-slice integration boundaries without mutation authority.`,
+      expectedArtifactId: `${params.mid}-cross-slice-integration-review`,
+      expectedArtifactDescription: "Reviewer B output for the Cross-Slice Integration validation section.",
+      provenanceSummary: "Roadmap boundary map and non-skipped slice summaries are inlined in the parent validation context.",
+      promptBody: [
+        `Review milestone ${params.mid} cross-slice integration. Working directory: ${params.workingDirectory}.`,
+        `Use ${params.roadmapPath} and the inlined roadmap boundary map.`,
+        "For each boundary, check that the producing slice's SUMMARY confirms it produced the artifact, and the consuming slice's SUMMARY confirms it consumed it.",
+        "Output a markdown table: Boundary | Producer Summary | Consumer Summary | Status.",
+        "End with a one-line verdict: PASS if all boundaries honored, NEEDS-ATTENTION if any gaps.",
+      ].join("\n"),
+    },
+    {
+      label: "C",
+      title: "Assessment & Acceptance Criteria",
+      envelopeSuffix: "C",
+      expectedValidationSection: "Assessment & Acceptance Criteria",
+      objective: `Review milestone ${params.mid} assessment evidence, acceptance criteria, and verification classes.`,
+      expectedArtifactId: `${params.mid}-assessment-acceptance-review`,
+      expectedArtifactDescription: "Reviewer C output for Assessment & Acceptance Criteria and Verification Classes.",
+      provenanceSummary: "Milestone context, slice assessments, summaries, and verification classes are inlined in the parent validation context.",
+      promptBody: [
+        `Review milestone ${params.mid} assessment evidence and acceptance criteria. Working directory: ${params.workingDirectory}.`,
+        `Use ${params.contextPath} for acceptance criteria and the inlined non-skipped slice ASSESSMENT/SUMMARY evidence.`,
+        "Verify each acceptance criterion maps to either a passing assessment result or clear SUMMARY evidence.",
+        "Then review the inlined milestone verification classes from planning. For each non-empty planned class, output a markdown table: Class | Planned Check | Evidence | Verdict.",
+        "Use the exact class names `Contract`, `Integration`, `Operational`, and `UAT` whenever those classes are present. If no verification classes were planned, say that explicitly.",
+        "Output two sections: `Acceptance Criteria` with a checklist `[ ] Criterion | Evidence`, and `Verification Classes` with the table.",
+        "End with a one-line verdict: PASS if all criteria and verification classes are covered, NEEDS-ATTENTION if gaps exist.",
+      ].join("\n"),
+    },
+  ];
+
+  return specs.map((spec) => {
+    const envelopedPrompt = buildValidationReviewerPromptEnvelope({
+      mid: params.mid,
+      roadmapPath: params.roadmapPath,
+      contextPath: params.contextPath,
+      validationPath: params.validationPath,
+      spec,
+    });
+    return [
+      `**Reviewer ${spec.label} — ${spec.title}**`,
+      "Prompt:",
+      "```",
+      envelopedPrompt,
+      "```",
+    ].join("\n");
+  }).join("\n\n");
 }
 
 // ─── Reactive Execute Prompt ──────────────────────────────────────────────

@@ -17,6 +17,7 @@ export type IAMSubagentMutationBoundaryLabel =
   | "research-artifact-only"
   | "quality-gate-result-only"
   | "task-expected-output-only"
+  | "validation-review-only"
   | "validation-artifact-only"
   | "workflow-output-only";
 

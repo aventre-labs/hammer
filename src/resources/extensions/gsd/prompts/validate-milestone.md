@@ -14,7 +14,7 @@ This is remediation round {{remediationRound}}. If this is round 0, this is the 
 
 ## Context
 
-All relevant context has been preloaded below — the roadmap, all slice summaries, assessment results, requirements, decisions, and project context are inlined. Start working immediately without re-reading these files.
+All relevant context has been preloaded below — the roadmap, all slice summaries, assessment results, requirements, decisions, and project context are inlined. Start working immediately without re-reading these files. Reviewers must report missing or malformed validation context without fabricating coverage, and malformed summary or assessment evidence must appear in their failureDiagnostics payload.
 
 {{inlinedContext}}
 
@@ -24,22 +24,11 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 
 ### Step 1 — Dispatch Parallel Reviewers
 
-Call `subagent` with `tasks: [...]` containing ALL THREE reviewers simultaneously:
+Call `subagent` with `tasks: [...]` containing ALL THREE reviewers simultaneously. Use the pre-rendered `reviewerPrompts` block below as the exact task prompt text for Reviewers A, B, and C; do not rewrite the IAM markers or remove envelope sections.
 
-**Reviewer A — Requirements Coverage**
-Prompt: "IAM_SUBAGENT_CONTRACT: role=validation-reviewer; envelopeId={{milestoneId}}-validation-reviewer-A-env
+{{reviewerPrompts}}
 
-Review milestone {{milestoneId}} requirements coverage. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/REQUIREMENTS.md` (or equivalent requirements file). For each requirement, check the slice SUMMARY files in `.gsd/{{milestoneId}}/` to determine if it is: COVERED (clearly demonstrated), PARTIAL (mentioned but not fully demonstrated), or MISSING (no evidence). Output a markdown table with columns: Requirement | Status | Evidence. End with a one-line verdict: PASS if all covered, NEEDS-ATTENTION if partials exist, FAIL if any missing."
-
-**Reviewer B — Cross-Slice Integration**
-Prompt: "IAM_SUBAGENT_CONTRACT: role=validation-reviewer; envelopeId={{milestoneId}}-validation-reviewer-B-env
-
-Review milestone {{milestoneId}} cross-slice integration. Working directory: {{workingDirectory}}. Read `{{roadmapPath}}` and find the boundary map (produces/consumes contracts). For each boundary, check that the producing slice's SUMMARY confirms it produced the artifact, and the consuming slice's SUMMARY confirms it consumed it. Output a markdown table: Boundary | Producer Summary | Consumer Summary | Status. End with a one-line verdict: PASS if all boundaries honored, NEEDS-ATTENTION if any gaps."
-
-**Reviewer C — Assessment & Acceptance Criteria**
-Prompt: "IAM_SUBAGENT_CONTRACT: role=validation-reviewer; envelopeId={{milestoneId}}-validation-reviewer-C-env
-
-Review milestone {{milestoneId}} assessment evidence and acceptance criteria. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/CONTEXT.md` for acceptance criteria. Check for ASSESSMENT files in each slice directory. Verify each acceptance criterion maps to either a passing assessment result or clear SUMMARY evidence. Then review the inlined milestone verification classes from planning. For each non-empty planned class, output a markdown table: Class | Planned Check | Evidence | Verdict. Use the exact class names `Contract`, `Integration`, `Operational`, and `UAT` whenever those classes are present. If no verification classes were planned, say that explicitly. Output two sections: `Acceptance Criteria` with a checklist `[ ] Criterion | Evidence`, and `Verification Classes` with the table. End with a one-line verdict: PASS if all criteria and verification classes are covered, NEEDS-ATTENTION if gaps exist."
+Parent validation treats missing role id, envelope id, contextSourcesRead, expectedValidationSection, actualFindings, or noMutationClaim as incomplete reviewer output. Timeout means reviewer failed and validation cannot pass without remediation. Exactly three validation-reviewer envelopes are dispatched; if any reviewer is missing or malformed, synthesize `needs-remediation` unless the issue is explicitly resolved before persistence.
 
 ### Step 2 — Synthesize Findings
 
