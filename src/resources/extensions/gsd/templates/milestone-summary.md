@@ -20,11 +20,15 @@ completed_at: {{date}}
 
 # {{milestoneId}}: {{milestoneTitle}}
 
-<!-- One-liner must say what the milestone actually delivered, not just that it completed.
+<!-- One-liner must say what the milestone actually delivered for Hammer, not just that it completed.
      Good: "State machine integrity with completing-milestone gating, doctor audits, and observability validation"
      Bad: "Milestone 2 completed" -->
 
 **{{oneLiner}}**
+
+## Hammer Awareness Handoff
+
+This milestone summary is the durable Hammer transition record. Preserve IAM provenance for success criteria, requirement outcomes, and decisions; missing awareness, no-degradation evidence, or Trinity/VOLVOX continuity must be named as a blocker or follow-up instead of hidden in prose.
 
 ## What Happened
 
@@ -37,7 +41,7 @@ completed_at: {{date}}
 ## Cross-Slice Verification
 
 <!-- How were the milestone's success criteria verified?
-     Reference specific tests, commands, browser checks, or observable behaviors.
+     Reference specific tests, commands, browser checks, Hammer/IAM scanners, or observable behaviors.
      Each success criterion from the roadmap should have a corresponding verification entry. -->
 
 {{howSuccessCriteriaWereVerified}}
@@ -70,10 +74,13 @@ completed_at: {{date}}
 - {{fragileAreaOrThinImplementation}} — {{whyItMatters}}
 
 ### Authoritative diagnostics
-- {{whereAFutureAgentShouldLookFirst}} — {{whyThisSignalIsTrustworthy}}
+- {{whereAFutureAgentShouldLookFirst}} — {{whyThisSignalIsTrustworthy, including Hammer/IAM/provenance or no-degradation checks}}
 
 ### What assumptions changed
 - {{originalAssumption}} — {{whatActuallyHappened}}
+
+### Continuity to preserve
+- {{TrinityMemoryOrVOLVOXLifecycleOrGeneratedArtifactContinuitySignal}} — {{what would regress if lost}}
 
 ## Files Created/Modified
 

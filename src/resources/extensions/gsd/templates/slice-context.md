@@ -9,6 +9,10 @@ status: {{draft|ready|in_progress|complete}}
 <!-- Slice-scoped context. Milestone-only sections (acceptance criteria, completion class,
      milestone sequence) do not belong here — those live in the milestone context. -->
 
+## Hammer Awareness Contract
+
+This slice context is a Hammer planning handoff. Carry IAM provenance from milestone decisions into slice scope, name any Omega reasoning that affected order, and block execution if no-degradation or Trinity/VOLVOX continuity requirements are unclear.
+
 ## Goal
 
 <!-- One sentence: what this slice delivers when it is done. -->
@@ -50,6 +54,12 @@ status: {{draft|ready|in_progress|complete}}
 ### Produces
 
 - `{{fileOrArtifact}}` — {{whatItProvides}}
+
+## Awareness Failure Signals
+
+- **Missing provenance:** {{what source/evidence gap should stop execution}}
+- **No-degradation boundary:** {{what must block instead of falling back to non-aware behavior}}
+- **Continuity risk:** {{Trinity/VOLVOX/memory/lifecycle state to preserve, or N/A}}
 
 ## Open Questions
 

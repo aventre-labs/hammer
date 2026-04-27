@@ -32,6 +32,16 @@ const HAMMER_AWARE_TEMPLATE_NAMES = [
   "requirements",
   "decisions",
   "knowledge",
+  "task-summary",
+  "slice-summary",
+  "milestone-summary",
+  "milestone-validation",
+  "reassessment",
+  "slice-context",
+  "uat",
+  "state",
+  "runtime",
+  "secrets-manifest",
 ];
 
 function coverageKindsForTemplate(name: string): string[] {
@@ -64,6 +74,27 @@ console.log("\n=== Level 1: Templates contain quality gate headings ===");
 
   const milestoneSummary = loadTemplate("milestone-summary");
   assertTrue(milestoneSummary.includes("## Decision Re-evaluation"), "milestone-summary.md contains ## Decision Re-evaluation");
+
+  const milestoneValidation = loadTemplate("milestone-validation");
+  assertTrue(
+    milestoneValidation.includes("## Awareness Failure Signals"),
+    "milestone-validation.md contains awareness failure/remediation section",
+  );
+
+  const uat = loadTemplate("uat");
+  assertTrue(
+    uat.includes("## Awareness / Provenance Evidence"),
+    "uat.md contains awareness/provenance evidence section",
+  );
+
+  const runtime = loadTemplate("runtime");
+  assertTrue(runtime.includes("## Diagnostics"), "runtime.md contains ## Diagnostics");
+
+  const secretsManifest = loadTemplate("secrets-manifest");
+  assertTrue(
+    secretsManifest.includes("never write secret values"),
+    "secrets-manifest.md makes secret redaction boundary explicit",
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -95,6 +126,15 @@ console.log("\n=== Level 1b: Hammer/IAM template awareness markers ===");
   assertTrue(
     missingAwareness.some((finding) => finding.kind === FINDING_KINDS.MISSING_AWARENESS_MARKER),
     "template fixture with Hammer but no awareness marker fails coverage",
+  );
+
+  const completionWithoutAwareness = scanPromptWorkflowText(
+    "src/resources/extensions/gsd/templates/task-summary.md",
+    "# Hammer task summary\n\nHammer completion text with diagnostics but no provenance marker.\n",
+  );
+  assertTrue(
+    completionWithoutAwareness.some((finding) => finding.kind === FINDING_KINDS.MISSING_AWARENESS_MARKER),
+    "completion template fixture without IAM/provenance marker fails coverage",
   );
 
   const staleLegacy = scanPromptWorkflowText(

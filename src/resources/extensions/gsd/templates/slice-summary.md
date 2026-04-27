@@ -26,11 +26,15 @@ completed_at: {{date}}
 
 # {{sliceId}}: {{sliceTitle}}
 
-<!-- One-liner must say what actually shipped, not just that work completed.
+<!-- One-liner must say what actually shipped for Hammer, not just that work completed.
      Good: "Structured job status endpoint with persisted failure diagnostics"
      Bad: "Status feature implemented" -->
 
 **{{oneLiner}}**
+
+## Hammer Awareness Handoff
+
+This slice summary is the handoff from one Hammer work queue segment to the next. Preserve IAM provenance for consumed upstream artifacts, produced downstream contracts, and verification evidence; missing awareness or no-degradation proof is a blocking gap, not a silent fallback.
 
 ## What Happened
 
@@ -38,7 +42,7 @@ completed_at: {{date}}
 
 ## Verification
 
-{{whatWasVerifiedAcrossAllTasks — tests, builds, manual checks}}
+{{whatWasVerifiedAcrossAllTasks — tests, builds, manual checks, Hammer/IAM scanners, no-degradation evidence}}
 
 <!-- If the project has no REQUIREMENTS.md, omit all four requirement sections below entirely — do not fill them with "none". These sections only apply when requirements are being actively tracked. -->
 ## Requirements Advanced
@@ -59,12 +63,12 @@ completed_at: {{date}}
 
 ## Operational Readiness
 
-<!-- Q8: How will ops know it's healthy/broken? OMIT ENTIRELY for simple slices with no runtime concerns. -->
+<!-- Q8: How will ops know Hammer is healthy/broken? OMIT ENTIRELY for simple slices with no runtime concerns. -->
 
-- **Health signal**: {{howToConfirmHealthy — health endpoint, heartbeat log, metric, or N/A}}
-- **Failure signal**: {{howToDetectBroken — error rate spike, alert, log pattern, or N/A}}
-- **Recovery**: {{selfRecoverOrRestart — auto-reconnect, circuit breaker, manual restart, or N/A}}
-- **Monitoring gaps**: {{silentFailureModes — background jobs, cache eviction, memory pressure, or none}}
+- **Health signal**: {{howToConfirmHealthy — health endpoint, heartbeat log, metric, Hammer/IAM scanner ok JSON, or N/A}}
+- **Failure signal**: {{howToDetectBroken — error rate spike, alert, log pattern, missing awareness/provenance marker, or N/A}}
+- **Recovery**: {{selfRecoverOrRestart — auto-reconnect, circuit breaker, manual restart, structured remediation, or N/A}}
+- **Monitoring gaps**: {{silentFailureModes — background jobs, cache eviction, memory pressure, Trinity/VOLVOX drift, or none}}
 
 ## Deviations
 
@@ -102,7 +106,10 @@ completed_at: {{date}}
 - {{fragileAreaOrThinImplementation}} — {{whyItMatters}}
 
 ### Authoritative diagnostics
-- {{whereAFutureAgentShouldLookFirst}} — {{whyThisSignalIsTrustworthy}}
+- {{whereAFutureAgentShouldLookFirst}} — {{whyThisSignalIsTrustworthy, including Hammer/IAM/provenance or no-degradation checks}}
 
 ### What assumptions changed
 - {{originalAssumption}} — {{whatActuallyHappened}}
+
+### Continuity to preserve
+- {{TrinityMemoryOrVOLVOXLifecycleOrGeneratedArtifactContinuitySignal}} — {{why downstream agents should not regress it}}

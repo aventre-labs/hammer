@@ -23,11 +23,15 @@ blocker_discovered: false
 
 # {{taskId}}: {{taskTitle}}
 
-<!-- One-liner must say what actually shipped, not just that work completed.
+<!-- One-liner must say what actually shipped for Hammer, not just that work completed.
      Good: "Added retry-aware worker status logging"
      Bad: "Implemented logging improvements" -->
 
 **{{oneLiner}}**
+
+## Hammer Awareness Handoff
+
+This task summary is a Hammer continuity artifact. Preserve IAM provenance for the files changed, commands run, and evidence gathered; if awareness, provenance, or no-degradation evidence is missing, say so here and name the remediation instead of implying the task is fully proven.
 
 ## What Happened
 
@@ -40,7 +44,7 @@ blocker_discovered: false
 ## Verification Evidence
 
 <!-- Populated from verification gate output. If the gate ran, fill in the table below.
-     If no gate ran (e.g., no verification commands discovered), note that. -->
+     If no gate ran (e.g., no verification commands discovered), note that and explain why no-degradation evidence is still sufficient or blocked. -->
 
 | # | Command | Exit Code | Verdict | Duration |
 |---|---------|-----------|---------|----------|
@@ -48,7 +52,15 @@ blocker_discovered: false
 
 ## Diagnostics
 
-{{howToInspectWhatThisTaskBuiltLater — status surfaces, logs, error shapes, failure artifacts, or none}}
+<!-- Include the exact Hammer/IAM inspection path a future agent should trust first. -->
+
+{{howToInspectWhatThisTaskBuiltLater — status surfaces, logs, error shapes, Hammer/IAM scanner diagnostics, persisted failure artifacts, or none}}
+
+## Continuity Notes
+
+- **IAM provenance:** {{source facts, decisions, and evidence that downstream work should trust}}
+- **No-degradation boundary:** {{what must block rather than fall back to a non-aware path}}
+- **Trinity/VOLVOX continuity:** {{memory, lifecycle, generated-artifact, or state continuity signal, or N/A}}
 
 ## Deviations
 

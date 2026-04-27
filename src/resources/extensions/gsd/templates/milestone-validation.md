@@ -9,6 +9,10 @@ validated_at: {{date}}
 
 # {{milestoneId}}: Milestone Validation
 
+## Hammer Awareness Contract
+
+Validate this milestone as a Hammer delivery, not just a checklist. IAM provenance must connect success criteria, requirement outcomes, and verification evidence; if awareness evidence, Omega/no-degradation proof, or Trinity/VOLVOX continuity is absent, classify the gap and block or remediate explicitly.
+
 ## Success Criteria Audit
 
 <!-- For each success criterion from the roadmap, list the criterion text,
@@ -17,7 +21,7 @@ validated_at: {{date}}
 
 - **Criterion:** {{criterionText}}
   **Verdict:** {{MET or NOT MET}}
-  **Evidence:** {{sliceSummary, UATResult, testOutput, or observableBehavior}}
+  **Evidence:** {{sliceSummary, UATResult, testOutput, Hammer/IAM scanner result, or observableBehavior}}
 
 ## Deferred Work Inventory
 
@@ -46,6 +50,14 @@ validated_at: {{date}}
 | Integration | {{planned_or_none}} | {{evidence_or_none}} | {{MET / NOT MET / N/A}} |
 | Operational | {{planned_or_none}} | {{evidence_or_none}} | {{MET / NOT MET / N/A}} |
 | UAT | {{planned_or_none}} | {{evidence_or_none}} | {{MET / NOT MET / N/A}} |
+
+## Awareness Failure Signals
+
+<!-- List Hammer/IAM failures that must block validation or become remediation slices. -->
+
+- **Missing provenance:** {{where evidence cannot be traced to source artifact, command, or requirement}}
+- **No-degradation breach:** {{where Hammer would fall back to a non-aware path instead of structured remediation}}
+- **Continuity drift:** {{Trinity/VOLVOX/memory/lifecycle state that was not preserved, or none}}
 
 ## Remediation Slices
 
