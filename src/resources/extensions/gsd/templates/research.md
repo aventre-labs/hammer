@@ -4,8 +4,14 @@
 
 <!-- Required sections: Summary, Recommendation, Implementation Landscape.
      All other sections: include only when they have real content.
-     For light research (straightforward work with known patterns),
+     For light research (straightforward work with known Hammer patterns),
      the required sections alone are sufficient. -->
+
+## Hammer Awareness Contract
+
+Research must preserve IAM provenance: separate observed facts, inferred risks, and recommended action. Omega, Trinity, and VOLVOX concepts may inform the analysis, but the executable recommendation must be Hammer-native and must not add an external awareness runtime dependency.
+
+No-degradation rule: if evidence is missing or contradictory, name the gap and remediation instead of presenting an ungrounded plan.
 
 ## Summary
 

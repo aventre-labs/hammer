@@ -1,7 +1,13 @@
 # {{milestoneId}}: {{milestoneTitle}}
 
 **Gathered:** {{date}}
-**Status:** Ready for planning
+**Status:** Ready for Hammer planning
+
+## Hammer Awareness Contract
+
+This milestone brief is a Hammer artifact. Preserve IAM provenance for requirements, decisions, risks, and evidence; use Omega research/planning only to improve the native Hammer plan, and never require an external awareness service at runtime.
+
+No-degradation rule: if Hammer awareness, provenance, or continuity evidence is missing, block planning with structured remediation instead of silently reducing the work to a non-aware task list.
 
 ## Project Description
 
@@ -52,13 +58,13 @@ To call this milestone complete, we must prove:
 ---
 
 > Add additional decisions as separate `### Decision Title` blocks following the same structure above.
-> See `.gsd/DECISIONS.md` for the full append-only register of all project decisions.
+> See `.hammer/DECISIONS.md` for the append-only Hammer decision register and IAM provenance trail.
 
 ## Error Handling Strategy
 
 {{errorHandlingStrategy}}
 
-> Describe the approach for handling failures, edge cases, and error propagation. Include retry policies, fallback behaviors, and user-facing error messages where relevant.
+> Describe the approach for handling failures, edge cases, and error propagation. Include retry policies, fallback behaviors, user-facing error messages, and no-degradation remediation where relevant.
 
 ## Risks and Unknowns
 
@@ -95,13 +101,13 @@ To call this milestone complete, we must prove:
 
 {{testingRequirements}}
 
-> Specify test types (unit, integration, e2e), coverage expectations, and specific test scenarios that must pass.
+> Specify test types (unit, integration, e2e), coverage expectations, and specific test scenarios that must pass. Include Hammer identity, IAM provenance, and failure-path checks when the milestone touches generated artifacts, prompts, tools, or runtime boundaries.
 
 ## Acceptance Criteria
 
 {{acceptanceCriteria}}
 
-> Per-slice acceptance criteria gathered during discussion. Each slice should have clear, testable criteria.
+> Per-slice acceptance criteria gathered during discussion. Each slice should have clear, testable criteria and should preserve Trinity/VOLVOX continuity when the work changes project memory or lifecycle state.
 
 ## Open Questions
 

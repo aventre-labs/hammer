@@ -1,5 +1,11 @@
 # Project
 
+## Hammer Awareness Contract
+
+This project file describes the Hammer product contract for a fresh reader. Preserve IAM provenance for capability claims, decisions, and continuity notes; use Omega-informed planning only as a native Hammer discipline, not as an external runtime dependency.
+
+Trinity/VOLVOX continuity belongs here when it affects what future milestones must preserve. No-degradation rule: if a capability lacks evidence, mark it as unvalidated rather than implying it works.
+
 ## What This Is
 
 {{whatTheProjectDoes — plain language, current state, not aspirational}}
@@ -21,7 +27,7 @@
 
 ## Capability Contract
 
-See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping.
+See `.hammer/REQUIREMENTS.md` for the explicit Hammer capability contract, requirement status, IAM provenance, and coverage mapping.
 
 ## Milestone Sequence
 

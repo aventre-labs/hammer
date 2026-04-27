@@ -232,9 +232,9 @@ test("actual bundled prompt/workflow/S09 surfaces are covered; downstream rewrit
       .join("\n")}`,
   );
   assert.equal(result.summary.allowlistedCount, 0);
-  assert.equal(result.scannedFiles.includes("src/resources/extensions/gsd/templates/task-summary.md"), true);
-  assert.equal(result.scannedFiles.includes("src/resources/extensions/gsd/docs/preferences-reference.md"), true);
-  assert.equal(result.scannedFiles.includes("gsd-orchestrator/SKILL.md"), true);
+  assert.equal((result.scannedFiles as string[]).includes("src/resources/extensions/gsd/templates/task-summary.md"), true);
+  assert.equal((result.scannedFiles as string[]).includes("src/resources/extensions/gsd/docs/preferences-reference.md"), true);
+  assert.equal((result.scannedFiles as string[]).includes("gsd-orchestrator/SKILL.md"), true);
 
   const nonS09Findings = result.findings.filter(
     (finding) =>

@@ -3,6 +3,12 @@
 **Goal:** {{goal}}
 **Demo:** {{demo}}
 
+## Hammer Awareness Contract
+
+This slice plan is a Hammer execution contract. Preserve IAM provenance for requirements, risks, task boundaries, and verification evidence; when Omega planning shaped the slice, carry the relevant reasoning into tasks as concrete files, checks, and no-degradation conditions.
+
+If the slice touches generated artifacts, memory, or lifecycle state, name how Trinity/VOLVOX continuity is protected. Do not mark the slice complete when awareness evidence is missing; record remediation instead.
+
 ## Must-Haves
 
 - {{mustHave}}
@@ -21,7 +27,7 @@
 <!-- Q4: What existing promises does this break? OMIT ENTIRELY if no existing requirements are affected. -->
 
 - **Requirements touched**: {{requirementIds — e.g. R001, R003, or none}}
-- **Re-verify**: {{whatMustBeRetested — e.g. login flow, API contract, or N/A}}
+- **Re-verify**: {{whatMustBeRetested — e.g. login flow, API contract, Hammer identity, IAM provenance, or N/A}}
 - **Decisions revisited**: {{decisionIds — e.g. D002, or none}}
 
 ## Proof Level
@@ -52,7 +58,8 @@
 
      For non-trivial backend, integration, async, stateful, or UI work:
      - Include at least one verification check for an observability or failure-path signal
-     - Verify not just that the feature works, but that a future agent can inspect its state when it fails -->
+     - Verify not just that the feature works, but that a future agent can inspect its state when it fails
+     - Include Hammer identity and IAM/no-degradation checks when the slice changes prompts, generated artifacts, tools, or workflow state -->
 
 - {{testFileOrCommand — e.g. `npm test -- --grep "auth flow"` or `bash scripts/verify-s01.sh`}}
 - {{testFileOrCommand}}
@@ -65,9 +72,9 @@
      When included, describe how a future agent will inspect current state, detect failure,
      and localize the problem with minimal ambiguity. Keep it concise and high-signal. -->
 
-- Runtime signals: {{structured log/event, state transition, metric, or none}}
+- Runtime signals: {{structured log/event, state transition, metric, Hammer/IAM scanner output, or none}}
 - Inspection surfaces: {{status endpoint, CLI command, script, UI state, DB table, or none}}
-- Failure visibility: {{last error, retry count, phase, timestamp, correlation id, or none}}
+- Failure visibility: {{last error, retry count, phase, timestamp, correlation id, remediation, or none}}
 - Redaction constraints: {{secret/PII boundary or none}}
 
 ## Integration Closure
@@ -140,6 +147,7 @@
   Integration closure rule:
   - At least one slice in any multi-boundary milestone should perform real composition/wiring, not just contract hardening
   - For the final assembly slice, verification must exercise the real entrypoint or runtime path
+  - Tasks that change memory, generated artifacts, or lifecycle state must verify IAM provenance and Trinity/VOLVOX continuity signals
 -->
 
 ## Files Likely Touched

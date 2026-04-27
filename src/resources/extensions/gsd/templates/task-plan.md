@@ -1,5 +1,5 @@
 ---
-# Optional scope estimate — helps the plan quality validator detect over-scoped tasks.
+# Optional scope estimate — helps the Hammer plan quality validator detect over-scoped tasks.
 # Tasks with 10+ estimated steps or 12+ estimated files trigger a warning to consider splitting.
 estimated_steps: {{estimatedSteps}}
 estimated_files: {{estimatedFiles}}
@@ -12,6 +12,12 @@ skills_used:
 
 **Slice:** {{sliceId}} — {{sliceTitle}}
 **Milestone:** {{milestoneId}}
+
+## Hammer Awareness Contract
+
+This task plan is a Hammer work contract. Carry IAM provenance from the slice into concrete implementation steps, verification evidence, and no-degradation handling; if Omega reasoning informed the task, translate it into native Hammer files and checks rather than runtime dependencies.
+
+When the task changes generated artifacts, memory, or lifecycle state, preserve Trinity/VOLVOX continuity and expose a clear diagnostic path for the next agent.
 
 ## Description
 
@@ -31,15 +37,15 @@ skills_used:
 
 - **Shared resources**: {{sharedResources — DB connections, caches, rate limiters, or none}}
 - **Per-operation cost**: {{perOpCost — N API calls, M DB queries, K bytes, or trivial}}
-- **10x breakpoint**: {{whatBreaksFirst — pool exhaustion, rate limit, memory, or N/A}}
+- **10x breakpoint**: {{whatBreaksFirst — pool exhaustion, rate limit, memory, context budget, or N/A}}
 
 ## Negative Tests
 
 <!-- Q7: What negative tests prove robustness? OMIT ENTIRELY for trivial tasks. -->
 
 - **Malformed inputs**: {{malformedInputTests — empty string, null, oversized, wrong type}}
-- **Error paths**: {{errorPathTests — network timeout, auth failure, 5xx, invalid JSON}}
-- **Boundary conditions**: {{boundaryTests — empty list, max length, zero, off-by-one}}
+- **Error paths**: {{errorPathTests — network timeout, auth failure, 5xx, invalid JSON, missing IAM marker}}
+- **Boundary conditions**: {{boundaryTests — empty list, max length, zero, off-by-one, parser-sensitive heading order}}
 
 ## Steps
 
@@ -63,9 +69,9 @@ skills_used:
      async flows, APIs, background processes, or error paths.
      Include it only when the task meaningfully changes how failures are detected or diagnosed. -->
 
-- Signals added/changed: {{structured logs, statuses, errors, metrics}}
+- Signals added/changed: {{structured logs, statuses, errors, metrics, Hammer/IAM scanner diagnostics}}
 - How a future agent inspects this: {{command, endpoint, file, UI state}}
-- Failure state exposed: {{what becomes visible on failure}}
+- Failure state exposed: {{what becomes visible on failure and what remediation is suggested}}
 
 ## Inputs
 

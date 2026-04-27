@@ -1,16 +1,19 @@
 # Requirements
 
-This file is the explicit capability and coverage contract for the project.
+This file is the explicit Hammer capability and coverage contract for the project.
 
-Use it to track what is actively in scope, what has been validated by completed work, what is intentionally deferred, and what is explicitly out of scope.
+Use it to track what is actively in scope, what has been validated by completed work, what is intentionally deferred, and what is explicitly out of scope. Preserve IAM provenance for every requirement source, owner, validation claim, and no-degradation remediation path.
+
+Trinity/VOLVOX continuity requirements should be called out when the work changes memory, generated artifacts, lifecycle state, or cross-session knowledge.
 
 Guidelines:
 - Keep requirements capability-oriented, not a giant feature wishlist.
 - Requirements should be atomic, testable, and stated in plain language.
 - Every **Active** requirement should be mapped to a slice, deferred, blocked with reason, or moved out of scope.
 - Each requirement should have one accountable primary owner and may have supporting slices.
-- Research may suggest requirements, but research does not silently make them binding.
-- Validation means the requirement was actually proven by completed work and verification, not just discussed.
+- Research may suggest requirements, but Omega research does not silently make them binding.
+- Validation means the requirement was actually proven by completed Hammer work and verification, not just discussed.
+- If IAM provenance or awareness evidence is missing, mark validation as partial or unmapped; do not degrade to an unproven pass.
 
 ## Active
 
@@ -36,7 +39,7 @@ Guidelines:
 - Primary owning slice: {{M001/S01}}
 - Supporting slices: {{none}}
 - Validation: validated
-- Notes: {{what verification proved this}}
+- Notes: {{what verification proved this, including Hammer/IAM evidence where relevant}}
 
 ## Deferred
 

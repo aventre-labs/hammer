@@ -2,6 +2,12 @@
 
 **Vision:** {{vision}}
 
+## Hammer Awareness Contract
+
+This roadmap is a Hammer contract. Every slice should preserve IAM provenance for why it exists, what it proves, and how evidence will be inspected; Omega planning should retire the riskiest unknowns first without introducing non-native runtime dependencies.
+
+No-degradation rule: if a slice cannot preserve Hammer identity, awareness evidence, or Trinity/VOLVOX continuity where applicable, mark the gap as a blocker or explicit follow-up instead of implying completion.
+
 ## Success Criteria
 
 <!-- Write success criteria as observable truths, not implementation tasks.
@@ -53,6 +59,7 @@ This milestone is complete only when all are true:
 - {{the real entrypoint exists and is exercised}}
 - {{success criteria are re-checked against live behavior, not just artifacts}}
 - {{final integrated acceptance scenarios pass}}
+- {{Hammer identity, IAM provenance, and no-degradation evidence remain intact}}
 
 ## Requirement Coverage
 
@@ -90,6 +97,7 @@ This milestone is complete only when all are true:
   - If the milestone crosses multiple runtime boundaries (for example daemon + API + UI, bot + subprocess + service manager, or extension + RPC + filesystem), include an explicit final integration slice that proves the assembled system works end-to-end in a real environment
   - Contract or fixture proof does not replace final assembly proof when the user-visible outcome depends on live wiring
   - Each "After this" line must be truthful about proof level: if only fixtures or tests prove it, say so; do not imply the user can already perform the live end-to-end behavior unless that has actually been exercised
+  - Slices touching memory, generated artifacts, or lifecycle state must preserve IAM provenance and Trinity/VOLVOX continuity
 -->
 
 ## Horizontal Checklist
@@ -99,6 +107,9 @@ This milestone is complete only when all are true:
 
 - [ ] Every active R### re-read against new code — still fully satisfied?
 - [ ] Every D### from prior milestones re-evaluated — still valid at new scope?
+- [ ] Hammer identity and command/state naming verified on visible surfaces
+- [ ] IAM provenance, Omega reasoning evidence, and no-degradation remediation verified where relevant
+- [ ] Trinity/VOLVOX continuity preserved for memory, generated artifacts, and lifecycle state
 - [ ] Graceful shutdown / cleanup on termination verified
 - [ ] Revenue / billing path impact assessed (or N/A)
 - [ ] Auth boundary documented — what's protected vs public

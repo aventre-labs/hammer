@@ -3,6 +3,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractSection } from "../files.ts";
 import { createTestContext } from "./test-helpers.ts";
+import {
+  FINDING_KINDS,
+  scanPromptWorkflowText,
+} from "../../../../../scripts/check-hammer-prompt-workflow-coverage.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, "..", "templates");
@@ -16,6 +20,25 @@ function loadTemplate(name: string): string {
 
 function loadPrompt(name: string): string {
   return readFileSync(join(promptsDir, `${name}.md`), "utf-8");
+}
+
+const HAMMER_AWARE_TEMPLATE_NAMES = [
+  "context",
+  "research",
+  "roadmap",
+  "plan",
+  "task-plan",
+  "project",
+  "requirements",
+  "decisions",
+  "knowledge",
+];
+
+function coverageKindsForTemplate(name: string): string[] {
+  return scanPromptWorkflowText(
+    `src/resources/extensions/gsd/templates/${name}.md`,
+    loadTemplate(name),
+  ).map((finding) => finding.kind);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -41,6 +64,47 @@ console.log("\n=== Level 1: Templates contain quality gate headings ===");
 
   const milestoneSummary = loadTemplate("milestone-summary");
   assertTrue(milestoneSummary.includes("## Decision Re-evaluation"), "milestone-summary.md contains ## Decision Re-evaluation");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Level 1b: Hammer/IAM markers on planning and contract templates
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log("\n=== Level 1b: Hammer/IAM template awareness markers ===");
+{
+  for (const templateName of HAMMER_AWARE_TEMPLATE_NAMES) {
+    const findings = coverageKindsForTemplate(templateName);
+    assertTrue(
+      !findings.includes(FINDING_KINDS.MISSING_HAMMER_MARKER),
+      `${templateName}.md contains a Hammer marker`,
+    );
+    assertTrue(
+      !findings.includes(FINDING_KINDS.MISSING_AWARENESS_MARKER),
+      `${templateName}.md contains an IAM/awareness marker`,
+    );
+    assertTrue(
+      !findings.includes(FINDING_KINDS.STALE_LEGACY_TOKEN),
+      `${templateName}.md has no stale visible legacy product prose`,
+    );
+  }
+
+  const missingAwareness = scanPromptWorkflowText(
+    "src/resources/extensions/gsd/templates/fixture.md",
+    "# Hammer fixture\n\nHammer planning text with /hammer and .hammer markers only.\n",
+  );
+  assertTrue(
+    missingAwareness.some((finding) => finding.kind === FINDING_KINDS.MISSING_AWARENESS_MARKER),
+    "template fixture with Hammer but no awareness marker fails coverage",
+  );
+
+  const staleLegacy = scanPromptWorkflowText(
+    "src/resources/extensions/gsd/templates/fixture.md",
+    "# Hammer fixture\n\nHammer uses IAM awareness. Use GSD for planning.\n",
+  );
+  assertTrue(
+    staleLegacy.some((finding) => finding.kind === FINDING_KINDS.STALE_LEGACY_TOKEN),
+    "stale visible GSD in a template fails coverage",
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
