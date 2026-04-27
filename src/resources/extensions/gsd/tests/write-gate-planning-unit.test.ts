@@ -9,9 +9,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join, sep } from 'node:path';
 
+import { formatIAMSubagentContractMarker } from '../iam-subagent-policy.ts';
 import { shouldBlockPlanningUnit } from '../bootstrap/write-gate.ts';
 import { isDeterministicPolicyError } from '../auto-tool-tracking.ts';
-import type { ToolsPolicy } from '../unit-context-manifest.ts';
+import type { SubagentsPolicy, ToolsPolicy } from '../unit-context-manifest.ts';
 
 const BASE = join('/tmp', 'fake-project');
 const PLANNING: ToolsPolicy = { mode: 'planning' };
@@ -21,6 +22,21 @@ const DOCS: ToolsPolicy = {
   mode: 'docs',
   allowedPathGlobs: ['docs/**', 'README.md', 'README.*.md', 'CHANGELOG.md', '*.md'],
 };
+const GATE_SUBAGENTS: SubagentsPolicy = {
+  mode: 'allowed',
+  roles: ['gate-evaluator'],
+  requireEnvelope: true,
+  maxParallel: 2,
+};
+const REACTIVE_SUBAGENTS: SubagentsPolicy = {
+  mode: 'allowed',
+  roles: ['task-executor'],
+  requireEnvelope: true,
+};
+
+function gatePrompt(role = 'gate-evaluator', envelopeId = 'M001-S01-gates-Q3-env'): string {
+  return `${formatIAMSubagentContractMarker(role, envelopeId)}\n\nEvaluate the gate.`;
+}
 
 // ─── planning mode: writes ─────────────────────────────────────────────────
 
@@ -132,10 +148,135 @@ test('planning-unit: blocks shell injection (curl | bash)', () => {
 
 // ─── planning mode: subagent dispatch ─────────────────────────────────────
 
-test('planning-unit: blocks subagent dispatch in planning mode', () => {
+test('planning-unit: blocks subagent dispatch in planning mode without IAM policy', () => {
   const r = shouldBlockPlanningUnit('subagent', '', BASE, 'discuss-milestone', PLANNING);
   assert.strictEqual(r.block, true);
   assert.match(r.reason!, /subagent dispatch/);
+});
+
+test('planning-unit: gate-evaluate hard-blocks markerless subagent dispatch with IAM diagnostics', () => {
+  const r = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'gate-evaluate',
+    PLANNING,
+    {
+      subagents: GATE_SUBAGENTS,
+      parentUnit: 'M001/S01/gates',
+      toolInput: { tasks: [{ task: 'Evaluate Q3 without an IAM envelope.' }] },
+    },
+  );
+  assert.strictEqual(r.block, true);
+  assert.match(r.reason!, /HARD BLOCK/);
+  assert.match(r.reason!, /gate-evaluate/);
+  assert.match(r.reason!, /M001\/S01\/gates/);
+  assert.match(r.reason!, /Allowed roles: gate-evaluator/);
+  assert.match(r.reason!, /missing IAM_SUBAGENT_CONTRACT marker/);
+  assert.match(r.reason!, /Remediation:/);
+  assert.strictEqual(isDeterministicPolicyError(r.reason!), true);
+});
+
+test('planning-unit: gate-evaluate allows valid IAM subagent envelope without tools.mode all', () => {
+  const r = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'gate-evaluate',
+    PLANNING,
+    {
+      subagents: GATE_SUBAGENTS,
+      parentUnit: 'M001/S01/gates',
+      toolInput: { tasks: [{ task: gatePrompt('gate-evaluator', 'M001-S01-gates-Q3-env') }] },
+    },
+  );
+  assert.strictEqual(r.block, false);
+});
+
+test('planning-unit: gate-evaluate rejects undeclared IAM subagent role', () => {
+  const r = shouldBlockPlanningUnit(
+    'task',
+    '',
+    BASE,
+    'gate-evaluate',
+    PLANNING,
+    {
+      subagents: GATE_SUBAGENTS,
+      parentUnit: 'M001/S01/gates',
+      toolInput: { task: gatePrompt('research-scout', 'M001-S01-gates-research-env') },
+    },
+  );
+  assert.strictEqual(r.block, true);
+  assert.match(r.reason!, /undeclared-role/);
+  assert.match(r.reason!, /research-scout/);
+});
+
+test('planning-unit: gate-evaluate rejects malformed subagent input arrays', () => {
+  const r = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'gate-evaluate',
+    PLANNING,
+    {
+      subagents: GATE_SUBAGENTS,
+      parentUnit: 'M001/S01/gates',
+      toolInput: { tasks: 'not-array' },
+    },
+  );
+  assert.strictEqual(r.block, true);
+  assert.match(r.reason!, /tasks: malformed/);
+  assert.match(r.reason!, /tasks must be an array/);
+});
+
+test('planning-unit: gate-evaluate rejects chain step without IAM marker', () => {
+  const r = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'gate-evaluate',
+    PLANNING,
+    {
+      subagents: GATE_SUBAGENTS,
+      parentUnit: 'M001/S01/gates',
+      toolInput: { chain: [{ task: 'First chained gate review without marker.' }] },
+    },
+  );
+  assert.strictEqual(r.block, true);
+  assert.match(r.reason!, /chain\[0\]\.task/);
+  assert.match(r.reason!, /missing/);
+});
+
+test('all-mode: reactive-execute can opt into IAM envelope enforcement', () => {
+  const ok = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'reactive-execute',
+    ALL,
+    {
+      subagents: REACTIVE_SUBAGENTS,
+      parentUnit: 'M001/S01/reactive+T02,T03',
+      toolInput: { tasks: [{ task: `${formatIAMSubagentContractMarker('task-executor', 'M001-S01-reactive-T02-T03-env')}\n\nExecute T02.` }] },
+    },
+  );
+  assert.strictEqual(ok.block, false);
+
+  const blocked = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'reactive-execute',
+    ALL,
+    {
+      subagents: REACTIVE_SUBAGENTS,
+      parentUnit: 'M001/S01/reactive+T02,T03',
+      toolInput: { tasks: [{ task: 'Execute T02 without IAM marker.' }] },
+    },
+  );
+  assert.strictEqual(blocked.block, true);
+  assert.match(blocked.reason!, /reactive-execute/);
+  assert.match(blocked.reason!, /task-executor/);
 });
 
 test('planning-unit: blocks task tool (alt subagent name)', () => {

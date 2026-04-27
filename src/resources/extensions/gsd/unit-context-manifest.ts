@@ -128,6 +128,23 @@ export type ToolsPolicy =
   | { readonly mode: "planning" }
   | { readonly mode: "docs"; readonly allowedPathGlobs: readonly string[] };
 
+export type IAMSubagentManifestRole =
+  | "research-scout"
+  | "gate-evaluator"
+  | "task-executor"
+  | "validation-reviewer"
+  | "workflow-worker"
+  | "orchestrator-worker";
+
+export type SubagentsPolicy =
+  | { readonly mode: "none" }
+  | {
+      readonly mode: "allowed";
+      readonly roles: readonly IAMSubagentManifestRole[];
+      readonly requireEnvelope: boolean;
+      readonly maxParallel?: number;
+    };
+
 // ─── Computed-artifact registry (#4924 v2 contract) ───────────────────────
 
 /**
@@ -221,6 +238,8 @@ export interface UnitContextManifest {
    * invariant test rather than defaulting to "all" silently.
    */
   readonly tools: ToolsPolicy;
+  /** Subagent dispatch policy. Required so planning/read-only units fail closed unless explicitly opted in. */
+  readonly subagents: SubagentsPolicy;
   /** Artifact handling: inline (full body), excerpt (compact), or on-demand (path only). */
   readonly artifacts: {
     readonly inline: readonly ArtifactKey[];
@@ -285,6 +304,29 @@ const TOOLS_DOCS: ToolsPolicy = {
   ],
 };
 
+const SUBAGENTS_NONE: SubagentsPolicy = { mode: "none" };
+const SUBAGENTS_RESEARCH_SLICE: SubagentsPolicy = {
+  mode: "allowed",
+  roles: ["research-scout"],
+  requireEnvelope: true,
+};
+const SUBAGENTS_GATE_EVALUATE: SubagentsPolicy = {
+  mode: "allowed",
+  roles: ["gate-evaluator"],
+  requireEnvelope: true,
+};
+const SUBAGENTS_VALIDATE_MILESTONE: SubagentsPolicy = {
+  mode: "allowed",
+  roles: ["validation-reviewer"],
+  requireEnvelope: true,
+  maxParallel: 3,
+};
+const SUBAGENTS_REACTIVE_EXECUTE: SubagentsPolicy = {
+  mode: "allowed",
+  roles: ["task-executor"],
+  requireEnvelope: true,
+};
+
 /**
  * Canonical unit types handled by auto-mode dispatch. The coverage test
  * enumerates these against `UNIT_MANIFESTS` to catch manifest drift when
@@ -320,6 +362,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       // Phase 3 migration (#4782): matches today's actual
       // buildResearchMilestonePrompt inlining order.
@@ -336,6 +379,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["project", "requirements", "decisions", "milestone-research", "templates"],
       excerpt: [],
@@ -350,6 +394,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["project", "requirements", "decisions", "milestone-context", "templates"],
       excerpt: [],
@@ -364,6 +409,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_VALIDATE_MILESTONE,
     artifacts: {
       inline: ["roadmap", "slice-summary", "slice-uat", "requirements", "decisions", "templates"],
       excerpt: [],
@@ -378,6 +424,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       // #4780 landed slice-summary as excerpt for this unit; phase 2 of
       // the architecture will read this manifest as the source of truth
@@ -397,6 +444,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_RESEARCH_SLICE,
     artifacts: {
       inline: ["roadmap", "milestone-research", "dependency-summaries", "templates"],
       excerpt: [],
@@ -411,6 +459,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["roadmap", "slice-research", "dependency-summaries", "requirements", "decisions", "templates"],
       excerpt: [],
@@ -425,6 +474,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["slice-plan", "slice-research", "dependency-summaries", "templates"],
       excerpt: [],
@@ -439,6 +489,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["slice-plan", "slice-research", "dependency-summaries", "prior-task-summaries", "templates"],
       excerpt: [],
@@ -453,6 +504,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       // Phase 3 migration (#4782): matches today's actual
       // buildCompleteSlicePrompt inlining order. Overrides prepend +
@@ -471,6 +523,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "none",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       // Phase 2 pilot (#4782): manifest now matches today's actual
       // buildReassessRoadmapPrompt behavior for equivalence. Phase 3
@@ -490,6 +543,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_ALL,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["task-plan", "slice-plan", "prior-task-summaries", "templates"],
       excerpt: [],
@@ -504,6 +558,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_ALL,
+    subagents: SUBAGENTS_REACTIVE_EXECUTE,
     artifacts: {
       inline: ["slice-plan", "prior-task-summaries", "templates"],
       excerpt: [],
@@ -520,6 +575,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       // Phase 3 migration (#4782): manifest matches today's actual
       // buildRunUatPrompt inlining. Prior phase-1 entry listed
@@ -538,6 +594,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     tools: TOOLS_PLANNING,
+    subagents: SUBAGENTS_GATE_EVALUATE,
     artifacts: {
       inline: ["slice-plan", "prior-task-summaries"],
       excerpt: [],
@@ -552,6 +609,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: true,
     preferences: "active-only",
     tools: TOOLS_DOCS,
+    subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["project", "requirements", "decisions", "templates"],
       excerpt: [],

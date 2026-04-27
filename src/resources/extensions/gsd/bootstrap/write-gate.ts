@@ -3,7 +3,8 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { minimatch } from "minimatch";
 
-import type { ToolsPolicy } from "../unit-context-manifest.js";
+import type { SubagentsPolicy, ToolsPolicy } from "../unit-context-manifest.js";
+import { formatIAMSubagentPolicyBlockReason, validateIAMSubagentPolicy } from "../iam-subagent-policy.js";
 
 /**
  * Regex matching milestone CONTEXT.md file names in both legacy M001
@@ -546,6 +547,12 @@ export function shouldBlockQueueExecutionInSnapshot(
 const PLANNING_WRITE_TOOLS = new Set(["write", "edit", "multi_edit", "notebook_edit"]);
 const PLANNING_SUBAGENT_TOOLS = new Set(["subagent", "task"]);
 
+export interface PlanningUnitPolicyContext {
+  readonly subagents?: SubagentsPolicy | null;
+  readonly toolInput?: unknown;
+  readonly parentUnit?: string | null;
+}
+
 /**
  * Read-only / planning-safe tools that any non-"all" mode allows. Mirrors
  * QUEUE_SAFE_TOOLS / GATE_SAFE_TOOLS but is the inclusive default for
@@ -608,11 +615,27 @@ export function shouldBlockPlanningUnit(
   basePath: string,
   unitType: string,
   policy: ToolsPolicy | null | undefined,
+  context: PlanningUnitPolicyContext = {},
 ): { block: boolean; reason?: string } {
   if (!policy) return { block: false };
-  if (policy.mode === "all") return { block: false };
 
   const tool = toolName;
+
+  if (PLANNING_SUBAGENT_TOOLS.has(tool) && context.subagents?.mode === "allowed") {
+    const validation = validateIAMSubagentPolicy({
+      toolName: tool,
+      toolInput: context.toolInput,
+      unitType,
+      parentUnit: context.parentUnit ?? null,
+      policy: context.subagents,
+    });
+    if (!validation.ok) {
+      return { block: true, reason: formatIAMSubagentPolicyBlockReason(validation) };
+    }
+    return { block: false };
+  }
+
+  if (policy.mode === "all") return { block: false };
 
   // Read-only mode: only Read-class tools are permitted.
   if (policy.mode === "read-only") {

@@ -38,6 +38,7 @@ import { logWarning } from "./workflow-logger.js";
 import { inlineGraphSubgraph } from "./graph-context.js";
 import { buildExtractionStepsBlock } from "./commands-extract-learnings.js";
 import { warnIfManifestHasMissingSkills } from "./skill-manifest.js";
+import { formatIAMSubagentContractMarker } from "./iam-subagent-policy.js";
 
 // ─── Preamble Cap ─────────────────────────────────────────────────────────────
 
@@ -2454,6 +2455,10 @@ export async function buildReassessRoadmapPrompt(
   });
 }
 
+function prependIAMSubagentMarker(prompt: string, role: string, envelopeId: string): string {
+  return [formatIAMSubagentContractMarker(role, envelopeId), "", prompt].join("\n");
+}
+
 // ─── Reactive Execute Prompt ──────────────────────────────────────────────
 
 export async function buildReactiveExecutePrompt(
@@ -2508,6 +2513,7 @@ export async function buildReactiveExecutePrompt(
         modelRegistry: opts?.modelRegistry,
       },
     );
+    const markedTaskPrompt = prependIAMSubagentMarker(taskPrompt, "task-executor", `${mid}-${sid}-reactive-${tid}-env`);
 
     const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
@@ -2516,7 +2522,7 @@ export async function buildReactiveExecutePrompt(
       `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
-      taskPrompt,
+      markedTaskPrompt,
       "```",
     ].join("\n"));
   }
@@ -2596,13 +2602,14 @@ export async function buildParallelResearchSlicesPrompt(
   const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
   for (const slice of slices) {
     const slicePrompt = await buildResearchSlicePrompt(mid, midTitle, slice.id, slice.title, basePath);
+    const markedSlicePrompt = prependIAMSubagentMarker(slicePrompt, "research-scout", `${mid}-${slice.id}-research-env`);
     subagentSections.push([
       `### ${slice.id}: ${slice.title}`,
       "",
       `Use this as the prompt for a \`subagent\` call${modelSuffix} (agent: \`gsd-executor\` or the default agent):`,
       "",
       "```",
-      slicePrompt,
+      markedSlicePrompt,
       "```",
     ].join("\n"));
   }
@@ -2670,6 +2677,7 @@ export async function buildGateEvaluatePrompt(
       "- `rationale`: one-sentence justification",
       "- `findings`: detailed markdown findings (or empty if omitted)",
     ].join("\n");
+    const markedSubPrompt = prependIAMSubagentMarker(subPrompt, "gate-evaluator", `${mid}-${sid}-gate-${def.id}-env`);
 
     const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
@@ -2678,7 +2686,7 @@ export async function buildGateEvaluatePrompt(
       `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
-      subPrompt,
+      markedSubPrompt,
       "```",
     ].join("\n"));
   }

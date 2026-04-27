@@ -266,3 +266,76 @@ test("S06: governed planning manifests advertise omega-phase-artifact on demand"
     );
   }
 });
+
+// ─── Subagent-policy invariants (S07) ────────────────────────────────────
+
+test("S07: every manifest declares a subagents policy", () => {
+  for (const [unitType, manifest] of Object.entries(UNIT_MANIFESTS)) {
+    const policy = (manifest as { subagents?: { mode?: string } }).subagents;
+    assert.ok(
+      policy && typeof policy.mode === "string",
+      `manifest "${unitType}" is missing a subagents policy — known unit types must fail closed rather than defaulting to allow`,
+    );
+  }
+});
+
+test("S07: subagents policy shape is valid and bounded", () => {
+  const validModes = new Set(["none", "allowed"]);
+  const validRoles = new Set([
+    "research-scout",
+    "gate-evaluator",
+    "task-executor",
+    "validation-reviewer",
+    "workflow-worker",
+    "orchestrator-worker",
+  ]);
+  for (const [unitType, manifest] of Object.entries(UNIT_MANIFESTS)) {
+    const policy = (manifest as { subagents: { mode: string; roles?: readonly string[]; requireEnvelope?: boolean; maxParallel?: number } }).subagents;
+    assert.ok(validModes.has(policy.mode), `manifest "${unitType}" has invalid subagents.mode "${policy.mode}"`);
+    if (policy.mode === "none") {
+      assert.equal(policy.roles, undefined, `manifest "${unitType}" should not list roles when subagents are disabled`);
+      continue;
+    }
+    assert.ok(Array.isArray(policy.roles) && policy.roles.length > 0, `manifest "${unitType}" allows subagents without explicit roles`);
+    assert.equal(policy.requireEnvelope, true, `manifest "${unitType}" must require IAM envelope markers for allowed subagents`);
+    for (const role of policy.roles) {
+      assert.ok(validRoles.has(role), `manifest "${unitType}" allows unknown IAM subagent role "${role}"`);
+    }
+    if (policy.maxParallel !== undefined) {
+      assert.ok(Number.isInteger(policy.maxParallel) && policy.maxParallel > 0, `manifest "${unitType}" has invalid maxParallel`);
+    }
+  }
+});
+
+test("S07: known subagent-dispatching units opt into specific IAM roles without changing tools.mode", () => {
+  assert.deepEqual(UNIT_MANIFESTS["research-slice"].subagents, {
+    mode: "allowed",
+    roles: ["research-scout"],
+    requireEnvelope: true,
+  });
+  assert.deepEqual(UNIT_MANIFESTS["gate-evaluate"].subagents, {
+    mode: "allowed",
+    roles: ["gate-evaluator"],
+    requireEnvelope: true,
+  });
+  assert.deepEqual(UNIT_MANIFESTS["validate-milestone"].subagents, {
+    mode: "allowed",
+    roles: ["validation-reviewer"],
+    requireEnvelope: true,
+    maxParallel: 3,
+  });
+  assert.deepEqual(UNIT_MANIFESTS["reactive-execute"].subagents, {
+    mode: "allowed",
+    roles: ["task-executor"],
+    requireEnvelope: true,
+  });
+
+  assert.equal(UNIT_MANIFESTS["research-slice"].tools.mode, "planning");
+  assert.equal(UNIT_MANIFESTS["gate-evaluate"].tools.mode, "planning");
+  assert.equal(UNIT_MANIFESTS["validate-milestone"].tools.mode, "planning");
+  assert.equal(UNIT_MANIFESTS["reactive-execute"].tools.mode, "all");
+});
+
+test("S07: execute-task is not inadvertently opted into subagent envelope enforcement", () => {
+  assert.deepEqual(UNIT_MANIFESTS["execute-task"].subagents, { mode: "none" });
+});

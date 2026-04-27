@@ -374,6 +374,11 @@ export function registerHooks(
           dash.basePath || discussionBasePath,
           activeUnitType,
           manifest.tools,
+          {
+            subagents: manifest.subagents,
+            toolInput: event.input,
+            parentUnit: dash.currentUnit?.id ?? null,
+          },
         );
         if (planningGuard.block) return planningGuard;
       }
