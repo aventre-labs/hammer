@@ -81,6 +81,50 @@ test("bootstrap and downstream references require matching explanatory context",
   assert.equal(barePrompt[0].category, UNCLASSIFIED_CATEGORY);
 });
 
+test("core prompt and workflow paths do not inherit broad extension compatibility", async () => {
+  const rules = await loadHammerIdentityCompatibilityRules();
+
+  const promptVisible = scanText(
+    "src/resources/extensions/gsd/prompts/example.md",
+    'export const prompt = "Use GSD to plan this workflow";\n',
+    rules,
+  );
+  assert.equal(promptVisible.length, 1);
+  assert.equal(promptVisible[0].category, UNCLASSIFIED_CATEGORY);
+  assert.equal(promptVisible[0].ruleId, null);
+
+  const workflowVisible = scanText(
+    "src/resources/extensions/gsd/workflow-templates/example.md",
+    "Use GSD to plan this workflow.\n",
+    rules,
+  );
+  assert.equal(workflowVisible.length, 1);
+  assert.equal(workflowVisible[0].category, UNCLASSIFIED_CATEGORY);
+  assert.equal(workflowVisible[0].ruleId, null);
+
+  const dbBackedToolBridge = scanText(
+    "src/resources/extensions/gsd/prompts/example.md",
+    "Call `gsd_plan_slice` as the DB-backed tool-name compatibility bridge.\n",
+    rules,
+  );
+  assert.equal(dbBackedToolBridge.length, 1);
+  assert.equal(dbBackedToolBridge[0].category, "legacy-alias");
+  assert.ok(
+    ["explicit-legacy-alias-marker", "s08-db-backed-tool-name-bridge"].includes(
+      dbBackedToolBridge[0].ruleId ?? "",
+    ),
+  );
+
+  const legacyStateBridge = scanText(
+    "src/resources/extensions/gsd/prompts/example.md",
+    "Read `.gsd` only as a legacy state bridge while `.hammer` is canonical.\n",
+    rules,
+  );
+  assert.equal(legacyStateBridge.length, 1);
+  assert.equal(legacyStateBridge[0].category, "bootstrap-migration");
+  assert.equal(legacyStateBridge[0].ruleId, "s08-legacy-state-path-bridge");
+});
+
 test("scanner filters ignored and generated state before reading files", () => {
   assert.equal(shouldScanPath("src/hammer-identity/index.ts"), true);
   assert.equal(shouldScanPath("scripts/check-hammer-identity.mjs"), true);

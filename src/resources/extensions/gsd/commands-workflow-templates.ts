@@ -251,7 +251,7 @@ export async function handleStart(
     });
 
     pi.sendMessage(
-      { customType: "gsd-workflow-template", content: prompt, display: false },
+      { customType: "gsd-workflow-template", content: prompt, display: false }, // internal compatibility bridge: private workflow dispatch customType tag.
       { triggerTurn: true },
     );
     return;
@@ -418,7 +418,7 @@ export async function handleStart(
       // Trigger /hammer init by dispatching to the handler
       pi.sendMessage(
         {
-          customType: "gsd-workflow-template",
+          customType: "gsd-workflow-template", // internal compatibility bridge: private workflow dispatch customType tag.
           content: "The user wants to start a full Hammer project. Run `/hammer init` to bootstrap the project, then `/hammer auto` to begin execution.",
           display: false,
         },
@@ -512,7 +512,7 @@ export async function handleStart(
 
   pi.sendMessage(
     {
-      customType: "gsd-workflow-template",
+      customType: "gsd-workflow-template", // internal compatibility bridge: private workflow dispatch customType tag.
       content: prompt,
       display: false,
     },
@@ -676,7 +676,7 @@ export function dispatchMarkdownPhasePlugin(
   });
 
   pi.sendMessage(
-    { customType: "gsd-workflow-template", content: prompt, display: false },
+    { customType: "gsd-workflow-template", content: prompt, display: false }, // internal compatibility bridge: private workflow dispatch customType tag.
     { triggerTurn: true },
   );
 }

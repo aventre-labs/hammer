@@ -56,7 +56,7 @@ export function dispatchOneshot(
   });
 
   pi.sendMessage(
-    { customType: "gsd-workflow-oneshot", content: prompt, display: false },
+    { customType: "gsd-workflow-oneshot", content: prompt, display: false }, // internal compatibility bridge: private workflow dispatch customType tag.
     { triggerTurn: true },
   );
 }
@@ -100,7 +100,7 @@ export function dispatchMarkdownPhase(
   });
 
   pi.sendMessage(
-    { customType: "gsd-workflow-template", content: prompt, display: false },
+    { customType: "gsd-workflow-template", content: prompt, display: false }, // internal compatibility bridge: private workflow dispatch customType tag.
     { triggerTurn: true },
   );
 

@@ -341,12 +341,12 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
   {
     id: "extension-source-internal-impl",
     category: "internal-implementation-path",
-    description: "All source files inside src/resources/extensions/gsd/ (excluding bootstrap/, commands/, tests/ which have their own rules) contain GSD references as internal identifiers, state path strings, env var fallbacks, and inline docs.",
-    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/`,
+    description: "Implementation-only files inside src/resources/extensions/gsd/ contain GSD references as internal identifiers, state path strings, env var fallbacks, and inline docs; prompt/workflow surfaces are intentionally excluded and must rely on narrower bridge rules.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/(?!prompts/|workflow-templates/|(?:commands-workflow-templates|workflow-templates|workflow-dispatch|custom-workflow-engine|unit-context-manifest|iam-subagent-policy)\.ts$)`,
     linePattern: LEGACY_TOKEN_PATTERN,
     rationale:
-      "The entire extensions/gsd/ tree is the internal GSD extension implementation. It contains .gsd state paths as bootstrap bridges, GSD_* env var fallbacks, gsd_* internal tool prefix checks, gsd-db.ts as the internal SQLite wrapper, workflow templates referencing /gsd commands, watch/ui files, safety checks, ecosystem loaders, and all other internal implementation. None of these are directly user-visible product identity — they are implementation internals that require a coordinated rename of the entire extensions/gsd subtree.",
-    allowedUntil: "Update during the extensions/gsd → extensions/hammer directory rename.",
+      "The extensions/gsd/ tree is still the internal extension implementation, but S08-owned prompt/workflow surfaces are reachable agent/user-visible corpus and must fail closed on stale GSD-first prose. This rule excludes those surfaces so only implementation-only files get the broad directory bridge until the tree is physically renamed.",
+    allowedUntil: "Update during the extensions/gsd → extensions/hammer directory rename; keep prompt/workflow surfaces governed by the dedicated S08 coverage checker.",
     examples: ["const dbPath = join(gsdRoot(), 'gsd.db')"] as const,
   },
   {
@@ -558,15 +558,70 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     examples: ["const artifactDir = join(gsdRoot(), 'artifacts')"] as const,
   },
   {
-    id: "extension-prompts-and-skills",
+    id: "extension-skills-and-non-s08-prompt-corpus",
     category: "internal-implementation-path",
-    description: "Prompt template files (src/resources/extensions/gsd/prompts/*.md), bundled skill files (src/resources/extensions/gsd/skills/, src/resources/skills/), and GSD-WORKFLOW.md contain /gsd command examples and GSD product strings used as internal agent instruction templates.",
-    pathPattern: String.raw`(?:^|/)src/resources/(?:extensions/gsd/(?:prompts|skills)/|GSD-WORKFLOW\.md|skills/)`,
+    description: "Bundled skill files may still contain old command examples as downstream corpus, but S08-owned core prompt/workflow surfaces are excluded from this compatibility bridge.",
+    pathPattern: String.raw`(?:^|/)src/resources/(?:extensions/gsd/skills/|skills/)`,
     linePattern: LEGACY_TOKEN_PATTERN,
     rationale:
-      "Prompt templates and skill files are internal agent instruction documents that currently use /gsd command syntax. Updating these is downstream work that requires coordinated prompt testing to avoid breaking the execution substrate.",
-    allowedUntil: "Update when prompt templates and skills are updated to Hammer command syntax.",
-    examples: ["/gsd auto — run all queued units"] as const,
+      "S08 closes the reachable core Hammer prompt/workflow corpus, so broad prompt/workflow path allowances must not hide stale visible prose. Bundled skill corpus migration remains downstream and is separate from the strict prompt/workflow coverage checker.",
+    allowedUntil: "Remove when bundled skills are updated to Hammer command syntax.",
+    examples: ["/gsd auto — legacy skill example awaiting skill-corpus migration"] as const,
+  },
+  {
+    id: "s08-db-backed-tool-name-bridge",
+    category: "legacy-alias",
+    description: "S08 prompt/workflow surfaces may name gsd_* only when the local line explicitly says it is a DB-backed tool-name/contract compatibility bridge or stop-before guard.",
+    pathPattern: String.raw`(?:^|/)src/resources/(?:extensions/gsd/prompts/|GSD-WORKFLOW\.md$|extensions/gsd/workflow-templates/|extensions/gsd/(?:commands-workflow-templates|workflow-templates|workflow-dispatch|custom-workflow-engine|unit-context-manifest|iam-subagent-policy)\.ts$)`,
+    linePattern: String.raw`(?:(?:DB-backed|database-backed|tool[- ]?(?:name|schema|call|surface|contract)|available tool|execution substrate|legacy|compat|stop before).{0,160}gsd_[A-Za-z0-9_]+|gsd_[A-Za-z0-9_]+.{0,160}(?:DB-backed|database-backed|tool[- ]?(?:name|schema|call|surface|contract)|available tool|execution substrate|legacy|compat|stop before))`,
+    rationale:
+      "The DB-backed gsd_* tool names remain the available execution substrate for some Hammer prompts. They are allowed only with immediate local bridge wording so stale GSD-first prose cannot be classified by path alone.",
+    allowedUntil: "Remove when canonical hammer_* tool names fully replace DB-backed gsd_* prompt contracts.",
+    examples: ["Call `gsd_plan_slice` as the DB-backed tool-name compatibility bridge."] as const,
+  },
+  {
+    id: "s08-legacy-state-path-bridge",
+    category: "bootstrap-migration",
+    description: "S08 prompt/workflow surfaces may name .gsd, GSD_* env aliases, or GSD-WORKFLOW.md only as explicit legacy state/file path bridges while .hammer/Hammer remain canonical.",
+    pathPattern: String.raw`(?:^|/)src/resources/(?:extensions/gsd/prompts/|GSD-WORKFLOW\.md$|extensions/gsd/workflow-templates/|extensions/gsd/(?:commands-workflow-templates|workflow-templates|workflow-dispatch|custom-workflow-engine|unit-context-manifest|iam-subagent-policy)\.ts$)`,
+    linePattern: String.raw`(?:(?:\.gsd|GSD_[A-Z0-9_]+|GSD-WORKFLOW(?:\.md)?).{0,180}(?:\.hammer|state[- ]?(?:namespace|path|root|dir)|state\s+bridge|legacy|compat|migration|migrate|fallback|bootstrap|file path|artifact path|private|internal)|(?:\.hammer|state[- ]?(?:namespace|path|root|dir)|state\s+bridge|legacy|compat|migration|migrate|fallback|bootstrap|file path|artifact path|private|internal).{0,180}(?:\.gsd|GSD_[A-Z0-9_]+|GSD-WORKFLOW(?:\.md)?))`,
+    rationale:
+      "The workflow resource is still packaged under a legacy path and some prompt instructions must reference legacy .gsd state for migration/read compatibility. The allowance is line-scoped to explicit state/path bridge language, not a blanket prompt/workflow allowlist.",
+    allowedUntil: "Remove when state namespace and GSD-WORKFLOW.md path bridges are retired.",
+    examples: ["Read `.gsd` only as a legacy state bridge while `.hammer` is canonical."] as const,
+  },
+  {
+    id: "s08-internal-workflow-dispatch-tags",
+    category: "internal-implementation-path",
+    description: "Workflow dispatch customType values use gsd-workflow-* as private message tags while the visible command/prose surface is Hammer-native.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/(?:commands-workflow-templates|workflow-dispatch)\.ts$`,
+    linePattern: String.raw`gsd-workflow-(?:template|oneshot).{0,160}(?:customType|internal|compat|bridge)|(?:customType|internal|compat|bridge).{0,160}gsd-workflow-(?:template|oneshot)`,
+    rationale:
+      "These customType strings are private dispatch tags consumed by the existing extension messaging substrate, not prompt prose. They remain line-scoped to dispatch code so a new prompt/workflow document cannot hide behind a broad path allowance.",
+    allowedUntil: "Remove when internal workflow dispatch tags are renamed to hammer-workflow-*.",
+    examples: ['{ customType: "gsd-workflow-template", content: prompt, display: false }'] as const,
+  },
+  {
+    id: "s08-internal-extension-path-bridge",
+    category: "internal-implementation-path",
+    description: "Workflow template resolver code may reference the still-physical extensions/gsd directory only with explicit internal extension path bridge wording.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/workflow-templates\.ts$`,
+    linePattern: String.raw`(?:extensions["', ]+gsd|extensions/gsd|\bgsd\b).{0,160}(?:internal extension path bridge|private extension path|legacy extension path|compatibility path)|(?:internal extension path bridge|private extension path|legacy extension path|compatibility path).{0,160}(?:extensions["', ]+gsd|extensions/gsd|\bgsd\b)`,
+    rationale:
+      "The installed extension directory is still named gsd, but workflow template resolution must classify that as an internal path bridge only when the local line says so.",
+    allowedUntil: "Remove when the extensions/gsd directory is renamed to extensions/hammer.",
+    examples: ['const agentGsdDir = join(hammerHome, "agent", "extensions", "gsd"); // internal extension path bridge.'] as const,
+  },
+  {
+    id: "s08-forensics-historical-reference",
+    category: "historical-docs",
+    description: "The forensics prompt may mention legacy GSD only as historical inspection/migration subject matter, and may include old repository GraphQL examples only as legacy issue-type automation snippets.",
+    pathPattern: String.raw`(?:^|/)src/resources/extensions/gsd/prompts/forensics\.md$`,
+    linePattern: String.raw`(?:(?:legacy|historical|migration|old repository|GraphQL|issue type|gh api|repository\(owner).{0,220}(?:GSD|gsd-build|gsd-2)|(?:GSD|gsd-build|gsd-2).{0,220}(?:legacy|historical|migration|old repository|GraphQL|issue type|gh api|repository\(owner))`,
+    rationale:
+      "Forensics sometimes investigates old runs and still documents a legacy issue-type GraphQL snippet. The allowance is constrained to historical/automation context in the forensics prompt; generic prompt prose such as 'Use GSD' remains unclassified.",
+    allowedUntil: "Remove when the forensics GitHub issue automation snippet is fully migrated to Hammer-owned repository metadata.",
+    examples: ["legacy GSD historical inspection", 'repository(owner:"gsd-build",name:"gsd-2")'] as const,
   },
   {
     id: "extension-commands-workflow-source",
