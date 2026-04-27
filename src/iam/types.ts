@@ -184,7 +184,8 @@ export interface IAMError {
     | "persistence-failed"
     | "invalid-stage-sequence"
     | "unknown-rune"
-    | "executor-not-wired";
+    | "executor-not-wired"
+    | "context-envelope-invalid";
   stage?: OmegaStageName;
   runeName?: RuneName;
   target?: string;
