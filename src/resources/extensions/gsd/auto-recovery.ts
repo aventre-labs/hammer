@@ -46,13 +46,20 @@ import {
   readFileSync,
   writeFileSync,
   unlinkSync,
+  readdirSync,
+  statSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import {
   resolveExpectedArtifactPath,
   diagnoseExpectedArtifact,
 } from "./auto-artifact-paths.js";
+import {
+  omegaPhaseRunBaseDir,
+  validatePhaseOmegaArtifacts,
+  type OmegaPhaseUnitType,
+} from "./omega-phase-artifacts.js";
 import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 
 // Re-export so existing consumers of auto-recovery.ts keep working.
@@ -302,6 +309,93 @@ function isMilestoneArtifactPath(file: string, milestoneId: string): boolean {
  * the summary allowed the unit to be marked complete when the LLM
  * skipped writing the UAT file (see #176).
  */
+function detectLatestOmegaPhaseManifest(base: string, unitType: OmegaPhaseUnitType, unitId: string): string | null {
+  const unitDir = omegaPhaseRunBaseDir(base, unitType, unitId);
+  if (!existsSync(unitDir)) return null;
+  try {
+    const candidates = readdirSync(unitDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(unitDir, entry.name, "phase-manifest.json"))
+      .filter((manifestPath) => existsSync(manifestPath));
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+      try {
+        return statSync(b).mtimeMs - statSync(a).mtimeMs;
+      } catch {
+        return b.localeCompare(a);
+      }
+    });
+    return candidates[0] ?? null;
+  } catch (err) {
+    logWarning(
+      "recovery",
+      `Omega phase manifest scan failed for ${unitType} ${unitId}: ${err instanceof Error ? err.message : String(err)}`,
+      { unitType, unitId, unitDir },
+    );
+    return null;
+  }
+}
+
+function relPathForLog(base: string, absPath: string): string {
+  const rel = relative(base, absPath);
+  return rel && !rel.startsWith("..") ? rel : absPath;
+}
+
+function expectedOmegaManifestHint(base: string, unitType: OmegaPhaseUnitType, unitId: string): string {
+  return `${relPathForLog(base, omegaPhaseRunBaseDir(base, unitType, unitId))}/<runId>/phase-manifest.json`;
+}
+
+function omegaGovernedPhaseFor(unitType: string): OmegaPhaseUnitType | null {
+  switch (unitType) {
+    case "research-milestone":
+    case "research-slice":
+    case "plan-milestone":
+    case "plan-slice":
+    case "refine-slice":
+    case "replan-slice":
+      return unitType;
+    default:
+      return null;
+  }
+}
+
+function verifyOmegaGovernedPhase(
+  unitType: string,
+  unitId: string,
+  base: string,
+  targetArtifactPath: string,
+): boolean {
+  const phaseUnitType = omegaGovernedPhaseFor(unitType);
+  if (!phaseUnitType) return true;
+  const manifestPath = detectLatestOmegaPhaseManifest(base, phaseUnitType, unitId);
+  if (!manifestPath) {
+    const expectedManifest = expectedOmegaManifestHint(base, phaseUnitType, unitId);
+    logWarning(
+      "recovery",
+      `Omega phase verification failed for ${unitType} ${unitId}: missing phase-manifest.json. Target artifact ${targetArtifactPath}. Expected Omega manifest at ${expectedManifest}; required run files include run-manifest.json, stage-01-materiality.md through stage-10-continuity.md, and synthesis.md. Regenerate with hammer_canonical_spiral using unitType=${phaseUnitType}, unitId=${unitId}, targetArtifactPath=${targetArtifactPath} before marking the phase complete.`,
+      { unitType, unitId, targetArtifactPath, manifestPath: expectedManifest },
+    );
+    return false;
+  }
+
+  const validation = validatePhaseOmegaArtifacts({
+    manifestPath,
+    expectedUnitType: phaseUnitType,
+    expectedUnitId: unitId,
+    expectedTargetArtifactPath: targetArtifactPath,
+  });
+  if (!validation.ok) {
+    const gap = validation.error.validationGap ?? validation.error.remediation;
+    logWarning(
+      "recovery",
+      `Omega phase verification failed for ${unitType} ${unitId}: ${gap}. Target artifact ${targetArtifactPath}. Manifest ${manifestPath}; required files: phase-manifest.json, run-manifest.json, stage-01-materiality.md through stage-10-continuity.md, synthesis.md. Remediation: ${validation.error.remediation}`,
+      { unitType, unitId, targetArtifactPath, manifestPath },
+    );
+    return false;
+  }
+  return true;
+}
+
 export function verifyExpectedArtifact(
   unitType: string,
   unitId: string,
@@ -406,35 +500,52 @@ export function verifyExpectedArtifact(
     const { milestone: mid } = parseUnitId(unitId);
     if (!mid) return false;
 
-    // #4068: PARALLEL-BLOCKER written by timeout-recovery is a terminal state.
+    // S06: PARALLEL-BLOCKER placeholders are recovery artifacts, not governed
+    // research completion. The sentinel now fails closed until each ready slice
+    // has both S##-RESEARCH.md and a valid slice Omega phase manifest.
     const blockerPath = resolveExpectedArtifactPath(unitType, unitId, base);
     if (blockerPath && existsSync(blockerPath)) {
-      return true;
+      logWarning(
+        "recovery",
+        `parallel-research verification failed for ${unitId}: PARALLEL-BLOCKER at ${blockerPath} is not governed completion; each ready slice still requires RESEARCH plus Omega phase-manifest.json/run-manifest.json/stage files/synthesis.md.`,
+        { unitType, unitId, blockerPath },
+      );
+      return false;
     }
 
     const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
     if (!roadmapFile || !existsSync(roadmapFile)) {
-      logWarning("recovery", `verify-fail ${unitType} ${unitId}: roadmap missing`);
+      logWarning("recovery", `verify-fail ${unitType} ${unitId}: roadmap missing; Omega slice manifests cannot be selected`);
       return false;
     }
     try {
       const roadmap = parseLegacyRoadmap(readFileSync(roadmapFile, "utf-8"));
       const milestoneResearchFile = resolveMilestoneFile(base, mid, "RESEARCH");
       for (const slice of roadmap.slices) {
+        if (!slice.id || !/^S\d{2}(?:-[A-Za-z0-9]+)?$/.test(slice.id)) {
+          logWarning("recovery", `verify-fail ${unitType} ${unitId}: invalid roadmap slice id ${String(slice.id)}`);
+          return false;
+        }
         if (slice.done) continue;
         if (milestoneResearchFile && slice.id === "S01") continue;
-        const depsComplete = (slice.depends ?? []).every((depId) =>
-          !!resolveSliceFile(base, mid, depId, "SUMMARY"),
-        );
+        const depsComplete = (slice.depends ?? []).every((depId) => {
+          if (!/^S\d{2}(?:-[A-Za-z0-9]+)?$/.test(depId)) return false;
+          return !!resolveSliceFile(base, mid, depId, "SUMMARY");
+        });
         if (!depsComplete) continue;
-        if (!resolveSliceFile(base, mid, slice.id, "RESEARCH")) {
+        const researchPath = resolveSliceFile(base, mid, slice.id, "RESEARCH");
+        if (!researchPath) {
           logWarning("recovery", `verify-fail ${unitType} ${unitId}: slice ${slice.id} missing RESEARCH`);
+          return false;
+        }
+        if (!verifyOmegaGovernedPhase("research-slice", `${mid}/${slice.id}`, base, researchPath)) {
+          logWarning("recovery", `parallel-research verification failed: slice ${slice.id} Omega phase verification failed for ${mid}/${slice.id}`);
           return false;
         }
       }
       return true;
     } catch (err) {
-      logWarning("recovery", `parallel-research verification failed: ${err instanceof Error ? err.message : String(err)}`);
+      logWarning("recovery", `parallel-research verification failed with Omega context: ${err instanceof Error ? err.message : String(err)}`);
       return false;
     }
   }
@@ -448,6 +559,10 @@ export function verifyExpectedArtifact(
   }
   if (!existsSync(absPath)) {
     logWarning("recovery", `verify-fail ${unitType} ${unitId}: existsSync false for ${absPath}`);
+    return false;
+  }
+
+  if (!verifyOmegaGovernedPhase(unitType, unitId, base, absPath)) {
     return false;
   }
 
@@ -917,16 +1032,35 @@ export function buildLoopRemediationSteps(
       ].join("\n");
     }
     case "plan-slice":
+    case "refine-slice":
+    case "replan-slice":
     case "research-slice": {
       if (!mid || !sid) break;
       const artifactRel =
-        unitType === "plan-slice"
-          ? relSliceFile(base, mid, sid, "PLAN")
-          : relSliceFile(base, mid, sid, "RESEARCH");
+        unitType === "research-slice"
+          ? relSliceFile(base, mid, sid, "RESEARCH")
+          : unitType === "replan-slice"
+            ? relSliceFile(base, mid, sid, "REPLAN")
+            : relSliceFile(base, mid, sid, "PLAN");
+      const omegaUnitType = unitType;
+      const toolName = unitType === "research-slice" ? "gsd_summary_save" : unitType === "replan-slice" ? "gsd_replan_slice" : "gsd_plan_slice";
       return [
-        `   1. Write ${artifactRel} manually (or with the LLM in interactive mode)`,
-        `   2. Run \`gsd recover\` to rebuild DB state from disk`,
-        `   3. Resume auto-mode`,
+        `   1. Run \`hammer_canonical_spiral\` with unitType \`${omegaUnitType}\`, unitId \`${mid}/${sid}\`, and targetArtifactPath \`${artifactRel}\`; it must persist phase-manifest.json, run-manifest.json, all ten stage-*.md files, and synthesis.md`,
+        `   2. Re-run the governed phase tool \`${toolName}\` so ${artifactRel} is regenerated and cites the Omega run id + manifest path`,
+        `   3. Run \`gsd recover\` to rebuild DB state from disk, then resume auto-mode`,
+      ].join("\n");
+    }
+    case "plan-milestone":
+    case "research-milestone": {
+      if (!mid) break;
+      const artifactRel = unitType === "plan-milestone"
+        ? relMilestoneFile(base, mid, "ROADMAP")
+        : relMilestoneFile(base, mid, "RESEARCH");
+      const toolName = unitType === "plan-milestone" ? "gsd_plan_milestone" : "gsd_summary_save";
+      return [
+        `   1. Run \`hammer_canonical_spiral\` with unitType \`${unitType}\`, unitId \`${mid}\`, and targetArtifactPath \`${artifactRel}\`; it must persist phase-manifest.json, run-manifest.json, all ten stage-*.md files, and synthesis.md`,
+        `   2. Re-run the governed phase tool \`${toolName}\` so ${artifactRel} is regenerated and cites the Omega run id + manifest path`,
+        `   3. Run \`gsd recover\` to rebuild DB state from disk, then resume auto-mode`,
       ].join("\n");
     }
     case "complete-slice": {

@@ -468,6 +468,8 @@ const omegaPhaseUnitTypeSchema = Type.Union([
   Type.Literal("plan-milestone"),
   Type.Literal("research-slice"),
   Type.Literal("plan-slice"),
+  Type.Literal("refine-slice"),
+  Type.Literal("replan-slice"),
 ], { description: "Optional governed phase unit type for phase artifact persistence." });
 
 const omegaStageSchema = Type.Union([

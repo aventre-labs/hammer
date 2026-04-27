@@ -83,6 +83,8 @@ const OMEGA_PHASE_UNIT_TYPES = [
   "plan-milestone",
   "research-slice",
   "plan-slice",
+  "refine-slice",
+  "replan-slice",
 ] as const;
 
 const DB_UNAVAILABLE_ERROR: IAMError = {

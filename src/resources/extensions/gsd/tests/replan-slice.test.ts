@@ -505,7 +505,52 @@ console.log('\n=== doctor: no blocker → no blocker_discovered_no_replan issue 
 
 import { resolveExpectedArtifactPath } from '../auto-artifact-paths.ts';
 import { verifyExpectedArtifact } from '../auto-recovery.ts';
+import { persistPhaseOmegaRun, type OmegaPhasePersistenceAdapters } from '../omega-phase-artifacts.ts';
+import type { OmegaPhaseArtifactRecord, OmegaRunRow, SavesuccessResultRow } from '../gsd-db.ts';
 
+
+function makeReplanOmegaAdapters(): OmegaPhasePersistenceAdapters {
+  const omegaRows = new Map<string, OmegaRunRow>();
+  return {
+    atomicWrite(filePath, content) {
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, content, 'utf-8');
+    },
+    insertOmegaRun(row) {
+      omegaRows.set(row.id, row);
+    },
+    updateOmegaRunStatus(id, status, completedAt, error, artifactDir) {
+      const existing = omegaRows.get(id);
+      assert.ok(existing, `missing omega row ${id}`);
+      omegaRows.set(id, {
+        ...existing,
+        status,
+        completed_at: completedAt ?? existing.completed_at,
+        error_message: error ?? existing.error_message,
+        artifact_dir: artifactDir ?? existing.artifact_dir,
+      });
+    },
+    getOmegaRun(id) {
+      return omegaRows.get(id) ?? null;
+    },
+    insertSavesuccessResult(_row: SavesuccessResultRow) {},
+    upsertOmegaPhaseArtifact(_row: OmegaPhaseArtifactRecord) {},
+  };
+}
+
+async function writeReplanOmega(base: string): Promise<void> {
+  const targetArtifactPath = join(base, '.gsd', 'milestones', 'M001', 'slices', 'S01', 'S01-REPLAN.md');
+  const result = await persistPhaseOmegaRun({
+    basePath: base,
+    unitType: 'replan-slice',
+    unitId: 'M001/S01',
+    query: 'Govern replan-slice verification fixture',
+    targetArtifactPath,
+    executor: async () => 'omega output',
+    adapters: makeReplanOmegaAdapters(),
+  });
+  assert.ok(result.ok, `Omega fixture should persist: ${JSON.stringify(!result.ok && result.error)}`);
+}
 
 describe('replan-slice', () => {
 test('artifact: resolveExpectedArtifactPath returns REPLAN.md path for replan-slice', () => {
@@ -529,11 +574,12 @@ test('artifact: verifyExpectedArtifact fails when REPLAN.md missing (#858)', () 
   rmSync(base, { recursive: true, force: true });
 });
 
-test('artifact: verifyExpectedArtifact passes when REPLAN.md exists (#858)', () => {
+test('artifact: verifyExpectedArtifact passes when REPLAN.md exists (#858)', async () => {
   const base = createFixtureBase();
   writeRoadmap(base, 'M001', ROADMAP_ONE_SLICE);
   writePlan(base, 'M001', 'S01', makePlanT01DoneT02Pending());
   writeReplanFile(base, 'M001', 'S01', '# Replan\n\nBlocker addressed.');
+  await writeReplanOmega(base);
 
   const result = verifyExpectedArtifact('replan-slice', 'M001/S01', base);
   assert.deepStrictEqual(result, true, 'verifyExpectedArtifact returns true when REPLAN.md exists');

@@ -108,6 +108,16 @@ export function resolveExpectedArtifactPath(
   }
 }
 
+function omegaPhaseContractDescription(
+  _base: string,
+  unitType: string,
+  unitId: string,
+  targetDescription: string,
+): string {
+  const manifestHint = `.gsd/omega/phases/${unitType}/${unitId.replace(/[^A-Za-z0-9._-]+/g, "__")}/<runId>/phase-manifest.json`;
+  return `${targetDescription} + Omega phase manifest ${manifestHint} with run-manifest.json, stage-01-materiality.md through stage-10-continuity.md, and synthesis.md`;
+}
+
 export function diagnoseExpectedArtifact(
   unitType: string,
   unitId: string,
@@ -120,25 +130,25 @@ export function diagnoseExpectedArtifact(
     case "discuss-slice":
       return `${relSliceFile(base, mid, sid!, "CONTEXT")} (slice context from discussion)`;
     case "research-milestone":
-      return `${relMilestoneFile(base, mid, "RESEARCH")} (milestone research)`;
+      return omegaPhaseContractDescription(base, "research-milestone", unitId, `${relMilestoneFile(base, mid, "RESEARCH")} (milestone research)`);
     case "plan-milestone":
-      return `${relMilestoneFile(base, mid, "ROADMAP")} (milestone roadmap)`;
+      return omegaPhaseContractDescription(base, "plan-milestone", unitId, `${relMilestoneFile(base, mid, "ROADMAP")} (milestone roadmap)`);
     case "research-slice":
       if (sid === "parallel-research") {
-        return `${relMilestoneFile(base, mid, "PARALLEL-BLOCKER")} (parallel slice research sentinel)`;
+        return `${relMilestoneFile(base, mid, "PARALLEL-BLOCKER")} (parallel slice research sentinel; blocker placeholders do not satisfy governed Omega completion — every ready slice needs S##-RESEARCH.md plus its own phase-manifest.json/run-manifest.json/stage files/synthesis.md)`;
       }
-      return `${relSliceFile(base, mid, sid!, "RESEARCH")} (slice research)`;
+      return omegaPhaseContractDescription(base, "research-slice", unitId, `${relSliceFile(base, mid, sid!, "RESEARCH")} (slice research)`);
     case "plan-slice":
-      return `${relSliceFile(base, mid, sid!, "PLAN")} (slice plan)`;
+      return omegaPhaseContractDescription(base, "plan-slice", unitId, `${relSliceFile(base, mid, sid!, "PLAN")} (slice plan)`);
     case "refine-slice":
-      return `${relSliceFile(base, mid, sid!, "PLAN")} (refined slice plan from sketch)`;
+      return omegaPhaseContractDescription(base, "refine-slice", unitId, `${relSliceFile(base, mid, sid!, "PLAN")} (refined slice plan from sketch)`);
     case "execute-task": {
       return `Task ${tid} marked [x] in ${relSliceFile(base, mid, sid!, "PLAN")} + summary written`;
     }
     case "complete-slice":
       return `Slice ${sid} marked [x] in ${relMilestoneFile(base, mid, "ROADMAP")} + summary + UAT written`;
     case "replan-slice":
-      return `${relSliceFile(base, mid, sid!, "REPLAN")} + updated ${relSliceFile(base, mid, sid!, "PLAN")}`;
+      return omegaPhaseContractDescription(base, "replan-slice", unitId, `${relSliceFile(base, mid, sid!, "REPLAN")} + updated ${relSliceFile(base, mid, sid!, "PLAN")}`);
     case "rewrite-docs":
       return "Active overrides resolved in .gsd/OVERRIDES.md + plan documents updated";
     case "reassess-roadmap":

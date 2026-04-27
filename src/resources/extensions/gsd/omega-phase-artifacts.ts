@@ -49,7 +49,9 @@ export type OmegaPhaseUnitType =
   | "research-milestone"
   | "plan-milestone"
   | "research-slice"
-  | "plan-slice";
+  | "plan-slice"
+  | "refine-slice"
+  | "replan-slice";
 
 export type OmegaPhaseManifestStatus = "running" | "complete" | "failed" | "partial";
 
@@ -114,6 +116,8 @@ const OMEGA_PHASE_UNIT_TYPES: readonly OmegaPhaseUnitType[] = [
   "plan-milestone",
   "research-slice",
   "plan-slice",
+  "refine-slice",
+  "replan-slice",
 ] as const;
 
 function defaultAdapters(): OmegaPhasePersistenceAdapters {
@@ -134,7 +138,7 @@ export function isOmegaPhaseUnitType(value: string): value is OmegaPhaseUnitType
 export function validateOmegaPhaseUnit(unitType: string, unitId: string): IAMResult<OmegaPhaseUnitType> {
   if (!isOmegaPhaseUnitType(unitType)) {
     return failure("persistence-failed", `Unknown Omega phase unit type "${unitType}".`, {
-      remediation: "Use one of research-milestone, plan-milestone, research-slice, or plan-slice.",
+      remediation: "Use one of research-milestone, plan-milestone, research-slice, plan-slice, refine-slice, or replan-slice.",
       persistenceStatus: "not-attempted",
     });
   }

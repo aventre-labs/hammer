@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, chmodSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -25,6 +25,8 @@ import {
   insertSlice,
   insertTask,
 } from "../../gsd-db.ts";
+import { persistPhaseOmegaRun, type OmegaPhasePersistenceAdapters } from "../../omega-phase-artifacts.ts";
+import type { OmegaPhaseArtifactRecord, OmegaRunRow, SavesuccessResultRow } from "../../gsd-db.ts";
 import { renderPlanFromDb } from "../../markdown-renderer.ts";
 
 function makeTmpBase(): string {
@@ -36,6 +38,48 @@ function makeTmpBase(): string {
 
 function cleanup(base: string): void {
   try { rmSync(base, { recursive: true, force: true }); } catch { /* */ }
+}
+
+function makeOmegaAdapters(): OmegaPhasePersistenceAdapters {
+  const omegaRows = new Map<string, OmegaRunRow>();
+  return {
+    atomicWrite(filePath, content) {
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, content, "utf-8");
+    },
+    insertOmegaRun(row) {
+      omegaRows.set(row.id, row);
+    },
+    updateOmegaRunStatus(id, status, completedAt, error, artifactDir) {
+      const existing = omegaRows.get(id);
+      assert.ok(existing, `missing omega row ${id}`);
+      omegaRows.set(id, {
+        ...existing,
+        status,
+        completed_at: completedAt ?? existing.completed_at,
+        error_message: error ?? existing.error_message,
+        artifact_dir: artifactDir ?? existing.artifact_dir,
+      });
+    },
+    getOmegaRun(id) {
+      return omegaRows.get(id) ?? null;
+    },
+    insertSavesuccessResult(_row: SavesuccessResultRow) {},
+    upsertOmegaPhaseArtifact(_row: OmegaPhaseArtifactRecord) {},
+  };
+}
+
+async function writePlanSliceOmega(base: string, targetArtifactPath: string): Promise<void> {
+  const result = await persistPhaseOmegaRun({
+    basePath: base,
+    unitType: "plan-slice",
+    unitId: "M001/S01",
+    query: "Govern plan-slice verification fixture",
+    targetArtifactPath,
+    executor: async () => "omega output",
+    adapters: makeOmegaAdapters(),
+  });
+  assert.ok(result.ok, `Omega fixture should persist: ${JSON.stringify(!result.ok && result.error)}`);
 }
 
 // ─── resolveExpectedArtifactPath ──────────────────────────────────────────
@@ -289,7 +333,7 @@ test("verifyExpectedArtifact rejects plan-slice with empty scaffold", (t) => {
   );
 });
 
-test("verifyExpectedArtifact accepts plan-slice with actual tasks", (t) => {
+test("verifyExpectedArtifact accepts plan-slice with actual tasks", async (t) => {
   const base = makeTmpBase();
   t.after(() => cleanup(base));
 
@@ -306,6 +350,7 @@ test("verifyExpectedArtifact accepts plan-slice with actual tasks", (t) => {
   ].join("\n"));
   writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
   writeFileSync(join(tasksDir, "T02-PLAN.md"), "# T02 Plan");
+  await writePlanSliceOmega(base, join(sliceDir, "S01-PLAN.md"));
   assert.strictEqual(
     verifyExpectedArtifact("plan-slice", "M001/S01", base),
     true,
@@ -313,7 +358,7 @@ test("verifyExpectedArtifact accepts plan-slice with actual tasks", (t) => {
   );
 });
 
-test("verifyExpectedArtifact accepts plan-slice with completed tasks", (t) => {
+test("verifyExpectedArtifact accepts plan-slice with completed tasks", async (t) => {
   const base = makeTmpBase();
   t.after(() => cleanup(base));
 
@@ -330,6 +375,7 @@ test("verifyExpectedArtifact accepts plan-slice with completed tasks", (t) => {
   ].join("\n"));
   writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
   writeFileSync(join(tasksDir, "T02-PLAN.md"), "# T02 Plan");
+  await writePlanSliceOmega(base, join(sliceDir, "S01-PLAN.md"));
   assert.strictEqual(
     verifyExpectedArtifact("plan-slice", "M001/S01", base),
     true,
@@ -339,7 +385,7 @@ test("verifyExpectedArtifact accepts plan-slice with completed tasks", (t) => {
 
 // ─── verifyExpectedArtifact: plan-slice task plan check (#739) ────────────
 
-test("verifyExpectedArtifact plan-slice passes when all task plan files exist", (t) => {
+test("verifyExpectedArtifact plan-slice passes when all task plan files exist", async (t) => {
   const base = makeTmpBase();
   t.after(() => cleanup(base));
 
@@ -356,6 +402,7 @@ test("verifyExpectedArtifact plan-slice passes when all task plan files exist", 
   writeFileSync(planPath, planContent);
   writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan\n\nDo the thing.");
   writeFileSync(join(tasksDir, "T02-PLAN.md"), "# T02 Plan\n\nDo the other thing.");
+  await writePlanSliceOmega(base, planPath);
 
   const result = verifyExpectedArtifact("plan-slice", "M001/S01", base);
   assert.equal(result, true, "should pass when all task plan files exist");
@@ -403,7 +450,7 @@ test("verifyExpectedArtifact plan-slice fails for plan with no tasks (#699)", (t
 
 // ─── verifyExpectedArtifact: heading-style plan tasks (#1691) ─────────────
 
-test("verifyExpectedArtifact accepts plan-slice with heading-style tasks (### T01 --)", (t) => {
+test("verifyExpectedArtifact accepts plan-slice with heading-style tasks (### T01 --)", async (t) => {
   const base = makeTmpBase();
   t.after(() => cleanup(base));
 
@@ -425,6 +472,7 @@ test("verifyExpectedArtifact accepts plan-slice with heading-style tasks (### T0
   ].join("\n"));
   writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
   writeFileSync(join(tasksDir, "T02-PLAN.md"), "# T02 Plan");
+  await writePlanSliceOmega(base, join(sliceDir, "S01-PLAN.md"));
   assert.strictEqual(
     verifyExpectedArtifact("plan-slice", "M001/S01", base),
     true,
@@ -432,7 +480,7 @@ test("verifyExpectedArtifact accepts plan-slice with heading-style tasks (### T0
   );
 });
 
-test("verifyExpectedArtifact accepts plan-slice with colon-style heading tasks (### T01:)", (t) => {
+test("verifyExpectedArtifact accepts plan-slice with colon-style heading tasks (### T01:)", async (t) => {
   const base = makeTmpBase();
   t.after(() => cleanup(base));
 
@@ -449,6 +497,7 @@ test("verifyExpectedArtifact accepts plan-slice with colon-style heading tasks (
     "Feature description.",
   ].join("\n"));
   writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
+  await writePlanSliceOmega(base, join(sliceDir, "S01-PLAN.md"));
   assert.strictEqual(
     verifyExpectedArtifact("plan-slice", "M001/S01", base),
     true,
@@ -538,6 +587,7 @@ test("verifyExpectedArtifact plan-slice passes for rendered slice/task plan arti
     const rendered = await renderPlanFromDb(base, "M001", "S01");
     assert.ok(existsSync(rendered.planPath), "renderPlanFromDb should write the slice plan");
     assert.equal(rendered.taskPlanPaths.length, 2, "renderPlanFromDb should render one task plan per task");
+    await writePlanSliceOmega(base, rendered.planPath);
 
     const planContent = readFileSync(rendered.planPath, "utf-8");
     const parsedPlan = parsePlan(planContent);
