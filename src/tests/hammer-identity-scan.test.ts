@@ -212,3 +212,36 @@ test("report includes counts and actionable file:line findings", async () => {
   const classifiedReport = renderHammerIdentityReport(summary, findings, { includeClassified: true });
   assert.match(classifiedReport, /legacy-alias\/explicit-legacy-alias-marker/);
 });
+
+test("classified report output is bounded by default with an explicit all override", async () => {
+  const rules = await loadHammerIdentityCompatibilityRules();
+  const findings = [
+    ...scanText(
+      "src/legacy-command-alias.ts",
+      'const oldSlashCommand = "/gsd"; // legacy alias for /hammer during compatibility window\n',
+      rules,
+    ),
+    ...scanText(
+      "src/internal-paths.ts",
+      'const bundledPath = "src/resources/extensions/gsd/index.ts";\n',
+      rules,
+    ),
+  ];
+  const summary = summarizeFindings(findings, 2);
+
+  const boundedReport = renderHammerIdentityReport(summary, findings, {
+    includeClassified: true,
+    classifiedLimit: 1,
+  });
+  assert.match(boundedReport, /legacy-alias\/explicit-legacy-alias-marker/);
+  assert.doesNotMatch(boundedReport, /internal-implementation-path\/private-extension-path-reference/);
+  assert.match(boundedReport, /1 additional classified references omitted/);
+
+  const completeReport = renderHammerIdentityReport(summary, findings, {
+    includeClassified: true,
+    classifiedLimit: null,
+  });
+  assert.match(completeReport, /legacy-alias\/explicit-legacy-alias-marker/);
+  assert.match(completeReport, /internal-implementation-path\/private-extension-path-reference/);
+  assert.doesNotMatch(completeReport, /additional classified references omitted/);
+});

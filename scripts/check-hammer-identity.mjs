@@ -155,7 +155,9 @@ function formatFinding(finding) {
   return `${finding.filePath}:${finding.lineNumber}:${finding.column} [${termList}] ${finding.line.trim()}`;
 }
 
-export function renderHammerIdentityReport(summary, findings, { includeClassified = false } = {}) {
+const DEFAULT_CLASSIFIED_LIMIT = 200;
+
+export function renderHammerIdentityReport(summary, findings, { includeClassified = false, classifiedLimit = DEFAULT_CLASSIFIED_LIMIT } = {}) {
   const lines = [
     "Hammer identity scan",
     `Scanned files: ${summary.scannedFileCount}`,
@@ -190,8 +192,12 @@ export function renderHammerIdentityReport(summary, findings, { includeClassifie
     if (classified.length === 0) {
       lines.push("  none");
     } else {
-      for (const finding of classified) {
+      const boundedClassified = classifiedLimit === null ? classified : classified.slice(0, classifiedLimit);
+      for (const finding of boundedClassified) {
         lines.push(`  ${finding.category}/${finding.ruleId}: ${formatFinding(finding)}`);
+      }
+      if (boundedClassified.length < classified.length) {
+        lines.push(`  ... ${classified.length - boundedClassified.length} additional classified references omitted; use --classified-limit all to print every classified finding.`);
       }
     }
   }
@@ -203,13 +209,19 @@ export function hasEnforcementFailures(findings) {
   return findings.some((finding) => finding.category === UNCLASSIFIED_CATEGORY);
 }
 
-export async function runHammerIdentityScan({ root = process.cwd(), enforce = false, includeClassified = false, scopes = null } = {}) {
+export async function runHammerIdentityScan({
+  root = process.cwd(),
+  enforce = false,
+  includeClassified = false,
+  classifiedLimit = DEFAULT_CLASSIFIED_LIMIT,
+  scopes = null,
+} = {}) {
   const rules = await loadHammerIdentityCompatibilityRules();
   const trackedFiles = getTrackedFiles(root);
   const filteredFiles = scopes ? filterByScope(trackedFiles, scopes) : trackedFiles;
   const { scannedFileCount, findings } = scanFiles(filteredFiles, rules, root);
   const summary = summarizeFindings(findings, scannedFileCount);
-  const report = renderHammerIdentityReport(summary, findings, { includeClassified });
+  const report = renderHammerIdentityReport(summary, findings, { includeClassified, classifiedLimit });
   return {
     root,
     enforce,
@@ -228,7 +240,8 @@ function printHelp() {
   process.stdout.write("Scans git-tracked text files for legacy GSD identity spellings and classifies them against src/hammer-identity/compatibility.ts.\n");
   process.stdout.write("--report         Print the bounded report (default).\n");
   process.stdout.write("--enforce        Exit non-zero when an unclassified visible GSD reference remains.\n");
-  process.stdout.write("--classified     Include classified compatibility findings in addition to unclassified findings.\n");
+  process.stdout.write("--classified     Include a bounded sample of classified compatibility findings in addition to unclassified findings.\n");
+  process.stdout.write("--classified-limit <n|all>  Maximum classified findings to print when --classified is enabled (default: 200).\n");
   process.stdout.write("--scope <list>   Comma-separated categories to restrict the scan to. Known scopes:\n");
   process.stdout.write("                   package   root/pkg package manifests (package.json, package-lock.json)\n");
   process.stdout.write("                   cli       loader and CLI entry points (src/loader.ts, src/cli.ts)\n");
@@ -272,6 +285,20 @@ export function filterByScope(filePaths, scopes) {
   return filePaths.filter((p) => filters.some((fn) => fn(p)));
 }
 
+/** Parse --classified-limit n|all with a bounded default to avoid ENOBUFS in automated gates. */
+function parseClassifiedLimitArg(argv) {
+  const idx = argv.indexOf("--classified-limit");
+  if (idx === -1) return DEFAULT_CLASSIFIED_LIMIT;
+
+  const raw = argv[idx + 1];
+  if (!raw || raw.startsWith("--")) return DEFAULT_CLASSIFIED_LIMIT;
+  if (raw === "all") return null;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return DEFAULT_CLASSIFIED_LIMIT;
+  return parsed;
+}
+
 async function main(argv = process.argv.slice(2)) {
   if (argv.includes("--help") || argv.includes("-h")) {
     printHelp();
@@ -279,9 +306,10 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   const includeClassified = argv.includes("--classified");
+  const classifiedLimit = parseClassifiedLimitArg(argv);
   const enforce = argv.includes("--enforce");
   const scopes = parseScopeArg(argv);
-  const result = await runHammerIdentityScan({ root: process.cwd(), enforce, includeClassified, scopes });
+  const result = await runHammerIdentityScan({ root: process.cwd(), enforce, includeClassified, classifiedLimit, scopes });
   process.stdout.write(`${result.report}\n`);
   return result.exitCode;
 }
