@@ -11,6 +11,8 @@ import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolve
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
 import { clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
+import { formatIAMSubagentPolicyBlockReason, isIAMSubagentTool, validateIAMSubagentPolicy } from "../iam-subagent-policy.js";
+import { recordIAMSubagentDispatch, recordIAMSubagentPolicyBlock, recordIAMSubagentToolResult } from "../iam-subagent-runtime.js";
 import { resolveManifest } from "../unit-context-manifest.js";
 import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { cleanupQuickBranch } from "../quick.js";
@@ -357,6 +359,47 @@ export function registerHooks(
     // turn used the host Edit tool to modify user source files.
     const dash = getAutoDashboardData();
     const activeUnitType = dash.currentUnit?.type;
+    if (isIAMSubagentTool(event.toolName)) {
+      const activeManifest = activeUnitType ? resolveManifest(activeUnitType) : null;
+      const parentUnit = dash.currentUnit?.id ?? null;
+      if (activeManifest?.subagents?.mode === "allowed") {
+        const validation = validateIAMSubagentPolicy({
+          toolName: event.toolName,
+          toolInput: event.input,
+          unitType: activeUnitType ?? "<unknown>",
+          parentUnit,
+          policy: activeManifest.subagents,
+        });
+        if (!validation.ok) {
+          const reason = formatIAMSubagentPolicyBlockReason(validation);
+          recordIAMSubagentPolicyBlock({
+            context: {
+              basePath: dash.basePath || discussionBasePath,
+              traceId: dash.currentTraceId,
+              turnId: dash.currentTurnId,
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              toolInput: event.input,
+              unitType: activeUnitType ?? null,
+              parentUnit,
+            },
+            validation,
+            reason,
+          });
+          return { block: true, reason };
+        }
+      }
+      recordIAMSubagentDispatch({
+        basePath: dash.basePath || discussionBasePath,
+        traceId: dash.currentTraceId,
+        turnId: dash.currentTurnId,
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        toolInput: event.input,
+        unitType: activeUnitType ?? null,
+        parentUnit,
+      });
+    }
     if (activeUnitType) {
       const manifest = resolveManifest(activeUnitType);
       if (manifest) {
@@ -437,6 +480,21 @@ export function registerHooks(
   });
 
   pi.on("tool_result", async (event) => {
+    const dashForIam = getAutoDashboardData();
+    const iamContext = {
+      basePath: dashForIam.basePath || process.cwd(),
+      traceId: dashForIam.currentTraceId,
+      turnId: dashForIam.currentTurnId,
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      toolInput: event.input,
+      unitType: dashForIam.currentUnit?.type ?? null,
+      parentUnit: dashForIam.currentUnit?.id ?? null,
+      isError: event.isError,
+      result: { content: event.content, details: event.details },
+      details: event.details,
+    };
+    recordIAMSubagentToolResult(iamContext);
     if (isAutoActive() && typeof event.toolCallId === "string") {
       markToolEnd(event.toolCallId);
     }
@@ -453,8 +511,10 @@ export function registerHooks(
       // errors and deterministic policy rejections are handled consistently.
       recordToolInvocationError(event.toolName, errorText);
     }
-    if (event.toolName !== "ask_user_questions") return;
-    const milestoneId = getDiscussionMilestoneId(process.cwd());
+  if (event.toolName !== "ask_user_questions") {
+    return;
+  }
+  const milestoneId = getDiscussionMilestoneId(process.cwd());
     const queueActive = isQueuePhaseActive();
 
     const details = event.details as any;
@@ -537,6 +597,21 @@ export function registerHooks(
   });
 
   pi.on("tool_execution_end", async (event) => {
+    if (event.toolName === "subagent" || event.toolName === "task") {
+      const dashForIam = getAutoDashboardData();
+      recordIAMSubagentToolResult({
+        basePath: dashForIam.basePath || process.cwd(),
+        traceId: dashForIam.currentTraceId,
+        turnId: dashForIam.currentTurnId,
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        toolInput: {},
+        unitType: dashForIam.currentUnit?.type ?? null,
+        parentUnit: dashForIam.currentUnit?.id ?? null,
+        isError: event.isError,
+        result: event.result,
+      });
+    }
     markToolEnd(event.toolCallId);
     // #2883/#4974: Capture deterministic invocation/policy errors
     // so postUnitPreVerification can break the retry loop instead of re-dispatching.

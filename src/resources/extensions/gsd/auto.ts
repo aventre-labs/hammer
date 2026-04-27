@@ -519,6 +519,8 @@ export function getAutoDashboardData(): AutoDashboardData {
       ? (s.autoStartTime > 0 ? Date.now() - s.autoStartTime : 0)
       : 0,
     currentUnit: s.currentUnit ? { ...s.currentUnit } : null,
+    currentTraceId: s.currentTraceId,
+    currentTurnId: s.currentTurnId,
     basePath: s.basePath,
     totalCost: totals?.cost ?? 0,
     totalTokens: totals?.tokens.total ?? 0,

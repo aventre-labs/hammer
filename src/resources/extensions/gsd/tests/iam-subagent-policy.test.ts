@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   extractIAMSubagentPromptEntries,
@@ -8,6 +11,12 @@ import {
   parseIAMSubagentContractMarker,
   validateIAMSubagentPolicy,
 } from "../iam-subagent-policy.ts";
+import {
+  clearIAMSubagentRuntimeForTest,
+  recordIAMSubagentPolicyBlock,
+} from "../iam-subagent-runtime.ts";
+import { gsdRoot } from "../paths.ts";
+import { setUnifiedAuditEnabled } from "../uok/audit-toggle.ts";
 import type { SubagentsPolicy } from "../unit-context-manifest.ts";
 
 const GATE_POLICY: SubagentsPolicy = {
@@ -23,6 +32,17 @@ function markedPrompt(role = "gate-evaluator", envelopeId = "M001-S01-gate-Q3-en
     formatIAMSubagentContractMarker(role, envelopeId),
     "Evaluate gate Q3 using the supplied slice plan.",
   ].join("\n");
+}
+
+function readAuditPayloads(basePath: string, type: string): Array<Record<string, unknown>> {
+  const file = join(gsdRoot(basePath), "audit", "events.jsonl");
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((event) => event.type === type)
+    .map((event) => event.payload as Record<string, unknown>);
 }
 
 test("IAM subagent marker parser extracts role and envelope id", () => {
@@ -201,4 +221,53 @@ test("policy diagnostics include observability fields for invalid envelopes", ()
   assert.match(reason, /markerless dispatch/, "names marker status in remediation");
   assert.match(reason, /expected artifact/i, "names expected artifact remediation");
   assert.match(reason, /mutation boundary/i, "names mutation boundary remediation");
+});
+
+test("policy-block audit payload mirrors deterministic invalid-envelope diagnostics", () => {
+  const basePath = mkdtempSync(join(tmpdir(), "iam-policy-audit-"));
+  setUnifiedAuditEnabled(true);
+  clearIAMSubagentRuntimeForTest();
+  try {
+    const result = validateIAMSubagentPolicy({
+      toolName: "subagent",
+      toolInput: { tasks: [{ task: "Assess acceptance without an IAM envelope. api_key=sk-test-uok-audit-secret-12345678901234567890" }] },
+      unitType: "validate-milestone",
+      parentUnit: "M001",
+      policy: { mode: "allowed", roles: ["validation-reviewer"], requireEnvelope: true, maxParallel: 3 },
+    });
+    assert.equal(result.ok, false);
+    const reason = formatIAMSubagentPolicyBlockReason(result);
+
+    recordIAMSubagentPolicyBlock({
+      context: {
+        basePath,
+        traceId: "trace-policy",
+        turnId: "turn-policy",
+        toolCallId: "tool-policy",
+        toolName: "subagent",
+        unitType: "validate-milestone",
+        parentUnit: "M001",
+        toolInput: { tasks: [{ task: "Assess acceptance without an IAM envelope. api_key=sk-test-uok-audit-secret-12345678901234567890" }] },
+      },
+      validation: result,
+      reason,
+    });
+
+    const payload = readAuditPayloads(basePath, "iam-subagent-policy-block")[0];
+    assert.ok(payload);
+    assert.equal(payload.role, "<missing>");
+    assert.equal(payload.envelopeId, "<missing>");
+    assert.equal(payload.parentUnit, "M001");
+    assert.equal(payload.failureClass, "policy");
+    assert.equal(payload.status, "policy-blocked");
+    assert.deepEqual(payload.expectedArtifactIds, ["<missing>"]);
+    assert.match(String(payload.blockReason), /validate-milestone/);
+    assert.match(String(payload.remediation), /IAM_SUBAGENT_CONTRACT/);
+    assert.equal((payload.violation as Record<string, unknown>).markerStatus, "missing");
+    assert.doesNotMatch(JSON.stringify(payload), /sk-test-uok-audit-secret|api_key/);
+  } finally {
+    clearIAMSubagentRuntimeForTest();
+    setUnifiedAuditEnabled(false);
+    rmSync(basePath, { recursive: true, force: true });
+  }
 });

@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type {
-  AuditEventEnvelope,
+  FailureClass,
+  IamSubagentAuditEventEnvelope,
+  IamSubagentAuditPayload,
+  IamSubagentAuditStatus,
   UokDispatchEnvelope,
   GateResult,
   TurnContract,
@@ -74,7 +77,7 @@ test("uok contracts include required DAG node kinds", () => {
 });
 
 test("uok audit envelope includes trace/turn/causality fields", () => {
-  const event: AuditEventEnvelope = buildAuditEnvelope({
+  const event = buildAuditEnvelope({
     traceId: "trace-xyz",
     turnId: "turn-xyz",
     causedBy: "turn-start",
@@ -134,4 +137,57 @@ test("uok writer records serialize sequence metadata", () => {
   assert.equal(roundTrip.writerToken.tokenId, "token-1");
   assert.equal(roundTrip.sequence.sequence, 7);
   assert.equal(roundTrip.category, "audit");
+});
+
+test("uok contracts type IAM subagent audit payloads for dispatch and policy failures", () => {
+  const status: IamSubagentAuditStatus = "policy-blocked";
+  const failureClass: FailureClass = "policy";
+  const payload: IamSubagentAuditPayload = {
+    dispatchId: "dispatch-1",
+    toolCallId: "tool-1",
+    toolName: "subagent",
+    status,
+    role: "gate-evaluator",
+    contractId: "iam-subagent-role/gate-evaluator/v1",
+    envelopeId: "M001-S01-gates-Q5-env",
+    parentUnit: "M001/S01/gates",
+    unitType: "gate-evaluate",
+    promptPath: "tasks[0].task",
+    markerStatus: "missing",
+    promptHash: "a".repeat(64),
+    promptCharCount: 1200,
+    contextArtifactIds: ["S01-plan"],
+    contextArtifactKinds: ["slice-plan"],
+    expectedArtifactIds: ["Q5-gate-result"],
+    expectedArtifacts: [{ id: "Q5-gate-result", kind: "gate-result", toolName: "gsd_save_gate_result", required: true }],
+    actualArtifactStatus: { status: "not-observed", toolResultShape: "not-observed" },
+    provenanceReadSources: ["slice plan gate evidence"],
+    graphMutationClaim: "none",
+    memoryMutationClaim: "none",
+    mutationBoundary: "quality-gate-result-only",
+    failureClass,
+    blockReason: "HARD BLOCK: IAM subagent policy rejected dispatch.",
+    remediation: "Add a valid IAM_SUBAGENT_CONTRACT marker.",
+    observedAt: new Date().toISOString(),
+  };
+
+  const event: IamSubagentAuditEventEnvelope = {
+    ...buildAuditEnvelope({
+      traceId: "trace-iam",
+      turnId: "turn-iam",
+      causedBy: "tool-1",
+      category: "execution",
+      type: "iam-subagent-policy-block",
+      payload: payload as unknown as Record<string, unknown>,
+    }),
+    category: "execution",
+    type: "iam-subagent-policy-block",
+    payload,
+  };
+
+  const roundTrip = JSON.parse(JSON.stringify(event)) as IamSubagentAuditEventEnvelope;
+  assert.equal(roundTrip.payload.role, "gate-evaluator");
+  assert.equal(roundTrip.payload.failureClass, "policy");
+  assert.equal(roundTrip.payload.expectedArtifacts[0]?.kind, "gate-result");
+  assert.equal(roundTrip.payload.contextArtifactKinds[0], "slice-plan");
 });

@@ -11,6 +11,12 @@ export type FailureClass =
   | "manual-attention"
   | "unknown";
 
+import type {
+  IAMContextArtifactKind,
+  IAMExpectedArtifactKind,
+  IAMSubagentRoleName,
+} from "../../../../iam/context-envelope.js";
+
 export type GateOutcome = "pass" | "fail" | "retry" | "manual-attention";
 
 export type DispatchReasonCode =
@@ -146,6 +152,70 @@ export interface AuditEventEnvelope {
   type: string;
   ts: string;
   payload: Record<string, unknown>;
+}
+
+export type IamSubagentAuditStatus =
+  | "dispatched"
+  | "policy-blocked"
+  | "completed"
+  | "failed";
+
+export interface IamSubagentAuditPayload {
+  dispatchId: string;
+  toolCallId: string;
+  toolName: string;
+  status: IamSubagentAuditStatus;
+  role: IAMSubagentRoleName | string;
+  contractId: string;
+  envelopeId: string;
+  parentUnit: string;
+  unitType: string;
+  promptPath: string;
+  markerStatus: string;
+  promptHash: string | null;
+  promptCharCount: number;
+  contextArtifactIds: string[];
+  contextArtifactKinds: IAMContextArtifactKind[];
+  expectedArtifactIds: string[];
+  expectedArtifacts: Array<{
+    id: string;
+    kind: IAMExpectedArtifactKind;
+    path?: string;
+    toolName?: string;
+    required?: boolean;
+  }>;
+  actualArtifactStatus: {
+    status: string;
+    toolResultShape: string;
+    resultHash?: string;
+    errorMessage?: string;
+  };
+  provenanceReadSources: string[];
+  graphMutationClaim: string;
+  memoryMutationClaim: string;
+  mutationBoundary: string;
+  failureClass: FailureClass;
+  blockReason?: string;
+  remediation: string;
+  startedAt?: string;
+  observedAt: string;
+  violation?: {
+    path: string;
+    reason: string;
+    markerStatus: string;
+    role: string;
+    envelopeId: string;
+  };
+}
+
+export interface IamSubagentAuditEventEnvelope extends Omit<AuditEventEnvelope, "category" | "type" | "payload"> {
+  category: "execution";
+  type:
+    | "iam-subagent-dispatch"
+    | "iam-subagent-policy-block"
+    | "iam-subagent-complete"
+    | "iam-subagent-failed";
+  payload: IamSubagentAuditPayload;
 }
 
 export type UokNodeKind =
