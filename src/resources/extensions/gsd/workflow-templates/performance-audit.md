@@ -1,11 +1,13 @@
 # Performance Audit Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: performance-audit
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/perf/
+artifact_dir: .hammer/workflows/perf/
 </template_meta>
 
 <purpose>

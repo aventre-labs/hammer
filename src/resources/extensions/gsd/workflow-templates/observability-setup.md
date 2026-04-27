@@ -1,11 +1,13 @@
 # Observability Setup Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: observability-setup
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/observability/
+artifact_dir: .hammer/workflows/observability/
 </template_meta>
 
 <purpose>

@@ -2,6 +2,7 @@
 #
 # Iterate over undocumented public exports, write JSDoc / TSDoc / equivalent
 # for each, and verify the docs stay coherent with the code.
+# Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance and verification evidence.
 
 version: 1
 name: docs-sync

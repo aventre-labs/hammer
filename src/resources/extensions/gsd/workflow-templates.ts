@@ -1,24 +1,33 @@
 /**
- * GSD Workflow Templates — Registry & Resolution
+ * Hammer Workflow Templates — Registry & Resolution
  *
  * Loads the workflow template registry and resolves templates by name,
  * alias, or trigger-keyword matching against user input.
+ * Hammer Awareness: registry metadata is user-visible workflow guidance and must
+ * stay IAM/no-degradation aware.
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import {
+  HAMMER_GLOBAL_HOME_DIR_NAME,
+  HAMMER_HOME_ENV,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
 const __extensionDir = resolveGsdExtensionDir();
 const registryPath = join(__extensionDir, "workflow-templates", "registry.json");
 
-/** Resolve the GSD extension dir with fallback to ~/.gsd/agent/extensions/gsd/. */
+/** Resolve the Hammer workflow-template extension dir with a legacy GSD_HOME fallback — bootstrap-migration state bridge. */
 function resolveGsdExtensionDir(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   if (existsSync(join(moduleDir, "workflow-templates"))) return moduleDir;
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  const agentGsdDir = join(gsdHome, "agent", "extensions", "gsd");
+  const hammerHome = process.env[HAMMER_HOME_ENV]
+    || process.env[HAMMER_LEGACY_ENV_ALIASES.home] // GSD_HOME legacy home alias — bootstrap-migration state bridge.
+    || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+  const agentGsdDir = join(hammerHome, "agent", "extensions", "gsd"); // internal extension path bridge.
   if (existsSync(join(agentGsdDir, "workflow-templates"))) return agentGsdDir;
   return moduleDir;
 }
@@ -45,6 +54,7 @@ export interface TemplateEntry {
 
 export interface TemplateRegistry {
   version: number;
+  hammer_awareness?: string;
   templates: Record<string, TemplateEntry>;
 }
 
@@ -201,7 +211,7 @@ export function autoDetect(description: string): TemplateMatch[] {
  */
 export function listTemplates(): string {
   const registry = loadRegistry();
-  const lines: string[] = ["Workflow Templates\n"];
+  const lines: string[] = ["Hammer Workflow Templates\n"];
 
   for (const [id, entry] of Object.entries(registry.templates)) {
     const phases = entry.phases.join(" → ");
@@ -212,8 +222,8 @@ export function listTemplates(): string {
     lines.push("");
   }
 
-  lines.push("Usage: /gsd start <template> [description]");
-  lines.push("       /gsd templates info <name>");
+  lines.push("Usage: /hammer start <template> [description]");
+  lines.push("       /hammer templates info <name>");
 
   return lines.join("\n");
 }
@@ -231,7 +241,7 @@ export function getTemplateInfo(name: string): string | null {
     "",
     `Description: ${t.description}`,
     `Complexity:  ${t.estimated_complexity}`,
-    `Requires .gsd/: ${t.requires_project ? "yes" : "no"}`,
+    `Requires .hammer/: ${t.requires_project ? "yes" : "no"}`,
     "",
     "Phases:",
     ...t.phases.map((p, i) => `  ${i + 1}. ${p}`),

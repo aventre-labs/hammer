@@ -1,4 +1,6 @@
-// GSD-2 — UnitContextManifest (#4782 phase 1).
+// Hammer — UnitContextManifest (#4782 phase 1).
+// Hammer Awareness: IAM/Omega/Trinity/VOLVOX/no-degradation manifest policy
+// keeps workflow and auto-mode context explicit and fail-closed.
 //
 // Declarative description of what context each auto-mode unit type needs
 // in its system prompt. Establishes the contract that later phases will
@@ -94,7 +96,7 @@ export type PreferencesPolicy = "none" | "active-only" | "full";
 /**
  * Tool-access policy per unit type (#4934).
  *
- * Runtime-enforced by the GSD write gate for active auto-mode units. The
+ * Runtime-enforced by the Hammer write gate for active auto-mode units. The
  * manifest declares the allowed tool surface; register-hooks.ts resolves the
  * active unit's manifest before each tool call and write-gate.ts rejects
  * violations before the tool executes.
@@ -104,18 +106,18 @@ export type PreferencesPolicy = "none" | "active-only" | "full";
  *                    The unit may modify any file in the working tree.
  *                    Reserved for execute-task / reactive-execute, which run
  *                    in worktrees today and whose writes are committed.
- *   - "read-only"  — Read tools only. No file mutation. No shell. No subagent
+ *   - "read-only"  — Read tools only. No file mutation. No shell. No IAM_SUBAGENT_CONTRACT
  *                    dispatch. Reserved for future units that should be
  *                    strictly observational (none today).
- *   - "planning"   — Read tools always; writes restricted to .gsd/** under
+ *   - "planning"   — Read tools always; writes restricted to .hammer/** (legacy .gsd/** state bridge) under
  *                    basePath; Bash limited to a per-unit safe allowlist;
  *                    Task subagent dispatch denied. Catches the bug class
  *                    where a discuss-milestone turn modifies user source
  *                    files (forensics: ~/Github/test-apps/b23, #4934).
- *   - "docs"       — Read tools always; writes restricted to .gsd/** AND
+ *   - "docs"       — Read tools always; writes restricted to .hammer/** (legacy .gsd/** state bridge) AND
  *                    the explicit `allowedPathGlobs` set; Bash safe-allowlist;
  *                    no subagents. Reserved for rewrite-docs, which legitimately
- *                    edits project markdown outside .gsd/.
+ *                    edits project markdown outside .hammer/.
  *
  * The allowlist for "docs" is declared per-manifest rather than hardcoded so
  * projects with non-standard doc layouts can extend it without forking the
@@ -349,6 +351,7 @@ export const KNOWN_UNIT_TYPES = [
   "run-uat",
   "gate-evaluate",
   "rewrite-docs",
+  "custom-step",
 ] as const;
 
 export type UnitType = typeof KNOWN_UNIT_TYPES[number];
@@ -612,6 +615,21 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     subagents: SUBAGENTS_NONE,
     artifacts: {
       inline: ["project", "requirements", "decisions", "templates"],
+      excerpt: [],
+      onDemand: [],
+    },
+    maxSystemPromptChars: COMMON_BUDGET_MEDIUM,
+  },
+  "custom-step": {
+    skills: { mode: "all" },
+    knowledge: "scoped",
+    memory: "prompt-relevant",
+    codebaseMap: true,
+    preferences: "active-only",
+    tools: TOOLS_ALL,
+    subagents: { mode: "allowed", roles: ["workflow-worker"], requireEnvelope: true },
+    artifacts: {
+      inline: ["project", "templates"],
       excerpt: [],
       onDemand: [],
     },

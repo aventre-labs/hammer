@@ -1,5 +1,5 @@
 /**
- * commands-workflow-custom.test.ts — Tests for `/gsd workflow` subcommands
+ * commands-workflow-custom.test.ts — Tests for `/hammer workflow` subcommands
  * and catalog completions.
  *
  * Uses real temp directories with actual definition YAML files.
@@ -17,12 +17,13 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { getGsdArgumentCompletions, TOP_LEVEL_SUBCOMMANDS } from "../commands/catalog.ts";
+import { getHammerArgumentCompletions, TOP_LEVEL_SUBCOMMANDS } from "../commands/catalog.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 const tmpDirs: string[] = [];
 let savedCwd: string;
+let savedProjectRoot: string | undefined;
 
 function makeTmpBase(): string {
   const dir = mkdtempSync(join(tmpdir(), "wf-cmd-test-"));
@@ -35,6 +36,8 @@ afterEach(() => {
   if (savedCwd && process.cwd() !== savedCwd) {
     process.chdir(savedCwd);
   }
+  if (savedProjectRoot === undefined) delete process.env.GSD_PROJECT_ROOT;
+  else process.env.GSD_PROJECT_ROOT = savedProjectRoot;
   for (const d of tmpDirs) {
     try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch { /* Windows EPERM */ }
   }
@@ -43,6 +46,7 @@ afterEach(() => {
 
 before(() => {
   savedCwd = process.cwd();
+  savedProjectRoot = process.env.GSD_PROJECT_ROOT;
 });
 
 function createMockCtx() {
@@ -74,7 +78,7 @@ function createMockPi() {
 
 /** Write a minimal valid workflow definition YAML to the expected location. */
 function writeDefinition(basePath: string, name: string, content: string): void {
-  const defsDir = join(basePath, ".gsd", "workflow-defs");
+  const defsDir = join(basePath, ".hammer", "workflow-defs");
   mkdirSync(defsDir, { recursive: true });
   writeFileSync(join(defsDir, `${name}.yaml`), content, "utf-8");
 }
@@ -106,8 +110,8 @@ describe("workflow catalog registration", () => {
     assert.match(entry!.desc, /session model/i);
   });
 
-  it("getGsdArgumentCompletions('m') includes model", () => {
-    const completions = getGsdArgumentCompletions("m");
+  it("getHammerArgumentCompletions('m') includes model", () => {
+    const completions = getHammerArgumentCompletions("m");
     const labels = completions.map((c: any) => c.label);
     assert.ok(labels.includes("model"), "should include model completion");
   });
@@ -119,8 +123,8 @@ describe("workflow catalog registration", () => {
     assert.ok(entry!.desc.includes("run"), "description should mention run");
   });
 
-  it("getGsdArgumentCompletions('workflow ') returns the full subcommand set", () => {
-    const completions = getGsdArgumentCompletions("workflow ");
+  it("getHammerArgumentCompletions('workflow ') returns the full subcommand set", () => {
+    const completions = getHammerArgumentCompletions("workflow ");
     const labels = completions.map((c: any) => c.label);
     for (const sub of [
       "new", "run", "list", "info", "install", "uninstall", "validate", "pause", "resume",
@@ -130,47 +134,50 @@ describe("workflow catalog registration", () => {
     assert.equal(labels.length, 9, "should have exactly 9 subcommands");
   });
 
-  it("getGsdArgumentCompletions('workflow r') filters to run and resume", () => {
-    const completions = getGsdArgumentCompletions("workflow r");
+  it("getHammerArgumentCompletions('workflow r') filters to run and resume", () => {
+    const completions = getHammerArgumentCompletions("workflow r");
     const labels = completions.map((c: any) => c.label);
     assert.ok(labels.includes("run"), "should include run");
     assert.ok(labels.includes("resume"), "should include resume");
     assert.ok(!labels.includes("list"), "should not include list");
   });
 
-  it("getGsdArgumentCompletions('workflow run ') returns definition names", () => {
+  it("getHammerArgumentCompletions('workflow run ') returns definition names", () => {
     const base = makeTmpBase();
     writeDefinition(base, "deploy-pipeline", SIMPLE_DEF);
     writeDefinition(base, "test-suite", SIMPLE_DEF);
 
-    // Change cwd so the completion scanner can find `.gsd/workflow-defs/`
+    // Change cwd so the completion scanner can find `.hammer/workflow-defs/`
     process.chdir(base);
+    process.env.GSD_PROJECT_ROOT = base;
 
-    const completions = getGsdArgumentCompletions("workflow run ");
+    const completions = getHammerArgumentCompletions("workflow run ");
     const labels = completions.map((c: any) => c.label);
     assert.ok(labels.includes("deploy-pipeline"), "should include deploy-pipeline");
     assert.ok(labels.includes("test-suite"), "should include test-suite");
   });
 
-  it("getGsdArgumentCompletions('workflow validate ') returns definition names", () => {
+  it("getHammerArgumentCompletions('workflow validate ') returns definition names", () => {
     const base = makeTmpBase();
     writeDefinition(base, "my-workflow", SIMPLE_DEF);
 
     process.chdir(base);
+    process.env.GSD_PROJECT_ROOT = base;
 
-    const completions = getGsdArgumentCompletions("workflow validate ");
+    const completions = getHammerArgumentCompletions("workflow validate ");
     const labels = completions.map((c: any) => c.label);
     assert.ok(labels.includes("my-workflow"), "should include my-workflow");
   });
 
-  it("getGsdArgumentCompletions('workflow run d') filters by prefix", () => {
+  it("getHammerArgumentCompletions('workflow run d') filters by prefix", () => {
     const base = makeTmpBase();
     writeDefinition(base, "deploy-pipeline", SIMPLE_DEF);
     writeDefinition(base, "test-suite", SIMPLE_DEF);
 
     process.chdir(base);
+    process.env.GSD_PROJECT_ROOT = base;
 
-    const completions = getGsdArgumentCompletions("workflow run d");
+    const completions = getHammerArgumentCompletions("workflow run d");
     const labels = completions.map((c: any) => c.label);
     assert.ok(labels.includes("deploy-pipeline"), "should include deploy-pipeline");
     assert.ok(!labels.includes("test-suite"), "should not include test-suite");
@@ -192,7 +199,7 @@ describe("workflow command handler", () => {
     return { handled, notifications: ctx.notifications };
   }
 
-  it("bare '/gsd workflow' lists plugins grouped by mode", async () => {
+  it("bare '/hammer workflow' lists plugins grouped by mode", async () => {
     const { handled, notifications } = await callHandler("workflow");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -201,7 +208,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow new' shows skill invocation message", async () => {
+  it("'/hammer workflow new' shows skill invocation message", async () => {
     const { handled, notifications } = await callHandler("workflow new");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -210,7 +217,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow run' without name shows usage warning", async () => {
+  it("'/hammer workflow run' without name shows usage warning", async () => {
     const { handled, notifications } = await callHandler("workflow run");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -233,7 +240,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow run nonexistent' shows error for missing definition", async () => {
+  it("'/hammer workflow run nonexistent' shows error for missing definition", async () => {
     const { handled, notifications } = await callHandler("workflow run nonexistent-def-12345");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -242,7 +249,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow validate' without name shows usage warning", async () => {
+  it("'/hammer workflow validate' without name shows usage warning", async () => {
     const { handled, notifications } = await callHandler("workflow validate");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -251,7 +258,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow validate nonexistent' shows definition not found", async () => {
+  it("'/hammer workflow validate nonexistent' shows definition not found", async () => {
     const { handled, notifications } = await callHandler("workflow validate nonexistent-def-12345");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -260,7 +267,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow pause' without custom engine shows warning", async () => {
+  it("'/hammer workflow pause' without custom engine shows warning", async () => {
     const { handled, notifications } = await callHandler("workflow pause");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -269,7 +276,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow resume' without custom engine shows warning", async () => {
+  it("'/hammer workflow resume' without custom engine shows warning", async () => {
     const { handled, notifications } = await callHandler("workflow resume");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -278,7 +285,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow unknown-sub' shows unknown subcommand", async () => {
+  it("'/hammer workflow unknown-sub' shows unknown subcommand", async () => {
     const { handled, notifications } = await callHandler("workflow blurble");
     assert.ok(handled, "should be handled");
     assert.ok(
@@ -287,7 +294,7 @@ describe("workflow command handler", () => {
     );
   });
 
-  it("'/gsd workflow list' with no runs shows empty message", async () => {
+  it("'/hammer workflow list' with no runs shows empty message", async () => {
     const { handled, notifications } = await callHandler("workflow list");
     assert.ok(handled, "should be handled");
     assert.ok(

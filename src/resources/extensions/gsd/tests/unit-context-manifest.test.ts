@@ -141,6 +141,13 @@ test("#4782 phase 1: resolveManifest returns a manifest for every known unit typ
   }
 });
 
+test("S08: custom-step has an explicit workflow-worker IAM manifest", () => {
+  const m = resolveManifest("custom-step");
+  assert.ok(m, "custom-step should resolve to an explicit manifest");
+  assert.equal(m.tools.mode, "all", "custom workflow steps retain arbitrary workflow behavior under governance");
+  assert.deepEqual(m.subagents, { mode: "allowed", roles: ["workflow-worker"], requireEnvelope: true });
+});
+
 // ─── Phase-2 target: complete-milestone manifest reflects #4780's excerpt shape ─
 
 test("#4782 phase 1: complete-milestone manifest declares slice-summary as excerpt (matches #4780)", () => {
@@ -210,15 +217,15 @@ test("#4934: tools.mode is one of the four declared policies", () => {
   }
 });
 
-test('#4934: only execute-task and reactive-execute may use tools.mode "all" (full source-tree write access)', () => {
-  const allowedAllUnits = new Set(["execute-task", "reactive-execute"]);
+test('#4934: only execute-track and custom workflow workers may use tools.mode "all" (full source-tree write access)', () => {
+  const allowedAllUnits = new Set(["execute-task", "reactive-execute", "custom-step"]);
   for (const [unitType, manifest] of Object.entries(UNIT_MANIFESTS)) {
     const mode = (manifest as { tools: { mode: string } }).tools.mode;
     if (mode === "all") {
       assert.ok(
         allowedAllUnits.has(unitType),
         `manifest "${unitType}" declares tools.mode = "all" but is not on the execute-track. ` +
-        'Only execute-task and reactive-execute should have full source write access; ' +
+        'Only execute-task, reactive-execute, and governed custom-step workflow workers should have full source write access; ' +
         'planning/discuss/research units must use "planning" (or "docs" for rewrite-docs).',
       );
     }

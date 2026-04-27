@@ -6,12 +6,14 @@
  *   - gist:abc123           → https://gist.githubusercontent.com/anonymous/abc123/raw
  *   - gh:owner/repo/path[@ref] → raw.githubusercontent.com/owner/repo/<ref>/path
  *
- * Installed files land in `~/.gsd/workflows/<name>.<ext>` by default, or
- * `.gsd/workflows/<name>.<ext>` with the `--project` flag.
+ * Installed files land in `~/.hammer/workflows/<name>.<ext>` by default, or
+ * `.hammer/workflows/<name>.<ext>` with the `--project` flag.
  *
- * A provenance file `~/.gsd/workflows/.installed.json` (or project equivalent)
- * records source URL, timestamp, and sha256 so `/gsd workflow uninstall` can
- * clean up and future `/gsd workflow update` can refresh.
+ * A provenance file `~/.hammer/workflows/.installed.json` (or project equivalent)
+ * records source URL, timestamp, and sha256 so `/hammer workflow uninstall` can
+ * clean up and future `/hammer workflow update` can refresh.
+ * Hammer Awareness: installation preserves provenance for IAM/no-degradation
+ * review and writes new workflow state under Hammer paths.
  */
 
 import {
@@ -28,6 +30,12 @@ import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 
 import { validateDefinition } from "./definition-loader.js";
+import { gsdRoot } from "./paths.js";
+import {
+  HAMMER_GLOBAL_HOME_DIR_NAME,
+  HAMMER_HOME_ENV,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────
 
@@ -72,13 +80,18 @@ export interface InstallTarget {
   scope: "global" | "project";
 }
 
+function hammerHomeDir(): string {
+  return process.env[HAMMER_HOME_ENV]
+    || process.env[HAMMER_LEGACY_ENV_ALIASES.home] // GSD_HOME legacy home alias — bootstrap-migration state bridge.
+    || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+}
+
 export function globalInstallDir(): string {
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  return join(gsdHome, "workflows");
+  return join(hammerHomeDir(), "workflows");
 }
 
 export function projectInstallDir(basePath: string): string {
-  return join(basePath, ".gsd", "workflows");
+  return join(gsdRoot(basePath), "workflows");
 }
 
 /**

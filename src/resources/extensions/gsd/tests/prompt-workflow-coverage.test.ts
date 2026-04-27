@@ -164,13 +164,12 @@ test("report-mode scan returns structured JSON-friendly counts without requiring
 });
 
 
-test("actual bundled prompts carry Hammer and IAM awareness markers", async () => {
+test("actual bundled workflow surfaces carry Hammer/IAM awareness markers", async () => {
   const result = await runPromptWorkflowCoverageScan({ root: process.cwd() });
-  const promptFindings = result.findings.filter((finding) => finding.filePath.includes("/prompts/"));
   assert.deepEqual(
-    promptFindings,
+    result.findings,
     [],
-    `Prompt coverage findings should be zero after the S08 prompt rewrite:\n${promptFindings
+    `Workflow/prompt coverage findings should be zero after the T04 rewrite:\n${result.findings
       .map((finding) => `${finding.filePath}:${finding.lineNumber} [${finding.kind}] ${finding.excerpt}`)
       .join("\n")}`,
   );

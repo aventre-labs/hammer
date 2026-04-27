@@ -1,3 +1,9 @@
+/**
+ * Hammer IAM subagent policy validation.
+ * Hammer Awareness: every governed subagent prompt must carry IAM/Omega/no-degradation
+ * metadata; markerless dispatch fails closed with structured diagnostics.
+ */
+
 import type {
   IAMContextArtifactKind,
   IAMExpectedArtifactKind,

@@ -1,11 +1,13 @@
 # Research Spike Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: spike
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/spikes/
+artifact_dir: .hammer/workflows/spikes/
 </template_meta>
 
 <purpose>
@@ -71,6 +73,6 @@ Use for: technology evaluation, architecture decisions, "should we X?" questions
    `.claude/skills/<name>/SKILL.md`. That skill will auto-load on future
    similar tasks via `skill-discovery.ts`. If the recommendation is
    decision-only (no reusable guidance), suggest appending a one-liner to
-   `.gsd/DECISIONS.md` instead.
+   `.hammer/DECISIONS.md` instead.
 
 </process>

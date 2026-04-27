@@ -1,5 +1,7 @@
 # PR Triage
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: pr-triage
 version: 1

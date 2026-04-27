@@ -1,11 +1,13 @@
 # CI Bootstrap Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: ci-bootstrap
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/ci/
+artifact_dir: .hammer/workflows/ci/
 </template_meta>
 
 <purpose>

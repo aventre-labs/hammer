@@ -3,6 +3,7 @@
 # Inventory every environment variable referenced across code/docs/CI, then
 # audit each one for drift (documented? default? required vs optional?
 # mentioned in CI?).
+# Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance and verification evidence.
 
 version: 1
 name: env-audit

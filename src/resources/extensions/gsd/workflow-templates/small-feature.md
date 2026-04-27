@@ -1,16 +1,18 @@
 # Small Feature Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: small-feature
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/features/
+artifact_dir: .hammer/workflows/features/
 </template_meta>
 
 <purpose>
 Build a small-to-medium feature with lightweight planning. Designed for work that
-needs more structure than /gsd quick but doesn't warrant full milestone ceremony.
+needs more structure than /hammer quick but doesn't warrant full milestone ceremony.
 Typical scope: a new command, endpoint, component, or module.
 </purpose>
 

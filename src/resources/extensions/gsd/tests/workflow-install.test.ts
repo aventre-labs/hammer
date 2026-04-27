@@ -1,4 +1,4 @@
-// gsd-2 — Regression tests for workflow-install path containment and ext fallback.
+// Hammer workflow-install regression tests for path containment and ext fallback.
 
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -49,6 +49,11 @@ function fakeFetched(content: string, ext: ".yaml" | ".md" = ".yaml"): FetchedCo
 }
 
 describe("workflow-install path containment", () => {
+  it("projectInstallDir targets the Hammer state namespace", () => {
+    const base = makeTmpBase();
+    assert.equal(projectInstallDir(base), join(base, ".hammer", "workflows"));
+  });
+
   it("installPlugin rejects names with path separators", () => {
     const base = makeTmpBase();
     const target: InstallTarget = { dir: projectInstallDir(base), scope: "project" };

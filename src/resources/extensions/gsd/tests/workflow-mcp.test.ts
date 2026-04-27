@@ -712,7 +712,7 @@ test("auto phases source enforces workflow compatibility preflight", () => {
   assert.match(src, /workflow-capability/);
 });
 
-test("workflow transport error guidance includes /gsd mcp init hint", () => {
+test("workflow transport error guidance includes /hammer mcp init hint", () => {
   const src = readSrc("workflow-mcp.ts");
-  assert.match(src, /Please run \/gsd mcp init \./);
+  assert.match(src, /Please run \/hammer mcp init \./);
 });

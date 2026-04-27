@@ -1,5 +1,7 @@
 # Accessibility Audit
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: accessibility-audit
 version: 1
@@ -83,6 +85,6 @@ For each component/page:
 
 Suggestions should be specific enough to act on, but don't edit any files.
 If the user wants to apply the fixes, suggest:
-> `/gsd workflow refactor "apply a11y fixes"` with this report as context.
+> `/hammer workflow refactor "apply a11y fixes"` with this report as context.
 
 </instructions>

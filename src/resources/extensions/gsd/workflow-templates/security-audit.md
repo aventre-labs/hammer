@@ -1,11 +1,13 @@
 # Security Audit Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: security-audit
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/audits/
+artifact_dir: .hammer/workflows/audits/
 </template_meta>
 
 <purpose>

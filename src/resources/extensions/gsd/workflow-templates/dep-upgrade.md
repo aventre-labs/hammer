@@ -1,11 +1,13 @@
 # Dependency Upgrade Workflow
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: dep-upgrade
 version: 1
 mode: markdown-phase
 requires_project: false
-artifact_dir: .gsd/workflows/upgrades/
+artifact_dir: .hammer/workflows/upgrades/
 </template_meta>
 
 <purpose>

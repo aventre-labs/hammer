@@ -1,8 +1,10 @@
 /**
- * GSD Workflow Template Commands — /gsd start, /gsd templates
+ * Hammer Workflow Template Commands — /hammer start, /hammer templates
  *
- * Handles the `/gsd start [template] [description]` and `/gsd templates` commands.
+ * Handles the `/hammer start [template] [description]` and `/hammer templates` commands.
  * Resolves templates by name or auto-detection, then dispatches the workflow prompt.
+ * Hammer Awareness: user-facing workflow notifications carry Hammer identity;
+ * IAM/no-degradation semantics are enforced by the dispatched workflow prompts.
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
@@ -69,6 +71,16 @@ function datePrefix(): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yy}${mm}${dd}`;
+}
+
+function resolveWorkflowArtifactPath(basePath: string, artifactDir: string): string {
+  if (artifactDir.startsWith(".hammer/")) {
+    return join(gsdRoot(basePath), artifactDir.slice(".hammer/".length));
+  }
+  if (artifactDir.startsWith(".gsd/")) { // legacy state bridge compatibility.
+    return join(gsdRoot(basePath), artifactDir.slice(".gsd/".length)); // legacy state bridge compatibility.
+  }
+  return join(basePath, artifactDir);
 }
 
 // ─── State Types ─────────────────────────────────────────────────────────────
@@ -158,7 +170,7 @@ function findInProgressWorkflows(basePath: string): WorkflowState[] {
   return results;
 }
 
-// ─── /gsd start ──────────────────────────────────────────────────────────────
+// ─── /hammer start ──────────────────────────────────────────────────────────────
 
 export async function handleStart(
   args: string,
@@ -167,7 +179,7 @@ export async function handleStart(
 ): Promise<void> {
   const trimmed = args.trim();
 
-  // /gsd start --list → same as /gsd templates
+  // /hammer start --list → same as /hammer templates
   if (trimmed === "--list" || trimmed === "list") {
     ctx.ui.notify(listTemplates(), "info");
     return;
@@ -179,7 +191,7 @@ export async function handleStart(
   if (isAutoActive()) {
     ctx.ui.notify(
       "Cannot start a workflow template while auto-mode is running.\n" +
-      "Run /gsd pause first, then /gsd start.",
+      "Run /hammer pause first, then /hammer start.",
       "warning",
     );
     return;
@@ -188,13 +200,13 @@ export async function handleStart(
   if (isAutoPaused()) {
     ctx.ui.notify(
       "Auto-mode is paused. Starting a workflow template will run independently.\n" +
-      "The paused auto-mode session can be resumed later with /gsd auto.",
+      "The paused auto-mode session can be resumed later with /hammer auto.",
       "info",
     );
   }
 
   // ─── Resume detection ───────────────────────────────────────────────────
-  // /gsd start --resume or /gsd start resume → resume in-progress workflow
+  // /hammer start --resume or /hammer start resume → resume in-progress workflow
   if (trimmed === "--resume" || trimmed === "resume") {
     const basePath = process.cwd();
     const inProgress = findInProgressWorkflows(basePath);
@@ -245,7 +257,7 @@ export async function handleStart(
     return;
   }
 
-  // Show in-progress workflows when /gsd start is called with no args
+  // Show in-progress workflows when /hammer start is called with no args
   if (!trimmed) {
     const basePath = process.cwd();
     const inProgress = findInProgressWorkflows(basePath);
@@ -257,13 +269,13 @@ export async function handleStart(
         `In-progress workflow found:\n` +
         `  ${wf.templateName}: "${wf.description}"\n` +
         `  Phase ${completedCount + 1}/${wf.phases.length}: ${activePhase?.name ?? "unknown"}\n\n` +
-        `Run /gsd start resume to continue it.\n`,
+        `Run /hammer start resume to continue it.\n`,
         "info",
       );
     }
   }
 
-  // /gsd start --dry-run <template> → preview without executing
+  // /hammer start --dry-run <template> → preview without executing
   const dryRun = trimmed.includes("--dry-run");
   const cleanedArgs = trimmed.replace(/--dry-run\s*/, "").trim();
 
@@ -299,10 +311,10 @@ export async function handleStart(
       );
     } else if (detected.length > 1) {
       const choices = detected.slice(0, 4).map(
-        (m) => `  /gsd start ${m.id} ${cleanedArgs}`
+        (m) => `  /hammer start ${m.id} ${cleanedArgs}`
       );
       ctx.ui.notify(
-        `Multiple templates could match. Pick one:\n\n${choices.join("\n")}\n\nOr specify explicitly: /gsd start <template> <description>`,
+        `Multiple templates could match. Pick one:\n\n${choices.join("\n")}\n\nOr specify explicitly: /hammer start <template> <description>`,
         "info",
       );
       return;
@@ -313,7 +325,7 @@ export async function handleStart(
   if (!match) {
     if (!trimmed) {
       ctx.ui.notify(
-        "Usage: /gsd start <template> [description]\n\n" +
+        "Usage: /hammer start <template> [description]\n\n" +
         "Templates:\n" +
         "  bugfix          Triage → fix → verify → ship\n" +
         "  small-feature   Scope → plan → implement → verify\n" +
@@ -322,20 +334,20 @@ export async function handleStart(
         "  refactor        Inventory → plan → migrate → verify\n" +
         "  security-audit  Scan → triage → remediate → re-scan\n" +
         "  dep-upgrade     Assess → upgrade → fix → verify\n" +
-        "  full-project    Complete GSD with full ceremony\n\n" +
+        "  full-project    Complete Hammer with full ceremony\n\n" +
         "Examples:\n" +
-        "  /gsd start bugfix fix login button not responding\n" +
-        "  /gsd start spike evaluate auth libraries\n" +
-        "  /gsd start hotfix critical: API returns 500\n\n" +
+        "  /hammer start bugfix fix login button not responding\n" +
+        "  /hammer start spike evaluate auth libraries\n" +
+        "  /hammer start hotfix critical: API returns 500\n\n" +
         "Flags:\n" +
         "  --dry-run       Preview what would happen without executing\n" +
         "  --issue <ref>   Link to a GitHub issue\n\n" +
-        "Run /gsd templates for detailed template info.",
+        "Run /hammer templates for detailed template info.",
         "info",
       );
     } else {
       ctx.ui.notify(
-        `No template matched "${firstWord}". Run /gsd start to see available templates.`,
+        `No template matched "${firstWord}". Run /hammer start to see available templates.`,
         "warning",
       );
     }
@@ -382,39 +394,39 @@ export async function handleStart(
     ];
     if (template.artifact_dir) {
       const prefix = datePrefix();
-      const num = getNextWorkflowNum(join(basePath, template.artifact_dir));
+      const num = getNextWorkflowNum(resolveWorkflowArtifactPath(basePath, template.artifact_dir));
       lines.push(`Artifact dir: ${template.artifact_dir}${prefix}-${num}-${slug}`);
     } else {
       lines.push("Artifact dir: (none — hotfix mode)");
     }
-    lines.push(`Branch:       gsd/${templateId}/${slug}`);
+    lines.push(`Branch:       hammer/${templateId}/${slug}`);
     if (issueRef) lines.push(`Issue:        ${issueRef}`);
     lines.push("", "No changes made. Remove --dry-run to execute.");
     ctx.ui.notify(lines.join("\n"), "info");
     return;
   }
 
-  // ─── Route full-project to standard GSD workflow ────────────────────────
+  // ─── Route full-project to standard Hammer workflow ────────────────────────
 
   if (templateId === "full-project") {
     const root = gsdRoot(basePath);
     if (!existsSync(root)) {
       ctx.ui.notify(
-        "Routing to /gsd init for full project setup...",
+        "Routing to /hammer init for full project setup...",
         "info",
       );
-      // Trigger /gsd init by dispatching to the handler
+      // Trigger /hammer init by dispatching to the handler
       pi.sendMessage(
         {
           customType: "gsd-workflow-template",
-          content: "The user wants to start a full GSD project. Run `/gsd init` to bootstrap the project, then `/gsd auto` to begin execution.",
+          content: "The user wants to start a full Hammer project. Run `/hammer init` to bootstrap the project, then `/hammer auto` to begin execution.",
           display: false,
         },
         { triggerTurn: true },
       );
     } else {
       ctx.ui.notify(
-        "Project already initialized. Use `/gsd auto` to continue or `/gsd discuss` to start a new milestone.",
+        "Project already initialized. Use `/hammer auto` to continue or `/hammer discuss` to start a new milestone.",
         "info",
       );
     }
@@ -427,9 +439,9 @@ export async function handleStart(
   if (template.artifact_dir) {
     const slug = slugify(description || templateId);
     const prefix = datePrefix();
-    const num = getNextWorkflowNum(join(basePath, template.artifact_dir));
+    const num = getNextWorkflowNum(resolveWorkflowArtifactPath(basePath, template.artifact_dir));
     artifactDir = `${template.artifact_dir}${prefix}-${num}-${slug}`;
-    mkdirSync(join(basePath, artifactDir), { recursive: true });
+    mkdirSync(resolveWorkflowArtifactPath(basePath, artifactDir), { recursive: true });
   }
 
   // ─── Create git branch (unless isolation: none) ─────────────────────────
@@ -437,7 +449,7 @@ export async function handleStart(
   const git = createGitService(basePath);
   const skipBranch = git.prefs.isolation === "none";
   const slug = slugify(description || templateId);
-  const branchName = `gsd/${templateId}/${slug}`;
+  const branchName = `hammer/${templateId}/${slug}`;
   let branchCreated = false;
 
   if (!skipBranch) {
@@ -465,7 +477,7 @@ export async function handleStart(
 
   if (artifactDir) {
     writeWorkflowState(
-      join(basePath, artifactDir),
+      resolveWorkflowArtifactPath(basePath, artifactDir),
       templateId,
       template.name,
       template.phases,
@@ -508,7 +520,7 @@ export async function handleStart(
   );
 }
 
-// ─── /gsd templates ──────────────────────────────────────────────────────────
+// ─── /hammer templates ──────────────────────────────────────────────────────────
 
 export async function handleTemplates(
   args: string,
@@ -516,7 +528,7 @@ export async function handleTemplates(
 ): Promise<void> {
   const trimmed = args.trim();
 
-  // /gsd templates info <name>
+  // /hammer templates info <name>
   if (trimmed.startsWith("info ")) {
     const name = trimmed.replace(/^info\s+/, "").trim();
     const info = getTemplateInfo(name);
@@ -524,19 +536,19 @@ export async function handleTemplates(
       ctx.ui.notify(info, "info");
     } else {
       ctx.ui.notify(
-        `Unknown template "${name}". Run /gsd templates to see available templates.`,
+        `Unknown template "${name}". Run /hammer templates to see available templates.`,
         "warning",
       );
     }
     return;
   }
 
-  // /gsd templates — list all
+  // /hammer templates — list all
   ctx.ui.notify(listTemplates(), "info");
 }
 
 /**
- * Return template IDs for autocomplete in /gsd templates info <name>.
+ * Return template IDs for autocomplete in /hammer templates info <name>.
  */
 export function getTemplateCompletions(prefix: string): Array<{ value: string; label: string; description: string }> {
   try {
@@ -553,7 +565,7 @@ export function getTemplateCompletions(prefix: string): Array<{ value: string; l
   }
 }
 
-// ─── Shared markdown-phase dispatcher (used by /gsd workflow <name>) ────────
+// ─── Shared markdown-phase dispatcher (used by /hammer workflow <name>) ────────
 
 /**
  * Dispatch a markdown-phase workflow plugin. Mirrors `handleStart`'s execution
@@ -574,7 +586,7 @@ export function dispatchMarkdownPhasePlugin(
   if (isAutoActive()) {
     ctx.ui.notify(
       "Cannot start a markdown-phase workflow while auto-mode is running.\n" +
-      "Run /gsd pause first.",
+      "Run /hammer pause first.",
       "warning",
     );
     return;
@@ -599,16 +611,16 @@ export function dispatchMarkdownPhasePlugin(
   if (plugin.meta.artifactDir) {
     const slug = slugify(description || templateId);
     const prefix = datePrefix();
-    const num = getNextWorkflowNum(join(basePath, plugin.meta.artifactDir));
+    const num = getNextWorkflowNum(resolveWorkflowArtifactPath(basePath, plugin.meta.artifactDir));
     artifactDir = `${plugin.meta.artifactDir}${prefix}-${num}-${slug}`;
-    mkdirSync(join(basePath, artifactDir), { recursive: true });
+    mkdirSync(resolveWorkflowArtifactPath(basePath, artifactDir), { recursive: true });
   }
 
   // Create git branch unless isolation: none.
   const git = createGitService(basePath);
   const skipBranch = git.prefs.isolation === "none";
   const slug = slugify(description || templateId);
-  const branchName = `gsd/${templateId}/${slug}`;
+  const branchName = `hammer/${templateId}/${slug}`;
   let branchCreated = false;
 
   if (!skipBranch) {
@@ -632,7 +644,7 @@ export function dispatchMarkdownPhasePlugin(
   // Write STATE.json.
   if (artifactDir && plugin.meta.phases && plugin.meta.phases.length > 0) {
     writeWorkflowState(
-      join(basePath, artifactDir),
+      resolveWorkflowArtifactPath(basePath, artifactDir),
       templateId,
       plugin.meta.displayName,
       plugin.meta.phases,

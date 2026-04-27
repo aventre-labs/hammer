@@ -2,8 +2,8 @@
  * workflow-plugins.test.ts — Tests for the unified plugin discovery & resolution.
  *
  * Verifies precedence (project > global > bundled), both YAML and markdown
- * formats, mode defaults, invalid-file handling, and legacy compat with
- * `.gsd/workflow-defs/`.
+ * formats, mode defaults, invalid-file handling, and legacy state bridge compatibility with
+ * `.hammer/workflow-defs/` plus `.gsd` fallback behavior.
  */
 
 import { describe, it, afterEach, beforeEach } from "node:test";
@@ -59,13 +59,19 @@ function writeFile(path: string, content: string): void {
 }
 
 function writeProjectPlugin(basePath: string, filename: string, content: string): void {
-  const dir = join(basePath, ".gsd", "workflows");
+  const dir = join(basePath, ".hammer", "workflows");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), content, "utf-8");
 }
 
 function writeGlobalPlugin(filename: string, content: string): void {
   const dir = join(process.env.GSD_HOME!, "workflows");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, filename), content, "utf-8");
+}
+
+function writeProjectDefinition(basePath: string, filename: string, content: string): void {
+  const dir = join(basePath, ".hammer", "workflow-defs");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), content, "utf-8");
 }
@@ -103,7 +109,7 @@ const SIMPLE_MD = `# Sample MD Plugin
 name: sample-md
 version: 1
 mode: markdown-phase
-artifact_dir: .gsd/workflows/samples/
+artifact_dir: .hammer/workflows/samples/
 </template_meta>
 
 <phases>
@@ -153,7 +159,7 @@ describe("discoverPlugins: precedence", () => {
     const plugins = discoverPlugins(base);
     const bugfix = plugins.get("bugfix")!;
     assert.equal(bugfix.source, "project");
-    assert.ok(bugfix.path.includes(".gsd/workflows/bugfix.md"));
+    assert.ok(bugfix.path.includes(".hammer/workflows/bugfix.md"));
   });
 
   it("global overrides bundled when project is absent", () => {
@@ -230,11 +236,11 @@ describe("discoverPlugins: error handling", () => {
     }
   });
 
-  it("ignores subdirectories under .gsd/workflows/ (artifact dirs)", () => {
+  it("ignores subdirectories under .hammer/workflows/ (artifact dirs)", () => {
     const base = makeTmpBase();
-    // Create a subdir — simulates `/gsd start bugfix` artifact dir
-    mkdirSync(join(base, ".gsd", "workflows", "bugfixes", "250101-1-slug"), { recursive: true });
-    writeFileSync(join(base, ".gsd", "workflows", "bugfixes", "250101-1-slug", "STATE.json"), "{}", "utf-8");
+    // Create a subdir — simulates `/hammer start bugfix` artifact dir
+    mkdirSync(join(base, ".hammer", "workflows", "bugfixes", "250101-1-slug"), { recursive: true });
+    writeFileSync(join(base, ".hammer", "workflows", "bugfixes", "250101-1-slug", "STATE.json"), "{}", "utf-8");
     const plugins = discoverPlugins(base);
     assert.ok(!plugins.has("bugfixes"), "should not pick up subdir as a plugin");
   });
@@ -266,22 +272,30 @@ describe("resolvePlugin", () => {
 
 // ─── Legacy fallback ─────────────────────────────────────────────────────
 
-describe("discoverPlugins: legacy .gsd/workflow-defs/", () => {
-  it("still discovers legacy YAML definitions", () => {
+describe("discoverPlugins: Hammer workflow-defs with legacy state bridge", () => {
+  it("discovers YAML definitions in .hammer/workflow-defs/", () => {
     const base = makeTmpBase();
-    writeLegacyDef(base, "legacy.yaml", SIMPLE_YAML);
+    writeProjectDefinition(base, "legacy.yaml", SIMPLE_YAML);
     const plugins = discoverPlugins(base);
-    assert.ok(plugins.has("legacy"), "legacy definition should be discovered");
+    assert.ok(plugins.has("legacy"), "Hammer project definition should be discovered");
     assert.equal(plugins.get("legacy")!.format, "yaml");
   });
 
-  it("new .gsd/workflows/ overrides legacy .gsd/workflow-defs/", () => {
+  it("still discovers legacy .gsd workflow definitions through the state bridge", () => {
     const base = makeTmpBase();
-    writeLegacyDef(base, "dup.yaml", SIMPLE_YAML);
+    writeLegacyDef(base, "old.yaml", SIMPLE_YAML);
+    const plugins = discoverPlugins(base);
+    assert.ok(plugins.has("old"), "legacy definition should be discovered through gsdRoot bridge");
+    assert.equal(plugins.get("old")!.format, "yaml");
+  });
+
+  it("new .hammer/workflows/ overrides .hammer/workflow-defs/", () => {
+    const base = makeTmpBase();
+    writeProjectDefinition(base, "dup.yaml", SIMPLE_YAML);
     writeProjectPlugin(base, "dup.yaml", SIMPLE_YAML);
     const plugins = discoverPlugins(base);
     const p = plugins.get("dup")!;
-    assert.ok(p.path.includes(".gsd/workflows/dup.yaml"));
+    assert.ok(p.path.includes(".hammer/workflows/dup.yaml"));
   });
 });
 

@@ -3,14 +3,16 @@
  *
  * Discovers workflow definitions from three tiers (project > global > bundled)
  * in both YAML and markdown formats. Each plugin declares an execution mode
- * that controls how `/gsd workflow <name>` dispatches it:
+ * that controls how `/hammer workflow <name>` dispatches it:
  *
  *   oneshot         — prompt-only, no state or scaffolding
  *   yaml-step       — CustomWorkflowEngine run with GRAPH.yaml
  *   markdown-phase  — STATE.json + phase gates (current md template behavior)
- *   auto-milestone  — hooks into /gsd auto pipeline (full-project only)
+ *   auto-milestone  — hooks into /hammer auto pipeline (full-project only)
  *
  * Precedence: project > global > bundled. Same-named file wins.
+ * Hammer Awareness: plugin discovery is Hammer-native and IAM/no-degradation
+ * aware while `gsdRoot()` preserves legacy state bridge compatibility.
  */
 
 import {
@@ -25,6 +27,12 @@ import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
 
 import { loadRegistry, type TemplateEntry, type WorkflowMode } from "./workflow-templates.js";
+import { gsdRoot } from "./paths.js";
+import {
+  HAMMER_GLOBAL_HOME_DIR_NAME,
+  HAMMER_HOME_ENV,
+  HAMMER_LEGACY_ENV_ALIASES,
+} from "../../../hammer-identity/index.js";
 
 export type { WorkflowMode } from "./workflow-templates.js";
 
@@ -54,27 +62,31 @@ export interface WorkflowPlugin {
 
 // ─── Path resolution ─────────────────────────────────────────────────────
 
+function hammerHomeDir(): string {
+  return process.env[HAMMER_HOME_ENV]
+    || process.env[HAMMER_LEGACY_ENV_ALIASES.home] // GSD_HOME legacy home alias — bootstrap-migration state bridge.
+    || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+}
+
 function resolveBundledDir(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const local = join(moduleDir, "workflow-templates");
   if (existsSync(local)) return local;
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  const agentGsdDir = join(gsdHome, "agent", "extensions", "gsd", "workflow-templates");
+  const agentGsdDir = join(hammerHomeDir(), "agent", "extensions", "gsd", "workflow-templates"); // internal extension path bridge.
   if (existsSync(agentGsdDir)) return agentGsdDir;
   return local;
 }
 
 function globalPluginsDir(): string {
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  return join(gsdHome, "workflows");
+  return join(hammerHomeDir(), "workflows");
 }
 
 function projectPluginsDir(basePath: string): string {
-  return join(basePath, ".gsd", "workflows");
+  return join(gsdRoot(basePath), "workflows");
 }
 
 function legacyDefsDir(basePath: string): string {
-  return join(basePath, ".gsd", "workflow-defs");
+  return join(gsdRoot(basePath), "workflow-defs");
 }
 
 // ─── Markdown frontmatter parsing ────────────────────────────────────────
@@ -290,8 +302,9 @@ function loadBundledPlugins(out: Map<string, WorkflowPlugin>): void {
 /**
  * Discover all workflow plugins. Project overrides global overrides bundled.
  *
- * The legacy `.gsd/workflow-defs/*.yaml` directory is also scanned as a
- * fallback YAML source so existing user definitions keep working.
+ * The canonical `.hammer/workflow-defs/*.yaml` directory is scanned through
+ * `gsdRoot()`, which preserves legacy `.gsd` state-namespace bridge reads for
+ * existing user definitions.
  */
 export function discoverPlugins(basePath: string): Map<string, WorkflowPlugin> {
   const out = new Map<string, WorkflowPlugin>();
@@ -319,7 +332,7 @@ export function resolvePlugin(basePath: string, name: string): WorkflowPlugin | 
 export function listPluginsFormatted(basePath: string): string {
   const plugins = discoverPlugins(basePath);
   if (plugins.size === 0) {
-    return "No workflow plugins found.\n\nRun /gsd workflow new to author one.";
+    return "No workflow plugins found.\n\nRun /hammer workflow new to author one.";
   }
 
   const groups: Record<WorkflowMode, WorkflowPlugin[]> = {
@@ -332,7 +345,7 @@ export function listPluginsFormatted(basePath: string): string {
     groups[p.meta.mode].push(p);
   }
 
-  const lines: string[] = ["Workflow Plugins\n"];
+  const lines: string[] = ["Hammer Workflow Plugins\n"];
 
   const order: WorkflowMode[] = ["markdown-phase", "yaml-step", "oneshot", "auto-milestone"];
   for (const mode of order) {
@@ -348,15 +361,15 @@ export function listPluginsFormatted(basePath: string): string {
   }
 
   lines.push("Usage:");
-  lines.push("  /gsd workflow <name>          Run a plugin directly");
-  lines.push("  /gsd workflow info <name>     Show plugin details");
-  lines.push("  /gsd workflow install <src>   Install a plugin from a URL");
+  lines.push("  /hammer workflow <name>          Run a plugin directly");
+  lines.push("  /hammer workflow info <name>     Show plugin details");
+  lines.push("  /hammer workflow install <src>   Install a plugin from a URL");
 
   return lines.join("\n");
 }
 
 /**
- * Format a single plugin's metadata for `/gsd workflow info <name>`.
+ * Format a single plugin's metadata for `/hammer workflow info <name>`.
  */
 export function formatPluginInfo(plugin: WorkflowPlugin): string {
   const lines = [

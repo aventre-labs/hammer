@@ -1,6 +1,6 @@
-// GSD Workflow Templates — Unit Tests
+// Hammer Workflow Templates — Unit Tests
 //
-// Tests registry loading, template resolution, auto-detection, and listing.
+// Tests registry loading, template resolution, auto-detection, listing, and Hammer/IAM visible guidance.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -133,7 +133,8 @@ console.log('\n── List Templates ──');
   assert.ok(output.includes('bugfix'), 'Should list bugfix');
   assert.ok(output.includes('spike'), 'Should list spike');
   assert.ok(output.includes('hotfix'), 'Should list hotfix');
-  assert.ok(output.includes('/gsd start'), 'Should include usage hint');
+  assert.ok(output.includes('/hammer start'), 'Should include Hammer usage hint');
+  assert.ok(!output.includes('/gsd start'), 'Should not advertise legacy start command');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -148,6 +149,8 @@ console.log('\n── Template Info ──');
   assert.ok(info!.includes('Bug Fix'), 'Should include template name');
   assert.ok(info!.includes('triage'), 'Should include phase names');
   assert.ok(info!.includes('Triggers'), 'Should include triggers section');
+  assert.ok(info!.includes('.hammer/workflows/bugfixes/'), 'Should show Hammer artifact dir');
+  assert.ok(!info!.includes('.gsd/workflows/bugfixes/'), 'Should not advertise legacy artifact dir');
 
   const missing = getTemplateInfo('nonexistent');
   assert.ok(missing === null, 'Should return null for unknown template');
@@ -165,6 +168,8 @@ console.log('\n── Load Workflow Template ──');
   assert.ok(content!.includes('Bugfix Workflow'), 'Should contain workflow title');
   assert.ok(content!.includes('Phase 1: Triage'), 'Should contain triage phase');
   assert.ok(content!.includes('Phase 4: Ship'), 'Should contain ship phase');
+  assert.ok(content!.includes('Hammer Awareness'), 'Should include inherited Hammer/IAM awareness marker');
+  assert.ok(content!.includes('artifact_dir: .hammer/workflows/bugfixes/'), 'Should use Hammer artifact dir');
 
   const hotfixContent = loadWorkflowTemplate('hotfix');
   assert.ok(hotfixContent !== null, 'Should load hotfix template');

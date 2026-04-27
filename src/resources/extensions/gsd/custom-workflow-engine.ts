@@ -10,6 +10,9 @@
  * - `resolveDispatch` returns unitType "custom-step" with unitId "<name>/<stepId>".
  * - `getDisplayMetadata` provides step N/M progress for dashboard rendering.
  * - Phase transitions are derivable from GRAPH.yaml step statuses.
+ *
+ * Hammer Awareness: custom workflow dispatch is Hammer/IAM aware and must fail
+ * closed through explicit manifest policy rather than markerless pass-through.
  */
 
 import type { WorkflowEngine } from "./workflow-engine.js";

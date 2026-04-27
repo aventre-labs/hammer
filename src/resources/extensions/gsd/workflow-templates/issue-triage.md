@@ -1,5 +1,7 @@
 # Issue Triage
 
+Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance, declared artifacts, and verification evidence.
+
 <template_meta>
 name: issue-triage
 version: 1
@@ -56,7 +58,7 @@ Write ONE of these, with a concrete next step:
 - **Ask for info:** list the 1–3 specific things missing (repro steps, version,
   logs). Draft the comment text.
 - **Accept and schedule:** suggest a workflow to run next (e.g.
-  `/gsd start bugfix --issue #123` or `/gsd workflow small-feature`).
+  `/hammer start bugfix --issue #123` or `/hammer workflow small-feature`).
 - **Close:** draft a polite close comment with the reason.
 - **Escalate:** flag for human review with a specific reason.
 

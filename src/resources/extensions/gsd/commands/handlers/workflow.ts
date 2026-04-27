@@ -44,9 +44,11 @@ import {
 } from "../../workflow-install.js";
 
 /**
- * Refuses interactive commands that mutate durable .gsd/ planning state while
+ * Refuses interactive commands that mutate durable .hammer/ planning state while
  * auto-mode holds the worktree. Returns true if the command was blocked and
  * the caller should return immediately; false if it is safe to proceed.
+ * Hammer Awareness: command diagnostics must preserve IAM/no-degradation state
+ * integrity instead of allowing concurrent untracked mutations.
  *
  * Auto-mode's squash merge performs a pre-merge dirty-tree check; concurrent
  * writes by interactive commands between that check and the merge itself
@@ -56,7 +58,7 @@ function requireNotAutoActive(commandName: string, ctx: ExtensionCommandContext)
   if (!isAutoActive()) return false;
   ctx.ui.notify(
     `${commandName} cannot run while auto-mode is active.\n` +
-    `Stop auto-mode first with /gsd stop, then run ${commandName}.`,
+    `Stop auto-mode first with /hammer stop, then run ${commandName}.`,
     "error",
   );
   return true;
@@ -70,7 +72,7 @@ const RESERVED_SUBCOMMANDS = new Set([
 ]);
 
 const WORKFLOW_USAGE = [
-  "Usage: /gsd workflow [<name> | <subcommand>]",
+  "Usage: /hammer workflow [<name> | <subcommand>]",
   "",
   "  <name> [args]     — Run a plugin directly (resolves project/global/bundled)",
   "  new               — Create a new workflow definition (via skill)",
@@ -147,7 +149,7 @@ export function parseWorkflowRunArgs(args: string): { defName: string; overrides
 
 /**
  * Parse every token as an optional `k=v` override. Use when the workflow name
- * is already known (e.g., direct `/gsd workflow <name> ...` dispatch) so the
+ * is already known (e.g., direct `/hammer workflow <name> ...` dispatch) so the
  * first token isn't eaten as a def name.
  */
 export function parseWorkflowOverridesOnly(args: string): Record<string, string> {
@@ -200,7 +202,7 @@ function dispatchPluginByMode(
       if (isAutoActive()) {
         ctx.ui.notify(
           "Cannot start a markdown-phase workflow while auto-mode is running.\n" +
-          "Run /gsd pause first.",
+          "Run /hammer pause first.",
           "warning",
         );
         return;
@@ -213,7 +215,7 @@ function dispatchPluginByMode(
     case "auto-milestone": {
       ctx.ui.notify(
         `'${plugin.name}' runs via the full milestone pipeline.\n` +
-        `Use /gsd auto or /gsd start ${plugin.name}.`,
+        `Use /hammer auto or /hammer start ${plugin.name}.`,
         "info",
       );
       return;
@@ -226,7 +228,7 @@ async function handleCustomWorkflow(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
 ): Promise<boolean> {
-  // Bare `/gsd workflow` — list plugins
+  // Bare `/hammer workflow` — list plugins
   if (!sub) {
     const base = projectRoot();
     const listing = listPluginsFormatted(base);
@@ -248,7 +250,7 @@ async function handleCustomWorkflow(
   // ── run <name> [param=value ...] ──
   if (head === "run") {
     if (!rest) {
-      ctx.ui.notify("Usage: /gsd workflow run <name> [param=value ...]", "warning");
+      ctx.ui.notify("Usage: /hammer workflow run <name> [param=value ...]", "warning");
       return true;
     }
     const { defName, overrides } = parseWorkflowRunArgs(rest);
@@ -287,13 +289,13 @@ async function handleCustomWorkflow(
   // ── info <name> ──
   if (head === "info") {
     if (!rest) {
-      ctx.ui.notify("Usage: /gsd workflow info <name>", "warning");
+      ctx.ui.notify("Usage: /hammer workflow info <name>", "warning");
       return true;
     }
     const base = projectRoot();
     const plugin = resolvePlugin(base, rest);
     if (!plugin) {
-      ctx.ui.notify(`Plugin not found: ${rest}\nRun /gsd workflow to list plugins.`, "warning");
+      ctx.ui.notify(`Plugin not found: ${rest}\nRun /hammer workflow to list plugins.`, "warning");
       return true;
     }
     ctx.ui.notify(formatPluginInfo(plugin), "info");
@@ -304,7 +306,7 @@ async function handleCustomWorkflow(
   if (head === "install") {
     if (!rest) {
       ctx.ui.notify(
-        "Usage: /gsd workflow install <source> [--project] [--name <n>]\n\n" +
+        "Usage: /hammer workflow install <source> [--project] [--name <n>]\n\n" +
         "Sources:\n" +
         "  https://…/path/workflow.yaml\n" +
         "  gist:<id>\n" +
@@ -350,7 +352,7 @@ async function handleCustomWorkflow(
         `Preview (first 20 lines):`,
         "  " + preview.split("\n").join("\n  "),
         "",
-        `Proceeding with install. Run /gsd workflow uninstall ${name} to revert.`,
+        `Proceeding with install. Run /hammer workflow uninstall ${name} to revert.`,
       ].join("\n");
       ctx.ui.notify(summary, "info");
 
@@ -369,7 +371,7 @@ async function handleCustomWorkflow(
   // ── uninstall <name> ──
   if (head === "uninstall") {
     if (!rest) {
-      ctx.ui.notify("Usage: /gsd workflow uninstall <name>", "warning");
+      ctx.ui.notify("Usage: /hammer workflow uninstall <name>", "warning");
       return true;
     }
     const base = projectRoot();
@@ -391,7 +393,7 @@ async function handleCustomWorkflow(
   // ── validate <name> ──
   if (head === "validate") {
     if (!rest) {
-      ctx.ui.notify("Usage: /gsd workflow validate <name>", "warning");
+      ctx.ui.notify("Usage: /hammer workflow validate <name>", "warning");
       return true;
     }
     const base = projectRoot();
@@ -412,8 +414,9 @@ async function handleCustomWorkflow(
         return true;
       }
     } else {
-      // Legacy fallback path for names that don't resolve via plugins.
-      const defPath = join(base, ".gsd", "workflow-defs", `${rest}.yaml`);
+      // Legacy fallback path for names that don't resolve via plugins; gsdRoot()
+      // maps this to `.hammer` first and only reads `.gsd` as a legacy state bridge.
+      const defPath = join(gsdRoot(base), "workflow-defs", `${rest}.yaml`);
       if (!existsSync(defPath)) {
         ctx.ui.notify(`Definition not found: ${defPath}`, "error");
         return true;
@@ -449,7 +452,7 @@ async function handleCustomWorkflow(
   if (head === "pause" && !rest) {
     const engineId = getActiveEngineId();
     if (engineId === "dev" || engineId === null) {
-      ctx.ui.notify("No custom workflow is running. Use /gsd pause for dev workflow.", "warning");
+      ctx.ui.notify("No custom workflow is running. Use /hammer pause for dev workflow.", "warning");
       return true;
     }
     if (!isAutoActive()) {
@@ -465,7 +468,7 @@ async function handleCustomWorkflow(
   if (head === "resume" && !rest) {
     const engineId = getActiveEngineId();
     if (engineId === "dev" || engineId === null) {
-      ctx.ui.notify("No custom workflow to resume. Use /gsd auto for dev workflow.", "warning");
+      ctx.ui.notify("No custom workflow to resume. Use /hammer auto for dev workflow.", "warning");
       return true;
     }
     startAutoDetached(ctx, pi, projectRoot(), false);
@@ -473,7 +476,7 @@ async function handleCustomWorkflow(
     return true;
   }
 
-  // ── Direct dispatch: /gsd workflow <name> [args] ──
+  // ── Direct dispatch: /hammer workflow <name> [args] ──
   // If the first token isn't a reserved subcommand, resolve it as a plugin.
   if (!RESERVED_SUBCOMMANDS.has(head)) {
     const base = projectRoot();
@@ -490,43 +493,43 @@ async function handleCustomWorkflow(
 }
 
 export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<boolean> {
-  // ── /gsd do — natural language routing (must be early to route to other commands) ──
+  // ── /hammer do — natural language routing (must be early to route to other commands) ──
   if (trimmed === "do" || trimmed.startsWith("do ")) {
-    if (requireNotAutoActive("/gsd do", ctx)) return true;
+    if (requireNotAutoActive("/hammer do", ctx)) return true;
     const { handleDo } = await import("../../commands-do.js");
     await handleDo(trimmed.replace(/^do\s*/, "").trim(), ctx, pi);
     return true;
   }
   // ── Backlog management ──
   if (trimmed === "backlog" || trimmed.startsWith("backlog ")) {
-    if (requireNotAutoActive("/gsd backlog", ctx)) return true;
+    if (requireNotAutoActive("/hammer backlog", ctx)) return true;
     const { handleBacklog } = await import("../../commands-backlog.js");
     await handleBacklog(trimmed.replace(/^backlog\s*/, "").trim(), ctx, pi);
     return true;
   }
-  // ── Custom workflow commands (`/gsd workflow ...`) ──
+  // ── Custom workflow commands (`/hammer workflow ...`) ──
   if (trimmed === "workflow" || trimmed.startsWith("workflow ")) {
     const sub = trimmed.slice("workflow".length).trim();
     return handleCustomWorkflow(sub, ctx, pi);
   }
 
   if (trimmed === "queue") {
-    if (requireNotAutoActive("/gsd queue", ctx)) return true;
+    if (requireNotAutoActive("/hammer queue", ctx)) return true;
     await showQueue(ctx, pi, projectRoot());
     return true;
   }
   if (trimmed === "discuss") {
-    if (requireNotAutoActive("/gsd discuss", ctx)) return true;
+    if (requireNotAutoActive("/hammer discuss", ctx)) return true;
     await showDiscuss(ctx, pi, projectRoot());
     return true;
   }
   if (trimmed === "quick" || trimmed.startsWith("quick ")) {
-    if (requireNotAutoActive("/gsd quick", ctx)) return true;
+    if (requireNotAutoActive("/hammer quick", ctx)) return true;
     await handleQuick(trimmed.replace(/^quick\s*/, "").trim(), ctx, pi);
     return true;
   }
   if (trimmed === "new-milestone") {
-    if (requireNotAutoActive("/gsd new-milestone", ctx)) return true;
+    if (requireNotAutoActive("/hammer new-milestone", ctx)) return true;
     const basePath = projectRoot();
     const headlessContextPath = join(gsdRoot(basePath), "runtime", "headless-context.md");
     if (existsSync(headlessContextPath)) {
@@ -548,7 +551,7 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
     return true;
   }
   if (trimmed === "park" || trimmed.startsWith("park ")) {
-    if (requireNotAutoActive("/gsd park", ctx)) return true;
+    if (requireNotAutoActive("/hammer park", ctx)) return true;
     const basePath = projectRoot();
     const arg = trimmed.replace(/^park\s*/, "").trim();
     let targetId = arg;
@@ -561,20 +564,20 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
       targetId = state.activeMilestone.id;
     }
     if (isParked(basePath, targetId)) {
-      ctx.ui.notify(`${targetId} is already parked. Use /gsd unpark ${targetId} to reactivate.`, "info");
+      ctx.ui.notify(`${targetId} is already parked. Use /hammer unpark ${targetId} to reactivate.`, "info");
       return true;
     }
     const reasonParts = arg.replace(targetId, "").trim().replace(/^["']|["']$/g, "");
-    const reason = reasonParts || "Parked via /gsd park";
+    const reason = reasonParts || "Parked via /hammer park";
     const success = parkMilestone(basePath, targetId, reason);
     ctx.ui.notify(
-      success ? `Parked ${targetId}. Run /gsd unpark ${targetId} to reactivate.` : `Could not park ${targetId} — milestone not found.`,
+      success ? `Parked ${targetId}. Run /hammer unpark ${targetId} to reactivate.` : `Could not park ${targetId} — milestone not found.`,
       success ? "info" : "warning",
     );
     return true;
   }
   if (trimmed === "unpark" || trimmed.startsWith("unpark ")) {
-    if (requireNotAutoActive("/gsd unpark", ctx)) return true;
+    if (requireNotAutoActive("/hammer unpark", ctx)) return true;
     const basePath = projectRoot();
     const arg = trimmed.replace(/^unpark\s*/, "").trim();
     let targetId = arg;
@@ -588,7 +591,7 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
       if (parkedEntries.length === 1) {
         targetId = parkedEntries[0].id;
       } else {
-        ctx.ui.notify(`Parked milestones: ${parkedEntries.map((entry) => entry.id).join(", ")}. Specify which to unpark: /gsd unpark <id>`, "info");
+        ctx.ui.notify(`Parked milestones: ${parkedEntries.map((entry) => entry.id).join(", ")}. Specify which to unpark: /hammer unpark <id>`, "info");
         return true;
       }
     }

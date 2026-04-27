@@ -1,14 +1,15 @@
 {
   "version": 1,
+  "hammer_awareness": "Hammer workflow registry \u2014 IAM/Omega/Trinity/VOLVOX/no-degradation marker for bundled workflow metadata.",
   "templates": {
     "full-project": {
       "name": "Full Project",
-      "description": "Complete GSD workflow with roadmap, milestones, slices, and full ceremony",
+      "description": "Complete Hammer workflow with roadmap, milestones, slices, IAM-aware execution, and full ceremony",
       "file": "full-project.md",
       "mode": "auto-milestone",
       "phases": ["init", "discuss", "plan", "execute", "verify"],
       "triggers": ["new project", "greenfield", "from scratch", "build an app", "create a new"],
-      "artifact_dir": ".gsd/",
+      "artifact_dir": ".hammer/",
       "estimated_complexity": "high",
       "requires_project": true
     },
@@ -19,7 +20,7 @@
       "mode": "markdown-phase",
       "phases": ["triage", "fix", "verify", "ship"],
       "triggers": ["bug", "issue", "fix", "broken", "regression", "error", "crash", "failing", "github.com/*/issues/*"],
-      "artifact_dir": ".gsd/workflows/bugfixes/",
+      "artifact_dir": ".hammer/workflows/bugfixes/",
       "estimated_complexity": "low",
       "requires_project": false
     },
@@ -30,7 +31,7 @@
       "mode": "markdown-phase",
       "phases": ["scope", "plan", "implement", "verify"],
       "triggers": ["add", "feature", "implement", "build", "create", "new command", "new endpoint"],
-      "artifact_dir": ".gsd/workflows/features/",
+      "artifact_dir": ".hammer/workflows/features/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
@@ -41,7 +42,7 @@
       "mode": "markdown-phase",
       "phases": ["inventory", "plan", "migrate", "verify"],
       "triggers": ["refactor", "migrate", "rename", "restructure", "move", "reorganize", "clean up"],
-      "artifact_dir": ".gsd/workflows/refactors/",
+      "artifact_dir": ".hammer/workflows/refactors/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
@@ -52,7 +53,7 @@
       "mode": "markdown-phase",
       "phases": ["scope", "research", "synthesize"],
       "triggers": ["research", "investigate", "explore", "spike", "compare", "evaluate", "should we", "what if", "how does"],
-      "artifact_dir": ".gsd/workflows/spikes/",
+      "artifact_dir": ".hammer/workflows/spikes/",
       "estimated_complexity": "low",
       "requires_project": false
     },
@@ -74,7 +75,7 @@
       "mode": "markdown-phase",
       "phases": ["scan", "triage", "remediate", "re-scan"],
       "triggers": ["security", "audit", "vulnerability", "owasp", "cve", "penetration", "hardening"],
-      "artifact_dir": ".gsd/workflows/audits/",
+      "artifact_dir": ".hammer/workflows/audits/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
@@ -85,13 +86,13 @@
       "mode": "markdown-phase",
       "phases": ["assess", "upgrade", "fix", "verify"],
       "triggers": ["upgrade", "update", "dependency", "deps", "bump", "outdated", "npm update", "renovate"],
-      "artifact_dir": ".gsd/workflows/upgrades/",
+      "artifact_dir": ".hammer/workflows/upgrades/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
     "pr-review": {
       "name": "PR Review",
-      "description": "Walk git diff, produce structured review notes (oneshot — no state)",
+      "description": "Walk git diff, produce structured review notes (oneshot \u2014 no state)",
       "file": "pr-review.md",
       "mode": "oneshot",
       "phases": [],
@@ -212,56 +213,56 @@
     },
     "release": {
       "name": "Release",
-      "description": "Version bump, changelog, tag, publish — phased with approval gates",
+      "description": "Version bump, changelog, tag, publish \u2014 phased with approval gates",
       "file": "release.md",
       "mode": "markdown-phase",
       "phases": ["prepare", "bump", "publish", "announce"],
       "triggers": ["release", "ship release", "cut release", "tag release", "publish release"],
-      "artifact_dir": ".gsd/workflows/releases/",
+      "artifact_dir": ".hammer/workflows/releases/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
     "api-breaking-change": {
       "name": "API Breaking Change",
-      "description": "Find callers, migrate, deprecate, release — multi-session phased",
+      "description": "Find callers, migrate, deprecate, release \u2014 multi-session phased",
       "file": "api-breaking-change.md",
       "mode": "markdown-phase",
       "phases": ["survey", "migrate", "deprecate", "release"],
       "triggers": ["breaking change", "api break", "remove api", "deprecate"],
-      "artifact_dir": ".gsd/workflows/api-breaks/",
+      "artifact_dir": ".hammer/workflows/api-breaks/",
       "estimated_complexity": "high",
       "requires_project": false
     },
     "performance-audit": {
       "name": "Performance Audit",
-      "description": "Profile hot paths, prioritize, implement fixes, verify — phased",
+      "description": "Profile hot paths, prioritize, implement fixes, verify \u2014 phased",
       "file": "performance-audit.md",
       "mode": "markdown-phase",
       "phases": ["profile", "prioritize", "fix", "verify"],
       "triggers": ["performance", "slow", "perf audit", "bottleneck", "optimize"],
-      "artifact_dir": ".gsd/workflows/perf/",
+      "artifact_dir": ".hammer/workflows/perf/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
     "observability-setup": {
       "name": "Observability Setup",
-      "description": "Survey, design, add logging/metrics/traces, verify — phased",
+      "description": "Survey, design, add logging/metrics/traces, verify \u2014 phased",
       "file": "observability-setup.md",
       "mode": "markdown-phase",
       "phases": ["survey", "design", "implement", "verify"],
       "triggers": ["observability", "logging", "metrics", "tracing", "opentelemetry"],
-      "artifact_dir": ".gsd/workflows/observability/",
+      "artifact_dir": ".hammer/workflows/observability/",
       "estimated_complexity": "medium",
       "requires_project": false
     },
     "ci-bootstrap": {
       "name": "CI Bootstrap",
-      "description": "Discover stack, design pipeline, implement, verify — phased",
+      "description": "Discover stack, design pipeline, implement, verify \u2014 phased",
       "file": "ci-bootstrap.md",
       "mode": "markdown-phase",
       "phases": ["discover", "design", "implement", "verify"],
       "triggers": ["ci bootstrap", "setup ci", "github actions", "build pipeline", "test pipeline"],
-      "artifact_dir": ".gsd/workflows/ci/",
+      "artifact_dir": ".hammer/workflows/ci/",
       "estimated_complexity": "medium",
       "requires_project": false
     }

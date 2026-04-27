@@ -2,6 +2,7 @@
 #
 # Iterate over functions that lack unit tests, write a test for each, and
 # shell-verify the suite stays green. Use for paying down coverage debt.
+# Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance and verification evidence.
 
 version: 1
 name: test-backfill

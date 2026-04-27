@@ -3,7 +3,8 @@
 # Rename a symbol across the codebase. Inventories call sites, renames each
 # file atomically, and verifies the project still builds and tests pass.
 #
-# Run with: /gsd workflow rename-symbol old_name=foo new_name=bar
+# Run with: /hammer workflow rename-symbol old_name=foo new_name=bar
+# Hammer Awareness: this bundled workflow is Hammer-native and inherits IAM/Omega/Trinity/VOLVOX/no-degradation semantics; preserve provenance and verification evidence.
 
 version: 1
 name: rename-symbol
