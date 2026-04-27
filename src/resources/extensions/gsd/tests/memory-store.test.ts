@@ -370,39 +370,97 @@ test('memory-store: create/read defaults include VOLVOX metadata and reinforce u
   closeDatabase();
 });
 
-test('memory-store: VOLVOX epoch persists classification, audit rows, and failed diagnostics', () => {
+test('memory-store: integrated VOLVOX epoch persists classifications, status, and false-germline diagnostics', () => {
   openDatabase(':memory:');
 
-  createMemory({ category: 'pattern', content: 'offspring-rich memory', trinity: { layer: 'generative' } });
-  createMemory({ category: 'gotcha', content: 'false germline claimant' });
+  createMemory({
+    category: 'pattern',
+    content: 'offspring-rich knowledge memory',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S05/T05',
+    trinity: { layer: 'knowledge' },
+  });
+  createMemory({
+    category: 'architecture',
+    content: 'cross-layer structural memory',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S05/T05',
+    trinity: { layer: 'social' },
+  });
+  createMemory({
+    category: 'preference',
+    content: 'active somatic sensor memory',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S05/T05',
+    trinity: { layer: 'social' },
+  });
+  createMemory({
+    category: 'gotcha',
+    content: 'dormant lifecycle memory',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S05/T05',
+    trinity: { layer: 'knowledge' },
+  });
+  createMemory({
+    category: 'gotcha',
+    content: 'false germline claimant',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S05/T05',
+    trinity: { layer: 'knowledge' },
+  });
 
   const adapter = _getAdapter()!;
   adapter.prepare(
     `UPDATE memories
-        SET volvox_activation_rate = 0.8,
-            volvox_offspring_count = 5,
+        SET volvox_offspring_count = 5,
             volvox_kirk_step = 6
       WHERE id = 'MEM001'`,
   ).run();
   adapter.prepare(
     `UPDATE memories
+        SET volvox_cross_layer_connections = 4,
+            volvox_kirk_step = 10
+      WHERE id = 'MEM002'`,
+  ).run();
+  adapter.prepare(
+    `UPDATE memories
+        SET volvox_activation_rate = 0.9,
+            volvox_kirk_step = 5
+      WHERE id = 'MEM003'`,
+  ).run();
+  adapter.prepare(
+    `UPDATE memories
+        SET volvox_dormancy_cycles = 11,
+            volvox_kirk_step = 5
+      WHERE id = 'MEM004'`,
+  ).run();
+  adapter.prepare(
+    `UPDATE memories
         SET volvox_propagation_eligible = 1,
             volvox_cell_type = 'SOMATIC_SENSOR',
-            volvox_lifecycle_phase = 'juvenile'
-      WHERE id = 'MEM002'`,
+            volvox_lifecycle_phase = 'juvenile',
+            volvox_kirk_step = 5
+      WHERE id = 'MEM005'`,
   ).run();
 
   const epoch = runVolvoxEpoch({
     trigger: 'test',
     now: '2026-04-27T00:00:00.000Z',
-    thresholds: { offspringCount: 3, activationRate: 0.5 },
+    thresholds: { offspringCount: 3, crossLayerConnections: 3, activationRate: 0.5, dormancyCycles: 10 },
   });
 
   assert.equal(epoch.status, 'blocked', 'false-germline should block successful completion');
-  assert.equal(epoch.counts.processed, 2);
-  assert.ok(epoch.diagnostics.some((d) => d.code === 'false-germline' && d.memoryId === 'MEM002'));
+  assert.equal(epoch.counts.processed, 5);
+  assert.ok(epoch.diagnostics.some((d) => d.code === 'false-germline' && d.memoryId === 'MEM005'));
 
-  const germline = getActiveMemories().find((memory) => memory.id === 'MEM001');
+  const memories = getActiveMemories();
+  const cellTypes = new Set(memories.map((memory) => memory.volvox?.cellType));
+  assert.ok(cellTypes.has('GERMLINE'), 'real epoch should classify at least one memory as GERMLINE');
+  assert.ok(cellTypes.has('STRUCTURAL'), 'real epoch should classify at least one memory as STRUCTURAL');
+  assert.ok(cellTypes.has('SOMATIC_SENSOR'), 'real epoch should classify at least one memory as SOMATIC');
+  assert.ok(cellTypes.has('DORMANT'), 'real epoch should classify at least one memory as DORMANT');
+
+  const germline = memories.find((memory) => memory.id === 'MEM001');
   assert.equal(germline?.volvox?.cellType, 'GERMLINE');
   assert.equal(germline?.volvox?.lifecyclePhase, 'juvenile');
   assert.equal(germline?.volvox?.lastEpochId, epoch.epochId);
@@ -410,12 +468,19 @@ test('memory-store: VOLVOX epoch persists classification, audit rows, and failed
   const epochRow = adapter.prepare('SELECT status, trigger, processed_count, diagnostics_json FROM volvox_epochs WHERE id = ?').get(epoch.epochId);
   assert.equal(epochRow?.['status'], 'failed');
   assert.equal(epochRow?.['trigger'], 'test');
-  assert.equal(epochRow?.['processed_count'], 2);
+  assert.equal(epochRow?.['processed_count'], 5);
   assert.ok(String(epochRow?.['diagnostics_json']).includes('false-germline'));
 
   const mutationRows = adapter.prepare('SELECT memory_id, diagnostics_json FROM volvox_epoch_mutations WHERE epoch_id = ? ORDER BY memory_id').all(epoch.epochId);
-  assert.equal(mutationRows.length, 2);
-  assert.ok(String(mutationRows[1]?.['diagnostics_json']).includes('false-germline'));
+  assert.equal(mutationRows.length, 5);
+  assert.ok(String(mutationRows.find((row) => row['memory_id'] === 'MEM005')?.['diagnostics_json']).includes('false-germline'));
+
+  const status = getVolvoxStatus();
+  assert.equal(status.latestEpoch?.id, epoch.epochId);
+  assert.equal(status.latestEpoch?.trigger, 'test');
+  assert.equal(status.latestEpoch?.status, 'failed');
+  assert.equal(status.diagnostics.some((diagnostic) => diagnostic.code === 'false-germline' && diagnostic.memoryId === 'MEM005'), true);
+  assert.equal(status.memories.find((memory) => memory.id === 'MEM001')?.volvox?.cellType, 'GERMLINE');
 
   closeDatabase();
 });
