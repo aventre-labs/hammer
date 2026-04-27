@@ -318,6 +318,11 @@ export interface QueryMemoriesOptions extends QueryMemoriesFilters {
   };
 }
 
+export interface FormatMemoriesForPromptOptions {
+  includeDormant?: boolean;
+  includeArchived?: boolean;
+}
+
 export interface RankedMemory {
   memory: Memory;
   score: number;
@@ -1058,8 +1063,9 @@ function applyLinkAction(action: MemoryActionLink): void {
  * Format memories as categorized markdown for system prompt injection.
  * Truncates to token budget (~4 chars per token).
  */
-export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000): string {
-  if (memories.length === 0) return '';
+export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000, options: FormatMemoriesForPromptOptions = {}): string {
+  const visibleMemories = memories.filter((memory) => shouldIncludeMemoryInPrompt(memory, options));
+  if (visibleMemories.length === 0) return '';
 
   const charBudget = tokenBudget * 4;
   const header = '## Project Memory (auto-learned)\n';
@@ -1068,7 +1074,7 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
 
   // Group by category
   const grouped = new Map<string, Memory[]>();
-  for (const m of memories) {
+  for (const m of visibleMemories) {
     const list = grouped.get(m.category) ?? [];
     list.push(m);
     grouped.set(m.category, list);
@@ -1099,15 +1105,27 @@ export function formatMemoriesForPrompt(memories: Memory[], tokenBudget = 2000):
   return output.trimEnd();
 }
 
+function shouldIncludeMemoryInPrompt(memory: Memory, options: FormatMemoriesForPromptOptions): boolean {
+  const volvox = memory.volvox;
+  if (!volvox) return true;
+  if (!options.includeArchived && volvox.archivedAt) return false;
+  if (!options.includeDormant && volvox.cellType === 'DORMANT') return false;
+  if (!options.includeDormant && volvox.lifecyclePhase === 'dormant') return false;
+  if (!options.includeArchived && volvox.lifecyclePhase === 'archived') return false;
+  return true;
+}
+
 function formatVolvoxAnnotation(metadata: MemoryVolvoxMetadata | undefined): string {
   if (!metadata) return '';
   const parts = [
     `cell=${metadata.cellType}`,
-    `phase=${metadata.lifecyclePhase}`,
-    `stable=${formatScore(metadata.roleStability)}`,
+    `stability=${formatScore(metadata.roleStability)}`,
+    `lifecycle=${metadata.lifecyclePhase}`,
+    `kirk=${metadata.kirkStep ?? 0}`,
+    `dormant=${metadata.dormancyCycles}`,
+    `eligible=${metadata.propagationEligible}`,
   ];
-  if (metadata.propagationEligible) parts.push('propagation=eligible');
-  return ` [volvox ${parts.join(' ')}]`;
+  return ` [VOLVOX: ${parts.join(' ')}]`;
 }
 
 function formatTrinityAnnotation(metadata: TrinityMetadata | undefined): string {

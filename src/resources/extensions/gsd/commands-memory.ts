@@ -26,6 +26,8 @@ import {
   enforceMemoryCap,
   getActiveMemories,
   getActiveMemoriesRanked,
+  getVolvoxStatus,
+  runVolvoxEpoch,
   supersedeMemory,
 } from "./memory-store.js";
 import { _getAdapter, isDbAvailable } from "./gsd-db.js";
@@ -39,6 +41,7 @@ interface MemoryCmdArgs {
   tags: string[];
   scope?: string;
   extract: boolean;
+  flags: string[];
 }
 
 function parseArgs(raw: string): MemoryCmdArgs {
@@ -46,6 +49,7 @@ function parseArgs(raw: string): MemoryCmdArgs {
   const sub = (tokens.shift() ?? "list").toLowerCase();
   const positional: string[] = [];
   const tags: string[] = [];
+  const flags: string[] = [];
   let scope: string | undefined;
   let extract = false;
 
@@ -75,9 +79,13 @@ function parseArgs(raw: string): MemoryCmdArgs {
       extract = false;
       continue;
     }
+    if (tok.startsWith("--")) {
+      flags.push(tok);
+      continue;
+    }
     positional.push(tok);
   }
-  return { sub, positional, tags, scope, extract };
+  return { sub, positional, tags, scope, extract, flags };
 }
 
 function splitArgs(raw: string): string[] {
@@ -126,6 +134,9 @@ export async function handleMemory(
     case "stats":
       handleStats(ctx);
       return;
+    case "volvox":
+      handleVolvox(ctx, parsed.positional, parsed.flags);
+      return;
     case "sources":
       handleSources(ctx);
       return;
@@ -158,11 +169,14 @@ export async function handleMemory(
 
 function usage(): string {
   return [
-    "Usage: /gsd memory <subcommand>",
+    "Usage: /hammer memory <subcommand>",
     "  list                    list recent active memories",
     "  show <MEM###>           print one memory",
     "  forget <MEM###>         supersede a memory",
-    "  stats                   counts by category / scope / sources / edges",
+    "  stats                   counts by category / scope / sources / edges / VOLVOX",
+    "  volvox status           inspect lifecycle status and latest epoch",
+    "  volvox epoch [--dry-run] run or preview a VOLVOX lifecycle epoch",
+    "  volvox diagnose [MEM###] inspect lifecycle diagnostics",
     "  sources                 list recent memory_sources",
     '  note "<text>"           ingest an inline note as a source',
     "  ingest <path|url>       ingest a local file path or URL",
@@ -173,6 +187,17 @@ function usage(): string {
     "  cap [N]                 enforce the memory cap (default 50)",
     "",
     "Options: --tag a,b   --scope project|global|<custom>   --extract",
+  ].join("\n");
+}
+
+function volvoxUsage(): string {
+  return [
+    "Usage: /hammer memory volvox <status|epoch|diagnose>",
+    "  status                  inspect current lifecycle counts and latest epoch",
+    "  epoch [--dry-run]       run or preview a VOLVOX lifecycle epoch",
+    "  diagnose [MEM###]       show structured lifecycle diagnostics",
+    "",
+    "Next: /hammer memory volvox status",
   ].join("\n");
 }
 
@@ -194,7 +219,7 @@ function handleList(ctx: ExtensionCommandContext): void {
   }
   const lines = memories.map(
     (m) =>
-      `- [${m.id}] (${m.category}, conf ${m.confidence.toFixed(2)}, hits ${m.hit_count}${m.scope && m.scope !== "project" ? `, ${m.scope}` : ""}) ${truncate(m.content, 100)}`,
+      `- [${m.id}] (${m.category}, conf ${m.confidence.toFixed(2)}, hits ${m.hit_count}${m.scope && m.scope !== "project" ? `, ${m.scope}` : ""}; ${formatVolvoxInline(m)}) ${truncate(m.content, 100)}`,
   );
   ctx.ui.notify(lines.join("\n"), "info");
 }
@@ -215,6 +240,7 @@ function handleShow(ctx: ExtensionCommandContext, id: string | undefined): void 
     return;
   }
   const tags = row["tags"] ? safeJsonArray(row["tags"] as string) : [];
+  const volvox = rowToVolvoxView(row);
   const lines = [
     `ID: ${row["id"]}`,
     `Category: ${row["category"]}`,
@@ -226,6 +252,15 @@ function handleShow(ctx: ExtensionCommandContext, id: string | undefined): void 
     tags.length > 0 ? `Tags: ${tags.join(", ")}` : null,
     row["superseded_by"] ? `Superseded by: ${row["superseded_by"]}` : null,
     row["source_unit_type"] ? `Source: ${row["source_unit_type"]}/${row["source_unit_id"]}` : null,
+    "",
+    "VOLVOX:",
+    `  Cell type: ${volvox.cellType}`,
+    `  Role stability: ${formatScore(volvox.roleStability)}`,
+    `  Lifecycle/Kirk: ${volvox.lifecyclePhase} / ${volvox.kirkStep ?? 0}`,
+    `  Dormancy cycles: ${volvox.dormancyCycles}`,
+    `  Propagation eligible: ${volvox.propagationEligible}`,
+    `  Archived: ${volvox.archivedAt ?? "false"}`,
+    volvox.lastEpochId ? `  Last epoch: ${volvox.lastEpochId}${volvox.lastEpochAt ? ` at ${volvox.lastEpochAt}` : ""}` : `  Last epoch: none`,
     "",
     String(row["content"]),
   ]
@@ -286,6 +321,22 @@ function handleStats(ctx: ExtensionCommandContext): void {
          WHERE m.superseded_by IS NULL`,
       )
       .get();
+    const byVolvoxCell = adapter
+      .prepare("SELECT volvox_cell_type as value, count(*) as cnt FROM memories WHERE superseded_by IS NULL GROUP BY volvox_cell_type ORDER BY cnt DESC, value ASC")
+      .all();
+    const byVolvoxLifecycle = adapter
+      .prepare("SELECT volvox_lifecycle_phase as value, count(*) as cnt FROM memories WHERE superseded_by IS NULL GROUP BY volvox_lifecycle_phase ORDER BY cnt DESC, value ASC")
+      .all();
+    const propagationEligibleRow = adapter
+      .prepare("SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND volvox_propagation_eligible = 1")
+      .get();
+    const dormantRow = adapter
+      .prepare("SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND (volvox_cell_type = 'DORMANT' OR volvox_lifecycle_phase = 'dormant')")
+      .get();
+    const archivedRow = adapter
+      .prepare("SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND (volvox_archived_at IS NOT NULL OR volvox_lifecycle_phase = 'archived')")
+      .get();
+    const latestEpoch = getVolvoxStatus().latestEpoch;
     const activeCount = (activeRow?.["cnt"] as number) ?? 0;
     const embeddedActive = (embeddedActiveRow?.["cnt"] as number) ?? 0;
     const coverage = activeCount > 0 ? `${Math.round((embeddedActive / activeCount) * 100)}%` : "n/a";
@@ -307,11 +358,264 @@ function handleStats(ctx: ExtensionCommandContext): void {
       ...relationsByRel.map((row) => `  ${row["rel"]}: ${row["cnt"]}`),
       "",
       `Embeddings: ${embeddingsRow?.["cnt"] ?? 0} total, ${embeddedActive} active (coverage ${coverage})`,
+      "",
+      "VOLVOX:",
+      "By VOLVOX cell type:",
+      ...byVolvoxCell.map((row) => `  ${row["value"]}: ${row["cnt"]}`),
+      "By VOLVOX lifecycle:",
+      ...byVolvoxLifecycle.map((row) => `  ${row["value"]}: ${row["cnt"]}`),
+      `Propagation eligible: ${propagationEligibleRow?.["cnt"] ?? 0}`,
+      `Dormant: ${dormantRow?.["cnt"] ?? 0}`,
+      `Archived: ${archivedRow?.["cnt"] ?? 0}`,
+      latestEpoch ? `Last VOLVOX epoch: ${latestEpoch.id} status=${latestEpoch.status} trigger=${latestEpoch.trigger} diagnostics=${latestEpoch.diagnostics.length}` : "Last VOLVOX epoch: none",
     ].join("\n");
     ctx.ui.notify(out, "info");
   } catch (err) {
     ctx.ui.notify(`Stats failed: ${(err as Error).message}`, "warning");
   }
+}
+
+interface VolvoxView {
+  cellType: string;
+  roleStability: number;
+  lifecyclePhase: string;
+  propagationEligible: boolean;
+  dormancyCycles: number;
+  kirkStep: number | null;
+  archivedAt: string | null;
+  lastEpochId: string | null;
+  lastEpochAt: string | null;
+}
+
+function handleVolvox(ctx: ExtensionCommandContext, positional: string[], flags: string[]): void {
+  const sub = (positional[0] ?? "status").toLowerCase();
+  const args = positional.slice(1);
+  const adapter = _getAdapter();
+  if (!adapter) {
+    ctx.ui.notify(
+      "Hammer database unavailable for VOLVOX lifecycle inspection. Next: open the project DB, then run /hammer memory volvox status.",
+      "warning",
+    );
+    return;
+  }
+
+  switch (sub) {
+    case "status":
+      if (flags.length > 0 || args.length > 0) {
+        ctx.ui.notify(`Usage: /hammer memory volvox status\n${volvoxUsage()}`, "warning");
+        return;
+      }
+      handleVolvoxStatus(ctx);
+      return;
+    case "epoch":
+      handleVolvoxEpoch(ctx, flags, args);
+      return;
+    case "diagnose":
+      handleVolvoxDiagnose(ctx, args, flags);
+      return;
+    case "help":
+      ctx.ui.notify(volvoxUsage(), "info");
+      return;
+    default:
+      ctx.ui.notify(`Unknown Hammer VOLVOX subcommand "${sub}".\n${volvoxUsage()}`, "warning");
+      return;
+  }
+}
+
+function handleVolvoxStatus(ctx: ExtensionCommandContext): void {
+  const adapter = _getAdapter();
+  if (!adapter) {
+    ctx.ui.notify("Hammer database unavailable. Next: /hammer memory volvox status", "warning");
+    return;
+  }
+
+  try {
+    const activeRow = adapter.prepare("SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL").get();
+    const byCell = adapter.prepare(
+      "SELECT volvox_cell_type as value, count(*) as cnt FROM memories WHERE superseded_by IS NULL GROUP BY volvox_cell_type ORDER BY cnt DESC, value ASC",
+    ).all();
+    const byLifecycle = adapter.prepare(
+      "SELECT volvox_lifecycle_phase as value, count(*) as cnt FROM memories WHERE superseded_by IS NULL GROUP BY volvox_lifecycle_phase ORDER BY cnt DESC, value ASC",
+    ).all();
+    const eligible = adapter.prepare(
+      "SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND volvox_propagation_eligible = 1",
+    ).get();
+    const dormant = adapter.prepare(
+      "SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND (volvox_cell_type = 'DORMANT' OR volvox_lifecycle_phase = 'dormant')",
+    ).get();
+    const archived = adapter.prepare(
+      "SELECT count(*) as cnt FROM memories WHERE superseded_by IS NULL AND (volvox_archived_at IS NOT NULL OR volvox_lifecycle_phase = 'archived')",
+    ).get();
+    const status = getVolvoxStatus();
+    const latest = status.latestEpoch;
+    const lines = [
+      "Hammer VOLVOX Status",
+      `Active memories: ${activeRow?.["cnt"] ?? 0}`,
+      latest
+        ? `Latest epoch: ${latest.id} status=${latest.status} trigger=${latest.trigger} started=${latest.startedAt} completed=${latest.completedAt ?? "running"}`
+        : "Latest epoch: none",
+      latest ? `Latest counts: ${formatCounts(latest.counts)}` : null,
+      latest ? `Diagnostics: ${latest.diagnostics.length}` : null,
+      "",
+      "By cell type:",
+      ...(byCell.length > 0 ? byCell.map((row) => `  ${row["value"]}: ${row["cnt"]}`) : ["  none: 0"]),
+      "By lifecycle:",
+      ...(byLifecycle.length > 0 ? byLifecycle.map((row) => `  ${row["value"]}: ${row["cnt"]}`) : ["  none: 0"]),
+      `Propagation eligible: ${eligible?.["cnt"] ?? 0}`,
+      `Dormant: ${dormant?.["cnt"] ?? 0}`,
+      `Archived: ${archived?.["cnt"] ?? 0}`,
+      "Next: /hammer memory volvox diagnose",
+    ].filter((line): line is string => line != null);
+    ctx.ui.notify(lines.join("\n"), latest?.status === "failed" ? "warning" : "info");
+  } catch (err) {
+    ctx.ui.notify(
+      `Hammer VOLVOX status failed: ${(err as Error).message}. Next: /hammer memory volvox diagnose`,
+      "warning",
+    );
+  }
+}
+
+function handleVolvoxEpoch(ctx: ExtensionCommandContext, flags: string[], args: string[]): void {
+  const unknownFlag = flags.find((flag) => flag !== "--dry-run");
+  if (unknownFlag || args.length > 0) {
+    ctx.ui.notify(
+      `${unknownFlag ? `Unknown flag "${unknownFlag}". ` : ""}Usage: /hammer memory volvox epoch [--dry-run]`,
+      "warning",
+    );
+    return;
+  }
+  const dryRun = flags.includes("--dry-run");
+  try {
+    const epoch = runVolvoxEpoch({ trigger: dryRun ? "command-dry-run" : "command", dryRun });
+    const blockingCodes = epoch.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "blocking")
+      .slice(0, 5)
+      .map((diagnostic) => `${diagnostic.code}${diagnostic.memoryId ? `/${diagnostic.memoryId}` : ""}`);
+    const label = dryRun ? "dry-run" : epoch.status;
+    const lines = [
+      `Hammer VOLVOX epoch ${label}`,
+      `Epoch: ${epoch.epochId}`,
+      `Persisted: ${dryRun ? "no" : "yes"}`,
+      `Processed: ${epoch.counts.processed}`,
+      `Changed: ${epoch.counts.changed}`,
+      `Propagation eligible: ${epoch.counts.propagationEligible}`,
+      `Archived: ${epoch.counts.archived}`,
+      `Diagnostics: ${epoch.counts.diagnostics}`,
+      `Blocking diagnostics: ${epoch.counts.blockingDiagnostics}`,
+      blockingCodes.length > 0 ? `Blocking codes: ${blockingCodes.join(", ")}` : null,
+      "Next: /hammer memory volvox diagnose",
+    ].filter((line): line is string => line != null);
+    ctx.ui.notify(lines.join("\n"), epoch.status === "blocked" ? "warning" : "info");
+  } catch (err) {
+    ctx.ui.notify(
+      `Hammer VOLVOX epoch failed: ${(err as Error).message}. Next: /hammer memory volvox diagnose`,
+      "error",
+    );
+  }
+}
+
+function handleVolvoxDiagnose(ctx: ExtensionCommandContext, args: string[], flags: string[]): void {
+  if (flags.length > 0 || args.length > 1 || (args[0] && !isMemoryId(args[0]))) {
+    ctx.ui.notify("Usage: /hammer memory volvox diagnose [MEM###]", "warning");
+    return;
+  }
+
+  const memoryId = args[0];
+  const adapter = _getAdapter();
+  if (!adapter) {
+    ctx.ui.notify("Hammer database unavailable. Next: /hammer memory volvox status", "warning");
+    return;
+  }
+
+  const row = memoryId
+    ? adapter.prepare("SELECT * FROM memories WHERE id = :id").get({ ":id": memoryId })
+    : undefined;
+  if (memoryId && !row) {
+    ctx.ui.notify(`No Hammer memory found for ${memoryId}. Next: /hammer memory list`, "warning");
+    return;
+  }
+
+  const status = getVolvoxStatus();
+  const diagnostics = memoryId
+    ? status.diagnostics.filter((diagnostic) => diagnostic.memoryId === memoryId)
+    : status.diagnostics;
+  const level = diagnostics.some((diagnostic) => diagnostic.severity === "blocking") || diagnostics.length === 0
+    ? "warning"
+    : "info";
+  const memoryVolvox = row ? rowToVolvoxView(row) : null;
+  const lines = [
+    "Hammer VOLVOX Diagnose",
+    status.latestEpoch ? `Epoch: ${status.latestEpoch.id} status=${status.latestEpoch.status} trigger=${status.latestEpoch.trigger}` : "Epoch: none",
+    memoryId ? `Memory: ${memoryId}` : "Memory: all",
+    memoryVolvox ? `Cell: ${memoryVolvox.cellType}` : null,
+    memoryVolvox ? `Lifecycle/Kirk: ${memoryVolvox.lifecyclePhase} / ${memoryVolvox.kirkStep ?? 0}` : null,
+    memoryVolvox ? `Archived: ${memoryVolvox.archivedAt ?? "false"}` : null,
+    diagnostics.length === 0 ? `No diagnostics found${memoryId ? ` for ${memoryId}` : ""}.` : "Diagnostics:",
+    ...diagnostics.slice(0, 20).map((diagnostic) =>
+      `- ${diagnostic.severity} ${diagnostic.code}${diagnostic.memoryId ? ` ${diagnostic.memoryId}` : ""} phase=${diagnostic.phase}: ${truncate(diagnostic.message, 140)} Remediation: ${truncate(diagnostic.remediation, 160)} (${diagnostic.timestamp})`,
+    ),
+    diagnostics.length > 20 ? `... ${diagnostics.length - 20} more diagnostics omitted; rerun with a memory id to narrow scope.` : null,
+    "Next: /hammer memory volvox epoch --dry-run",
+  ].filter((line): line is string => line != null);
+  ctx.ui.notify(lines.join("\n"), level);
+}
+
+function rowToVolvoxView(row: Record<string, unknown>): VolvoxView {
+  return {
+    cellType: typeof row["volvox_cell_type"] === "string" ? row["volvox_cell_type"] : "UNDIFFERENTIATED",
+    roleStability: clampUnit(row["volvox_role_stability"]),
+    lifecyclePhase: typeof row["volvox_lifecycle_phase"] === "string" ? row["volvox_lifecycle_phase"] : "embryonic",
+    propagationEligible: row["volvox_propagation_eligible"] === 1 || row["volvox_propagation_eligible"] === true,
+    dormancyCycles: nonNegativeInteger(row["volvox_dormancy_cycles"]),
+    kirkStep: typeof row["volvox_kirk_step"] === "number" && Number.isFinite(row["volvox_kirk_step"])
+      ? Math.floor(row["volvox_kirk_step"])
+      : null,
+    archivedAt: typeof row["volvox_archived_at"] === "string" && row["volvox_archived_at"].length > 0 ? row["volvox_archived_at"] : null,
+    lastEpochId: typeof row["volvox_last_epoch_id"] === "string" && row["volvox_last_epoch_id"].length > 0 ? row["volvox_last_epoch_id"] : null,
+    lastEpochAt: typeof row["volvox_last_epoch_at"] === "string" && row["volvox_last_epoch_at"].length > 0 ? row["volvox_last_epoch_at"] : null,
+  };
+}
+
+function formatVolvoxInline(memory: ReturnType<typeof getActiveMemoriesRanked>[number]): string {
+  const volvox = memory.volvox;
+  return [
+    `VOLVOX cell=${volvox?.cellType ?? "UNDIFFERENTIATED"}`,
+    `stability=${formatScore(volvox?.roleStability ?? 0)}`,
+    `lifecycle=${volvox?.lifecyclePhase ?? "embryonic"}`,
+    `kirk=${volvox?.kirkStep ?? 0}`,
+    `dormant=${volvox?.dormancyCycles ?? 0}`,
+    `eligible=${volvox?.propagationEligible === true}`,
+    `archived=${volvox?.archivedAt ?? "false"}`,
+  ].join(" ");
+}
+
+function isMemoryId(value: string): boolean {
+  return /^MEM\d{3,}$/.test(value);
+}
+
+function formatCounts(value: unknown): string {
+  if (!value || typeof value !== "object") return "n/a";
+  const counts = value as Record<string, unknown>;
+  return [
+    `processed=${counts.processed ?? 0}`,
+    `changed=${counts.changed ?? 0}`,
+    `diagnostics=${counts.diagnostics ?? 0}`,
+    `blocking=${counts.blockingDiagnostics ?? 0}`,
+  ].join(" ");
+}
+
+function nonNegativeInteger(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  return Math.floor(value);
+}
+
+function clampUnit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.round(Math.max(0, Math.min(1, value)) * 10_000) / 10_000;
+}
+
+function formatScore(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 }
 
 function handleExport(ctx: ExtensionCommandContext, target: string | undefined): void {

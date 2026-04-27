@@ -616,14 +616,42 @@ test('memory-store: formatMemoriesForPrompt annotates compact VOLVOX metadata', 
       propagationEligible: true,
     },
   });
+  _getAdapter()!.prepare("UPDATE memories SET volvox_kirk_step = 7 WHERE id = 'MEM001'").run();
 
   const formatted = formatMemoriesForPrompt(getActiveMemoriesRanked(5));
 
   assert.ok(
-    formatted.includes('[volvox cell=GERMLINE phase=mature stable=0.85 propagation=eligible]'),
+    formatted.includes('[VOLVOX: cell=GERMLINE stability=0.85 lifecycle=mature kirk=7 dormant=0 eligible=true]'),
     formatted,
   );
   assert.ok(!formatted.includes('diagnostics_json'), 'prompt annotations should not dump VOLVOX audit JSON blobs');
+
+  closeDatabase();
+});
+
+test('memory-store: formatMemoriesForPrompt excludes dormant and archived VOLVOX rows by default', () => {
+  openDatabase(':memory:');
+
+  createMemory({ category: 'pattern', content: 'active prompt memory' });
+  createMemory({ category: 'pattern', content: 'dormant prompt memory' });
+  createMemory({ category: 'pattern', content: 'archived prompt memory' });
+  _getAdapter()!.prepare(
+    "UPDATE memories SET volvox_cell_type = 'DORMANT', volvox_lifecycle_phase = 'dormant' WHERE id = 'MEM002'",
+  ).run();
+  _getAdapter()!.prepare(
+    "UPDATE memories SET volvox_lifecycle_phase = 'archived', volvox_archived_at = '2026-04-27T00:00:00.000Z' WHERE id = 'MEM003'",
+  ).run();
+
+  const memories = getActiveMemoriesRanked(10);
+  const formatted = formatMemoriesForPrompt(memories);
+
+  assert.match(formatted, /active prompt memory/);
+  assert.doesNotMatch(formatted, /dormant prompt memory/);
+  assert.doesNotMatch(formatted, /archived prompt memory/);
+
+  const explicit = formatMemoriesForPrompt(memories, 2000, { includeDormant: true, includeArchived: true });
+  assert.match(explicit, /dormant prompt memory/);
+  assert.match(explicit, /archived prompt memory/);
 
   closeDatabase();
 });

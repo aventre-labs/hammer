@@ -55,8 +55,8 @@ function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
 
   process.stderr.write(
     `[hammer] ${chalk.yellow('Version mismatch detected')}\n` +
-    `[gsd] Synced resources are from ${chalk.bold(`v${managedVersion}`)}, but this \`hammer\` binary is ${chalk.dim(`v${currentVersion}`)}.\n` +
-    `[hammer] Run ${chalk.bold('npm install -g gsd-pi@latest')} or ${chalk.bold('gsd update')}, then try again.\n`,
+    `[hammer] Synced resources are from ${chalk.bold(`v${managedVersion}`)}, but this \`hammer\` binary is ${chalk.dim(`v${currentVersion}`)}.\n` +
+    `[hammer] Run ${chalk.bold('npm install -g hammer-pi@latest')} or ${chalk.bold('hammer update')}, then try again.\n`,
   )
   process.exit(1)
 }
@@ -73,18 +73,18 @@ function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
  */
 function printNonTtyErrorAndExit(missing: string | undefined, includeWebHint: boolean): never {
   const suffix = missing ? ` but ${missing} not a TTY` : ''
-  process.stderr.write(`[gsd] Error: Interactive mode requires a terminal (TTY)${suffix}.\n`)
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd auto                          Auto-mode (pipeable, no TUI)\n')
-  process.stderr.write('[gsd]   gsd --print "your message"        Single-shot prompt\n')
+  process.stderr.write(`[hammer] Error: Interactive mode requires a terminal (TTY)${suffix}.\n`)
+  process.stderr.write('[hammer] Non-interactive alternatives:\n')
+  process.stderr.write('[hammer]   hammer auto                          Auto-mode (pipeable, no TUI)\n')
+  process.stderr.write('[hammer]   hammer --print "your message"        Single-shot prompt\n')
   if (includeWebHint) {
-    process.stderr.write('[gsd]   gsd --web [path]                  Browser-only web mode\n')
+    process.stderr.write('[hammer]   hammer --web [path]                  Browser-only web mode\n')
   }
-  process.stderr.write('[gsd]   gsd --mode rpc                    JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                    MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"         Text output mode\n')
+  process.stderr.write('[hammer]   hammer --mode rpc                    JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[hammer]   hammer --mode mcp                    MCP server over stdin/stdout\n')
+  process.stderr.write('[hammer]   hammer --mode text "message"         Text output mode\n')
   if (includeWebHint) {
-    process.stderr.write('[gsd]   gsd headless                      Auto-mode without TUI\n')
+    process.stderr.write('[hammer]   hammer headless                      Auto-mode without TUI\n')
   }
   process.exit(1)
 }
@@ -109,7 +109,7 @@ function printExtensionErrors(errors: ReadonlyArray<{ error: string }>): void {
 function printExtensionWarnings(warnings: ReadonlyArray<{ message: string }> | undefined): void {
   if (!warnings) return
   for (const w of warnings) {
-    process.stderr.write(`[gsd] Extension warning: ${w.message}\n`)
+    process.stderr.write(`[hammer] Extension warning: ${w.message}\n`)
   }
 }
 
@@ -143,7 +143,7 @@ const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
 // `hammer [subcommand] --help` / `-h` — print help before any subcommand runs.
 // loader.ts only catches --help/-h as the *first* arg; here we handle the
-// case where it appears later (e.g. `gsd update --help`, `hammer --foo --help`).
+// case where it appears later (e.g. `hammer update --help`, `hammer --foo --help`).
 // Prefer subcommand-specific help when the first positional is a known
 // subcommand, otherwise fall back to general help.
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
@@ -180,7 +180,7 @@ function ensureRtkBootstrap(): Promise<void> {
   return (rtkBootstrapPromise ??= doRtkBootstrap())
 }
 
-// `gsd update` — update to the latest version via npm.
+// `hammer update` — update to the latest version via npm.
 // MUST run before exitIfManagedResourcesAreNewer(): when the bundled resource
 // manifest is from a newer version than the running binary, every other
 // command is blocked — only `update` should bypass the gate so the user can
@@ -391,7 +391,7 @@ if (cliFlags.messages[0] === 'sessions') {
   cliFlags._selectedSessionPath = selected.path
 }
 
-// `gsd headless` — run auto-mode without TUI
+// `hammer headless` — run auto-mode without TUI
 if (cliFlags.messages[0] === 'headless') {
   await ensureRtkBootstrap()
   // Sync bundled resources before headless runs (#3471). Without this,
@@ -424,8 +424,8 @@ function flushPendingProviderRegistrations(resourceLoader: DefaultResourceLoader
   runtime.pendingProviderRegistrations = []
 }
 
-// `gsd auto [args...]` — shorthand for `gsd headless auto [args...]` (#2732)
-// Without this, `gsd auto` falls through to the interactive TUI which hangs
+// `hammer auto [args...]` — shorthand for `hammer headless auto [args...]` (#2732)
+// Without this, `hammer auto` falls through to the interactive TUI which hangs
 // when stdin/stdout are piped (non-TTY environments).
 if (cliFlags.messages[0] === 'auto') {
   await runHeadlessFromAuto(buildHeadlessAutoArgs(cliFlags))
@@ -695,8 +695,8 @@ if (!cliFlags.worktree && !isPrintMode) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-redirect: `gsd auto` with piped stdout → headless mode (#2732)
-// When stdout is not a TTY (e.g. `gsd auto | cat`, `gsd auto > file`),
+// Auto-redirect: `hammer auto` with piped stdout → headless mode (#2732)
+// When stdout is not a TTY (e.g. `hammer auto | cat`, `hammer auto > file`),
 // the TUI cannot render and the process hangs. Redirect to headless mode
 // which handles non-interactive output gracefully.
 // ---------------------------------------------------------------------------
