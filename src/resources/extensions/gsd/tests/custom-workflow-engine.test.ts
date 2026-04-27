@@ -135,7 +135,47 @@ describe("CustomWorkflowEngine.resolveDispatch", () => {
     if (dispatch.action === "dispatch") {
       assert.equal(dispatch.step.unitType, "custom-step");
       assert.equal(dispatch.step.unitId, "my-workflow/step-1");
-      assert.equal(dispatch.step.prompt, "Do the first thing");
+      assert.match(dispatch.step.prompt, /Hammer\/IAM custom workflow context/);
+      assert.match(dispatch.step.prompt, /\*\*Role:\*\* `workflow-worker`/);
+      assert.match(dispatch.step.prompt, /\*\*Unit Type:\*\* `custom-step`/);
+      assert.match(dispatch.step.prompt, /\*\*Unit ID:\*\* `my-workflow\/step-1`/);
+      assert.match(dispatch.step.prompt, /\*\*Expected Output:\*\*/);
+      assert.match(dispatch.step.prompt, /\*\*Provenance Discipline:\*\*/);
+      assert.match(dispatch.step.prompt, /\*\*Fail-Closed Remediation:\*\*/);
+      assert.match(dispatch.step.prompt, /Do the first thing/);
+    }
+  });
+
+  it("keeps the Hammer/IAM workflow-worker envelope when a step prompt is empty", async () => {
+    const { engine } = setupEngine([
+      makeStep({ id: "blank", prompt: "" }),
+    ], "blank-workflow");
+
+    const state = await engine.deriveState("/unused");
+    const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
+
+    assert.equal(dispatch.action, "dispatch");
+    if (dispatch.action === "dispatch") {
+      assert.equal(dispatch.step.unitId, "blank-workflow/blank");
+      assert.match(dispatch.step.prompt, /Hammer\/IAM custom workflow context/);
+      assert.match(dispatch.step.prompt, /\*\*Role:\*\* `workflow-worker`/);
+      assert.match(dispatch.step.prompt, /empty step prompt — fail closed with remediation/);
+    }
+  });
+
+  it("uses the full workflow/step unit id in the Hammer/IAM envelope for nested names", async () => {
+    const { engine } = setupEngine([
+      makeStep({ id: "phase/step-1", prompt: "Handle nested step" }),
+    ], "nested/workflow");
+
+    const state = await engine.deriveState("/unused");
+    const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
+
+    assert.equal(dispatch.action, "dispatch");
+    if (dispatch.action === "dispatch") {
+      assert.equal(dispatch.step.unitId, "nested/workflow/phase/step-1");
+      assert.match(dispatch.step.prompt, /\*\*Unit ID:\*\* `nested\/workflow\/phase\/step-1`/);
+      assert.match(dispatch.step.prompt, /Handle nested step/);
     }
   });
 
@@ -173,7 +213,8 @@ describe("CustomWorkflowEngine.resolveDispatch", () => {
     assert.equal(secondDispatch.action, "dispatch");
     if (secondDispatch.action === "dispatch") {
       assert.equal(secondDispatch.step.unitId, "my-workflow/step-1");
-      assert.equal(secondDispatch.step.prompt, "Do the first thing");
+      assert.match(secondDispatch.step.prompt, /\*\*Unit ID:\*\* `my-workflow\/step-1`/);
+      assert.match(secondDispatch.step.prompt, /Do the first thing/);
     }
   });
 
@@ -417,12 +458,16 @@ describe("CustomExecutionPolicy", () => {
     assert.deepStrictEqual(result, { outcome: "retry", reason: "Default retry" });
   });
 
-  it("closeout returns no artifacts", async () => {
+  it("closeout returns no artifacts as an explicit custom-step policy", async () => {
     const policy = new CustomExecutionPolicy("/tmp/run");
     const result = await policy.closeout("custom-step", "wf/step-1", {
       basePath: "/tmp",
       startedAt: Date.now(),
     });
+    // Custom workflow steps are closed out by GRAPH.yaml reconciliation plus
+    // their per-step verification policy. Auto artifact capture is intentionally
+    // skipped here; IAM governance is supplied by the custom-step manifest and
+    // dispatch envelope, not by treating workflow closeout as ungoverned.
     assert.deepStrictEqual(result, { committed: false, artifacts: [] });
   });
 

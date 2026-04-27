@@ -15,6 +15,7 @@ import {
   type SkillsPolicy,
   type UnitContextManifest,
 } from "../unit-context-manifest.ts";
+import { getIAMSubagentRoleContract } from "../../../../iam/context-envelope.ts";
 
 // ─── Coverage: every known unit type has a manifest ──────────────────────
 
@@ -146,6 +147,17 @@ test("S08: custom-step has an explicit workflow-worker IAM manifest", () => {
   assert.ok(m, "custom-step should resolve to an explicit manifest");
   assert.equal(m.tools.mode, "all", "custom workflow steps retain arbitrary workflow behavior under governance");
   assert.deepEqual(m.subagents, { mode: "allowed", roles: ["workflow-worker"], requireEnvelope: true });
+  assert.ok(m.artifacts.inline.includes("project"), "workflow workers receive compact project context");
+  assert.ok(m.artifacts.inline.includes("templates"), "workflow workers receive prompt/template policy context");
+  assert.equal(m.maxSystemPromptChars, UNIT_MANIFESTS["rewrite-docs"].maxSystemPromptChars);
+
+  const role = getIAMSubagentRoleContract("workflow-worker");
+  assert.equal(role.ok, true);
+  if (role.ok) {
+    assert.equal(role.value.requiredContext, false, "self-contained custom steps may omit context artifacts");
+    assert.ok(role.value.expectedArtifactKinds.includes("workflow-output"));
+    assert.ok(role.value.mutationBoundaries.includes("tool-call"));
+  }
 });
 
 // ─── Phase-2 target: complete-milestone manifest reflects #4780's excerpt shape ─

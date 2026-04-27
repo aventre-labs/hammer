@@ -43,6 +43,29 @@ import { withFileLock } from "./file-lock.js";
 // Re-export for downstream consumers
 export { readFrozenDefinition } from "./definition-io.js";
 
+function buildCustomStepPromptEnvelope(input: {
+  readonly workflowName: string;
+  readonly stepId: string;
+  readonly rawPrompt: string;
+}): string {
+  const unitId = `${input.workflowName}/${input.stepId}`;
+  const rawPrompt = input.rawPrompt.trim();
+
+  return [
+    "## Hammer/IAM custom workflow context",
+    "- **Role:** `workflow-worker`.",
+    "- **Unit Type:** `custom-step`.",
+    `- **Unit ID:** \`${unitId}\`.`,
+    "- **Expected Output:** perform the requested workflow step, create/update only artifacts or source required by the step prompt, and leave verification evidence or an explicit reason when verification is not applicable.",
+    "- **Provenance Discipline:** cite the workflow step prompt, injected context artifacts, and any files/tools that informed changes; do not rely on hidden context.",
+    "- **Fail-Closed Remediation:** if the prompt is empty, malformed, or missing required context, stop and report the missing field plus a concrete remediation instead of inventing requirements.",
+    "- **Closeout Policy:** custom-step closeout intentionally skips auto artifact capture; governance comes from this IAM envelope, `resolveManifest(\"custom-step\")`, and step verification policy.",
+    "",
+    "## Workflow step prompt",
+    rawPrompt.length > 0 ? rawPrompt : "(empty step prompt — fail closed with remediation as described above)",
+  ].join("\n");
+}
+
 export class CustomWorkflowEngine implements WorkflowEngine {
   readonly engineId = "custom";
   private readonly runDir: string;
@@ -105,7 +128,11 @@ export class CustomWorkflowEngine implements WorkflowEngine {
           step: {
             unitType: "custom-step",
             unitId: `${graph.metadata.name}/${active.id}`,
-            prompt: injectContext(this.runDir, active.id, active.prompt),
+            prompt: buildCustomStepPromptEnvelope({
+              workflowName: graph.metadata.name,
+              stepId: active.id,
+              rawPrompt: injectContext(this.runDir, active.id, active.prompt),
+            }),
           },
         };
       }
@@ -186,7 +213,11 @@ export class CustomWorkflowEngine implements WorkflowEngine {
         step: {
           unitType: "custom-step",
           unitId: `${activeGraph.metadata.name}/${activeStep.id}`,
-          prompt: enrichedPrompt,
+          prompt: buildCustomStepPromptEnvelope({
+            workflowName: activeGraph.metadata.name,
+            stepId: activeStep.id,
+            rawPrompt: enrichedPrompt,
+          }),
         },
       };
     });

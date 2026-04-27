@@ -13,6 +13,7 @@ import { formatIAMSubagentContractMarker } from '../iam-subagent-policy.ts';
 import { shouldBlockPlanningUnit } from '../bootstrap/write-gate.ts';
 import { isDeterministicPolicyError } from '../auto-tool-tracking.ts';
 import type { SubagentsPolicy, ToolsPolicy } from '../unit-context-manifest.ts';
+import { resolveManifest } from '../unit-context-manifest.ts';
 
 const BASE = join('/tmp', 'fake-project');
 const PLANNING: ToolsPolicy = { mode: 'planning' };
@@ -33,6 +34,24 @@ const REACTIVE_SUBAGENTS: SubagentsPolicy = {
   roles: ['task-executor'],
   requireEnvelope: true,
 };
+const CUSTOM_STEP_MANIFEST = resolveManifest('custom-step');
+assert.ok(CUSTOM_STEP_MANIFEST, 'test fixture requires custom-step manifest');
+
+function customStepPrompt(envelopeId = 'custom-wf-step-1-env'): string {
+  return `${formatIAMSubagentContractMarker('workflow-worker', envelopeId)}\n\nRun the governed workflow worker step.`;
+}
+
+function markerlessCustomStepPrompt(): string {
+  return 'Run markerless workflow worker step.';
+}
+
+function customStepSubagentContext(toolInput: unknown) {
+  return {
+    subagents: CUSTOM_STEP_MANIFEST!.subagents,
+    parentUnit: 'custom-wf/step-1',
+    toolInput,
+  };
+}
 
 function gatePrompt(role = 'gate-evaluator', envelopeId = 'M001-S01-gates-Q3-env'): string {
   return `${formatIAMSubagentContractMarker(role, envelopeId)}\n\nEvaluate the gate.`;
@@ -306,7 +325,7 @@ test('planning-unit: allows web research tools', () => {
   assert.strictEqual(r.block, false);
 });
 
-// ─── all mode: never blocks ───────────────────────────────────────────────
+// ─── all mode: execute-track and governed custom workflow workers ─────────
 
 test('all-mode: execute-task can edit user source', () => {
   const r = shouldBlockPlanningUnit('edit', join(BASE, 'src', 'main.ts'), BASE, 'execute-task', ALL);
@@ -321,6 +340,53 @@ test('all-mode: execute-task can run arbitrary bash', () => {
 test('all-mode: execute-task can dispatch subagents', () => {
   const r = shouldBlockPlanningUnit('subagent', '', BASE, 'execute-task', ALL);
   assert.strictEqual(r.block, false);
+});
+
+test('all-mode: custom-step keeps arbitrary source writes and bash available for workflow behavior', () => {
+  assert.equal(CUSTOM_STEP_MANIFEST!.tools.mode, 'all');
+
+  const edit = shouldBlockPlanningUnit(
+    'edit',
+    join(BASE, 'src', 'workflow-output.ts'),
+    BASE,
+    'custom-step',
+    CUSTOM_STEP_MANIFEST!.tools,
+  );
+  const bash = shouldBlockPlanningUnit(
+    'bash',
+    'npm run build',
+    BASE,
+    'custom-step',
+    CUSTOM_STEP_MANIFEST!.tools,
+  );
+
+  assert.strictEqual(edit.block, false);
+  assert.strictEqual(bash.block, false);
+});
+
+test('all-mode: custom-step subagent dispatch is governed by workflow-worker IAM markers', () => {
+  const ok = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'custom-step',
+    CUSTOM_STEP_MANIFEST!.tools,
+    customStepSubagentContext({ task: customStepPrompt('custom-wf-step-1-worker-env') }),
+  );
+  assert.strictEqual(ok.block, false);
+
+  const markerless = shouldBlockPlanningUnit(
+    'subagent',
+    '',
+    BASE,
+    'custom-step',
+    CUSTOM_STEP_MANIFEST!.tools,
+    customStepSubagentContext({ task: markerlessCustomStepPrompt() }),
+  );
+  assert.strictEqual(markerless.block, true);
+  assert.match(markerless.reason!, /custom-step/);
+  assert.match(markerless.reason!, /Allowed roles: workflow-worker/);
+  assert.match(markerless.reason!, /missing IAM_SUBAGENT_CONTRACT marker/);
 });
 
 // ─── read-only mode ───────────────────────────────────────────────────────
