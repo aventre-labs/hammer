@@ -53,10 +53,10 @@ test("manifest: hammer_milestone_generate_id is advertised in provides.tools", (
   assert.ok(tools.includes("hammer_milestone_generate_id"), "provides.tools must include 'hammer_milestone_generate_id'");
 });
 
-test("manifest: VOLVOX IAM tools are advertised as hammer_* canonical names", () => {
+test("manifest: Omega and VOLVOX IAM tools are advertised as hammer_* canonical names", () => {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const tools: string[] = manifest.provides?.tools ?? [];
-  for (const name of ["hammer_volvox_epoch", "hammer_volvox_status", "hammer_volvox_diagnose"]) {
+  for (const name of ["hammer_spiral", "hammer_canonical_spiral", "hammer_volvox_epoch", "hammer_volvox_status", "hammer_volvox_diagnose"]) {
     assert.ok(tools.includes(name), `provides.tools must include '${name}'`);
   }
 });
@@ -180,9 +180,11 @@ test("memory-tools: capture_thought and memory_query are preserved as-is", () =>
   assert.ok(src.includes('name: "memory_query"'), "memory-tools must still register memory_query");
 });
 
-test("iam-tools: VOLVOX canonical tools and gsd_* aliases are registered", () => {
+test("iam-tools: Omega and VOLVOX canonical tools and gsd_* aliases are registered", () => {
   const src = readFileSync(resolve(BOOTSTRAP_DIR, "iam-tools.ts"), "utf-8");
   for (const [canonical, alias] of [
+    ["hammer_spiral", "gsd_spiral"],
+    ["hammer_canonical_spiral", "gsd_canonical_spiral"],
     ["hammer_volvox_epoch", "gsd_volvox_epoch"],
     ["hammer_volvox_status", "gsd_volvox_status"],
     ["hammer_volvox_diagnose", "gsd_volvox_diagnose"],
@@ -193,12 +195,14 @@ test("iam-tools: VOLVOX canonical tools and gsd_* aliases are registered", () =>
   }
 });
 
-test("iam-tools: VOLVOX legacy aliases share execute handlers with canonical tools", () => {
+test("iam-tools: Omega and VOLVOX legacy aliases share execute handlers with canonical tools", () => {
   const tools: Array<{ name: string; execute: unknown }> = [];
   const pi = { registerTool(tool: { name: string; execute: unknown }) { tools.push(tool); } };
   registerIAMTools(pi as never);
 
   for (const [canonical, alias] of [
+    ["hammer_spiral", "gsd_spiral"],
+    ["hammer_canonical_spiral", "gsd_canonical_spiral"],
     ["hammer_volvox_epoch", "gsd_volvox_epoch"],
     ["hammer_volvox_status", "gsd_volvox_status"],
     ["hammer_volvox_diagnose", "gsd_volvox_diagnose"],

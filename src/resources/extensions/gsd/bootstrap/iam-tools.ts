@@ -2,9 +2,17 @@
 // Exposes the native public IAM tools (recall, refract, quick, spiral, …)
 // as hammer_* canonical tools with gsd_* legacy aliases.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { Api, AssistantMessage, Model } from "@gsd/pi-ai";
 import { ensureDbOpen } from "./dynamic-tools.js";
+import {
+  persistPhaseOmegaRun,
+} from "../omega-phase-artifacts.js";
+import { atomicWriteSync } from "../atomic-write.js";
 import {
   queryMemoriesRanked,
   getActiveMemoriesRanked,
@@ -12,6 +20,12 @@ import {
   runVolvoxEpoch,
   getVolvoxStatus,
 } from "../memory-store.js";
+import {
+  getOmegaRun,
+  insertOmegaRun,
+  insertSavesuccessResult,
+  updateOmegaRunStatus,
+} from "../gsd-db.js";
 import { traverseGraph } from "../memory-relations.js";
 import {
   executeIAMRecall,
@@ -39,13 +53,21 @@ import {
 } from "../../../../iam/tools.js";
 import type {
   IAMError,
+  IAMOmegaRunOptions,
   IAMResult,
   IAMToolAdapters,
   IAMToolOutput,
   IAMToolVolvoxStatus,
 } from "../../../../iam/types.js";
+import { executeOmegaSpiral } from "../../../../iam/omega.js";
+import { persistOmegaRun } from "../../../../iam/persist.js";
 
-function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
+type IAMToolRuntimeOptions = {
+  ctx?: ExtensionContext;
+  basePath?: string;
+};
+
+function buildAdapters(dbAvailable: boolean, options: IAMToolRuntimeOptions = {}): IAMToolAdapters {
   return {
     isDbAvailable: () => dbAvailable,
     queryMemories: (query, k = 10, category, options) =>
@@ -122,6 +144,195 @@ function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
         diagnostics: visible,
         blocking: visible.filter((diagnostic) => diagnostic.severity === "blocking"),
       };
+    },
+    runOmega: (params) => runNativeOmega(params, options),
+  };
+}
+
+const OMEGA_RUN_DIR = ".gsd/omega/tools";
+
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function extractAssistantText(message: AssistantMessage): string {
+  return message.content
+    .filter((block): block is { type: "text"; text: string } => block.type === "text")
+    .map((block) => block.text)
+    .join("")
+    .trim();
+}
+
+function selectOmegaModel(ctx: ExtensionContext | undefined): Model<Api> | null {
+  try {
+    const available = ctx?.modelRegistry?.getAvailable?.() ?? [];
+    if (!available || available.length === 0) return null;
+    return available.find((model) => model.id.toLowerCase().includes("haiku")) as Model<Api>
+      ?? [...available].sort((a, b) => a.cost.input - b.cost.input)[0] as Model<Api>
+      ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildOmegaExecutor(ctx: ExtensionContext | undefined): Promise<{ ok: true; executor: (prompt: string) => Promise<string> } | { ok: false; error: IAMError }> {
+  const injectedExecutor = (ctx as { omegaExecutor?: unknown } | undefined)?.omegaExecutor;
+  if (typeof injectedExecutor === "function") {
+    return {
+      ok: true,
+      executor: async (prompt: string): Promise<string> => {
+        const text = await (injectedExecutor as (prompt: string) => Promise<string> | string)(prompt);
+        if (!isNonEmptyText(text)) {
+          throw new Error("Omega model returned malformed response: expected non-empty text content.");
+        }
+        return text.trim();
+      },
+    };
+  }
+
+  const selectedModel = selectOmegaModel(ctx);
+  if (!selectedModel || !ctx?.modelRegistry) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "executor-not-wired",
+        remediation: "No model is available for Omega execution. Configure at least one model provider/API key before calling hammer_spiral or hammer_canonical_spiral.",
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+
+  let completeSimple: typeof import("@gsd/pi-ai").completeSimple;
+  try {
+    ({ completeSimple } = await import("@gsd/pi-ai"));
+  } catch (cause) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "executor-not-wired",
+        remediation: "Failed to load @gsd/pi-ai completeSimple for Omega execution. Rebuild/install Hammer workspace packages before retrying.",
+        persistenceStatus: "not-attempted",
+        cause,
+      },
+    };
+  }
+
+  const apiKey = await ctx.modelRegistry.getApiKey(selectedModel).catch(() => undefined);
+  return {
+    ok: true,
+    executor: async (prompt: string): Promise<string> => {
+      const result = await completeSimple(selectedModel, {
+        systemPrompt: "You are Hammer's native Omega Protocol executor. Return only the requested stage output as clear, durable Markdown text.",
+        messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
+      }, {
+        maxTokens: 4096,
+        temperature: 0,
+        ...(apiKey ? { apiKey } : {}),
+      });
+      const text = extractAssistantText(result);
+      if (!isNonEmptyText(text)) {
+        throw new Error("Omega model returned malformed response: expected non-empty text content.");
+      }
+      return text;
+    },
+  };
+}
+
+function omegaRunManifestPath(artifactDir: string): string {
+  return join(artifactDir, "run-manifest.json");
+}
+
+function omegaSynthesisPath(artifactDir: string): string | undefined {
+  const path = join(artifactDir, "synthesis.md");
+  return existsSync(path) ? path : undefined;
+}
+
+function omegaToolBaseDir(basePath: string): string {
+  return join(basePath, OMEGA_RUN_DIR);
+}
+
+async function runNativeOmega(params: IAMOmegaRunOptions, options: IAMToolRuntimeOptions) {
+  const basePath = options.basePath ?? process.cwd();
+  const executor = await buildOmegaExecutor(options.ctx);
+  if (!executor.ok) return { ok: false as const, error: executor.error };
+
+  const hasPhasePersistence = !!params.unitType || !!params.unitId || !!params.targetArtifactPath;
+  if (hasPhasePersistence) {
+    if (!params.unitType || !params.unitId || !params.targetArtifactPath) {
+      return {
+        ok: false as const,
+        error: {
+          iamErrorKind: "persistence-failed" as const,
+          remediation: "Phase Omega persistence requires unitType, unitId, and targetArtifactPath together.",
+          validationGap: "Incomplete Omega phase persistence parameters.",
+          persistenceStatus: "not-attempted" as const,
+        },
+      };
+    }
+
+    const phaseResult = await persistPhaseOmegaRun({
+      basePath,
+      unitType: params.unitType,
+      unitId: params.unitId,
+      query: params.query,
+      targetArtifactPath: params.targetArtifactPath,
+      executor: executor.executor,
+      ...(params.persona ? { persona: params.persona } : {}),
+      ...(params.runes ? { runes: params.runes } : {}),
+    });
+
+    if (!phaseResult.ok) return phaseResult;
+    const manifest = phaseResult.value;
+    return {
+      ok: true as const,
+      value: {
+        run: {
+          id: manifest.runId,
+          query: manifest.query,
+          persona: params.persona,
+          runes: params.runes ?? [],
+          stages: params.stages,
+          stageResults: Array.from({ length: manifest.stageCount }, () => null) as never,
+          status: manifest.status === "complete" ? "complete" as const : manifest.status === "failed" ? "failed" as const : "running" as const,
+          createdAt: manifest.createdAt,
+          completedAt: manifest.completedAt ?? undefined,
+        },
+        artifactDir: manifest.artifactDir,
+        runManifestPath: manifest.runManifestPath,
+        ...(manifest.synthesisPath ? { synthesisPath: manifest.synthesisPath } : {}),
+        phaseManifestPath: manifest.manifestPath,
+        targetArtifactPath: manifest.targetArtifactPath,
+        persistenceStatus: "complete" as const,
+      },
+    };
+  }
+
+  const runResult = await executeOmegaSpiral({
+    query: params.query,
+    executor: executor.executor,
+    ...(params.persona ? { persona: params.persona } : {}),
+    ...(params.runes ? { runes: params.runes } : {}),
+    stages: params.stages,
+  });
+  if (!runResult.ok) return runResult;
+
+  const persisted = await persistOmegaRun(runResult.value, omegaToolBaseDir(basePath), {
+    atomicWrite: atomicWriteSync,
+    insertOmegaRun,
+    updateOmegaRunStatus,
+    getOmegaRun,
+    insertSavesuccessResult,
+  });
+  if (!persisted.ok) return persisted;
+
+  return {
+    ok: true as const,
+    value: {
+      run: runResult.value,
+      artifactDir: persisted.value,
+      runManifestPath: omegaRunManifestPath(persisted.value),
+      ...(omegaSynthesisPath(persisted.value) ? { synthesisPath: omegaSynthesisPath(persisted.value) } : {}),
+      persistenceStatus: "complete" as const,
     },
   };
 }
@@ -230,6 +441,56 @@ const volvoxThresholdsSchema = Type.Object({
   propagationStability: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
 }, { additionalProperties: false, description: "Optional VOLVOX threshold overrides. Malformed values are rejected or normalized by the IAM executor." });
 
+const omegaPersonaSchema = Type.Union([
+  Type.Literal("poet"),
+  Type.Literal("engineer"),
+  Type.Literal("skeptic"),
+  Type.Literal("child"),
+], { description: "Optional Omega persona overlay." });
+
+const omegaRuneSchema = Type.Union([
+  Type.Literal("RIGOR"),
+  Type.Literal("HUMAN"),
+  Type.Literal("FORGE"),
+  Type.Literal("IMAGINATION"),
+  Type.Literal("RISK"),
+  Type.Literal("STEWARDSHIP"),
+  Type.Literal("MEANING"),
+  Type.Literal("CLARITY"),
+  Type.Literal("INSIGHT"),
+  Type.Literal("GROUNDING"),
+  Type.Literal("CONVERGENCE"),
+  Type.Literal("PRAXIS"),
+], { description: "IAM governance rune to annotate the Omega run." });
+
+const omegaPhaseUnitTypeSchema = Type.Union([
+  Type.Literal("research-milestone"),
+  Type.Literal("plan-milestone"),
+  Type.Literal("research-slice"),
+  Type.Literal("plan-slice"),
+], { description: "Optional governed phase unit type for phase artifact persistence." });
+
+const omegaStageSchema = Type.Union([
+  Type.Literal("materiality"),
+  Type.Literal("vitality"),
+  Type.Literal("interiority"),
+  Type.Literal("criticality"),
+  Type.Literal("connectivity"),
+  Type.Literal("lucidity"),
+  Type.Literal("necessity"),
+  Type.Literal("reciprocity"),
+  Type.Literal("totality"),
+  Type.Literal("continuity"),
+], { description: "Canonical Omega stage name." });
+
+const omegaRuntimeParameters = {
+  persona: Type.Optional(omegaPersonaSchema),
+  runes: Type.Optional(Type.Array(omegaRuneSchema, { maxItems: 3, description: "Optional IAM governance runes to annotate the run (max 3)." })),
+  unitType: Type.Optional(omegaPhaseUnitTypeSchema),
+  unitId: Type.Optional(Type.String({ description: "Optional governed phase unit id, e.g. M001 or M001/S01." })),
+  targetArtifactPath: Type.Optional(Type.String({ description: "Optional governed phase artifact path (required with unitType/unitId for phase persistence)." })),
+};
+
 const volvoxQueryParameters = {
   volvoxCellType: Type.Optional(volvoxCellTypeSchema),
   volvoxLifecyclePhase: Type.Optional(volvoxLifecyclePhaseSchema),
@@ -251,6 +512,7 @@ const trinityMetadataSchema = Type.Object({
 }, { description: "Optional Trinity metadata payload. Unknown vector keys and malformed values are normalized by IAM." });
 
 export function registerIAMTools(pi: ExtensionAPI): void {
+  const runtimeOptions: IAMToolRuntimeOptions = { ctx: pi as unknown as ExtensionContext, basePath: process.cwd() };
   const recallTool = {
     name: "hammer_recall",
     label: "IAM Recall",
@@ -267,7 +529,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRecall, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMRecall, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(recallTool);
@@ -286,7 +548,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMQuick, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMQuick, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(quickTool);
@@ -305,7 +567,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRefract, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMRefract, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(refractTool);
@@ -315,15 +577,17 @@ export function registerIAMTools(pi: ExtensionAPI): void {
   const spiralTool = {
     name: "hammer_spiral",
     label: "IAM Spiral",
-    description: "Return structured guidance for the deferred Omega spiral executor.",
-    promptSnippet: "Request an Omega spiral over a query",
-    promptGuidelines: ["Use hammer_spiral to get structured guidance while direct spiral execution is deferred."],
+    description: "Execute and persist a native Hammer Omega spiral over a query.",
+    promptSnippet: "Run an Omega spiral over a query",
+    promptGuidelines: ["Use hammer_spiral to execute an Omega spiral and return durable run diagnostics."],
     parameters: Type.Object({
       query: Type.String({ description: "Topic or question for the spiral" }),
-      stages: Type.Optional(Type.Array(Type.String({ description: "Omega stage name" }), { description: "Optional stage names" })),
+      stages: Type.Optional(Type.Array(omegaStageSchema, { maxItems: 10, description: "Optional ordered Omega stage names; defaults to the canonical ten-stage order." })),
+      ...omegaRuntimeParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMSpiral, buildAdapters(false), params);
+      const dbAvailable = await ensureDbOpen();
+      return runIAMTool(executeIAMSpiral, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(spiralTool);
@@ -333,14 +597,16 @@ export function registerIAMTools(pi: ExtensionAPI): void {
   const canonicalSpiralTool = {
     name: "hammer_canonical_spiral",
     label: "IAM Canonical Spiral",
-    description: "Return structured guidance for the canonical deferred Omega spiral executor.",
-    promptSnippet: "Request a canonical Omega spiral over a query",
-    promptGuidelines: ["Use hammer_canonical_spiral for canonical spiral guidance until direct execution is wired."],
+    description: "Execute and persist the canonical ten-stage native Hammer Omega spiral over a query.",
+    promptSnippet: "Run a canonical Omega spiral over a query",
+    promptGuidelines: ["Use hammer_canonical_spiral for the full ten-stage Omega Protocol with durable artifacts and run diagnostics."],
     parameters: Type.Object({
       query: Type.String({ description: "Topic or question for the canonical spiral" }),
+      ...omegaRuntimeParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMCanonicalSpiral, buildAdapters(false), params);
+      const dbAvailable = await ensureDbOpen();
+      return runIAMTool(executeIAMCanonicalSpiral, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(canonicalSpiralTool);
@@ -360,7 +626,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMExplore, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMExplore, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(exploreTool);
@@ -380,7 +646,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMBridge, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMBridge, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(bridgeTool);
@@ -400,7 +666,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCompare, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMCompare, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(compareTool);
@@ -422,7 +688,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCluster, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMCluster, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(clusterTool);
@@ -442,7 +708,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMLandscape, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMLandscape, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(landscapeTool);
@@ -464,7 +730,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMTension, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMTension, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(tensionTool);
@@ -481,7 +747,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       runeName: Type.String({ description: "Rune name to inspect" }),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMRune, buildAdapters(false), params);
+      return runIAMTool(executeIAMRune, buildAdapters(false, runtimeOptions), params);
     },
   };
   pi.registerTool(runeTool);
@@ -498,7 +764,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       runeNames: Type.Array(Type.String({ description: "Rune name" }), { description: "Rune names to validate" }),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMValidate, buildAdapters(false), params);
+      return runIAMTool(executeIAMValidate, buildAdapters(false, runtimeOptions), params);
     },
   };
   pi.registerTool(validateTool);
@@ -516,7 +782,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       target: Type.Optional(Type.String({ description: "Optional target or intended outcome" })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMAssess, buildAdapters(false), params);
+      return runIAMTool(executeIAMAssess, buildAdapters(false, runtimeOptions), params);
     },
   };
   pi.registerTool(assessTool);
@@ -531,7 +797,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_compile to retrieve the canonical IAM rune catalog."],
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMCompile, buildAdapters(false), params);
+      return runIAMTool(executeIAMCompile, buildAdapters(false, runtimeOptions), params);
     },
   };
   pi.registerTool(compileTool);
@@ -552,7 +818,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMHarvest, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMHarvest, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(harvestTool);
@@ -581,7 +847,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRemember, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMRemember, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(rememberTool);
@@ -601,7 +867,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMProvenance, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMProvenance, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(provenanceTool);
@@ -621,7 +887,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxEpoch, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMVolvoxEpoch, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(volvoxEpochTool);
@@ -637,7 +903,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxStatus, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMVolvoxStatus, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(volvoxStatusTool);
@@ -656,7 +922,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxDiagnose, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMVolvoxDiagnose, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(volvoxDiagnoseTool);
@@ -672,7 +938,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCheck, buildAdapters(!!dbAvailable), params);
+      return runIAMTool(executeIAMCheck, buildAdapters(!!dbAvailable, runtimeOptions), params);
     },
   };
   pi.registerTool(checkTool);

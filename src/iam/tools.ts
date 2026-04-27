@@ -32,6 +32,8 @@ import type {
   IAMToolAdapters,
   IAMToolOutput,
   IAMTrinityLens,
+  OmegaPersona,
+  OmegaStageName,
   RuneName,
   SavesuccessScorecard,
 } from "./types.js";
@@ -61,9 +63,27 @@ export const IAM_PUBLIC_TOOL_NAMES = [
   "volvox_diagnose",
 ] as const;
 
-const SPIRAL_DEFERRED_REASON = "Omega spiral requires LLM executor not yet wired";
-const SPIRAL_DEFERRED_GUIDANCE =
-  "Use the research phase commands (Omega Protocol) to invoke a full spiral. Direct tool wiring arrives in S06.";
+const CANONICAL_OMEGA_STAGE_NAMES = [
+  "materiality",
+  "vitality",
+  "interiority",
+  "criticality",
+  "connectivity",
+  "lucidity",
+  "necessity",
+  "reciprocity",
+  "totality",
+  "continuity",
+] as const satisfies readonly OmegaStageName[];
+
+const OMEGA_PERSONAS = ["poet", "engineer", "skeptic", "child"] as const satisfies readonly OmegaPersona[];
+
+const OMEGA_PHASE_UNIT_TYPES = [
+  "research-milestone",
+  "plan-milestone",
+  "research-slice",
+  "plan-slice",
+] as const;
 
 const DB_UNAVAILABLE_ERROR: IAMError = {
   iamErrorKind: "persistence-failed",
@@ -457,30 +477,280 @@ function buildSavesuccessScorecard(
   };
 }
 
-function spiralDeferred(): IAMResult<IAMToolOutput> {
-  return ok({
-    kind: "spiral-deferred",
-    reason: SPIRAL_DEFERRED_REASON,
-    guidance: SPIRAL_DEFERRED_GUIDANCE,
+function normalizeOmegaQuery(value: unknown): IAMResult<string> {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "persistence-failed",
+        remediation: "Provide a non-empty query before running an Omega spiral.",
+        validationGap: "Omega spiral query must be a non-empty string.",
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+  return { ok: true, value: value.trim() };
+}
+
+function normalizeOmegaPersona(value: unknown): IAMResult<OmegaPersona | undefined> {
+  if (value === undefined || value === null || value === "") return { ok: true, value: undefined };
+  if (typeof value === "string" && (OMEGA_PERSONAS as readonly string[]).includes(value)) {
+    return { ok: true, value: value as OmegaPersona };
+  }
+  return {
+    ok: false,
+    error: {
+      iamErrorKind: "persistence-failed",
+      remediation: `Invalid Omega persona. Use one of: ${OMEGA_PERSONAS.join(", ")}.`,
+      validationGap: "Omega persona must be poet, engineer, skeptic, or child.",
+      persistenceStatus: "not-attempted",
+    },
+  };
+}
+
+function normalizeOmegaRunes(value: unknown): IAMResult<RuneName[] | undefined> {
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  if (!Array.isArray(value)) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "rune-validation-failed",
+        remediation: "Provide runes as an array of IAM governance rune names, or omit the field.",
+        validationGap: "Omega runes must be an array.",
+      },
+    };
+  }
+  const validation = validateRuneNames(value);
+  if (!validation.ok) return validation;
+  return { ok: true, value: validation.value };
+}
+
+function normalizeOmegaStages(value: unknown, options: { canonical: boolean }): IAMResult<OmegaStageName[]> {
+  if (options.canonical || value === undefined || value === null || (Array.isArray(value) && value.length === 0)) {
+    return { ok: true, value: [...CANONICAL_OMEGA_STAGE_NAMES] };
+  }
+  if (!Array.isArray(value)) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "invalid-stage-sequence",
+        remediation: `Provide stages as an array of canonical stage names: ${CANONICAL_OMEGA_STAGE_NAMES.join(", ")}.`,
+        validationGap: "Omega stages must be an array.",
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+  if (value.length > CANONICAL_OMEGA_STAGE_NAMES.length) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "invalid-stage-sequence",
+        remediation: `Omega supports at most ${CANONICAL_OMEGA_STAGE_NAMES.length} stages. Use canonical_spiral for the full run or provide a smaller ordered subset.`,
+        validationGap: "Too many Omega stages were requested.",
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+
+  const seen = new Set<OmegaStageName>();
+  const stages: OmegaStageName[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string" || !(CANONICAL_OMEGA_STAGE_NAMES as readonly string[]).includes(raw)) {
+      return {
+        ok: false,
+        error: {
+          iamErrorKind: "invalid-stage-sequence",
+          remediation: `Unknown Omega stage "${String(raw)}". Use stage names: ${CANONICAL_OMEGA_STAGE_NAMES.join(", ")}.`,
+          validationGap: "Omega stage list contains an unknown stage name.",
+          persistenceStatus: "not-attempted",
+        },
+      };
+    }
+    const stage = raw as OmegaStageName;
+    if (seen.has(stage)) {
+      return {
+        ok: false,
+        error: {
+          iamErrorKind: "invalid-stage-sequence",
+          remediation: "Remove duplicate Omega stages before running the spiral.",
+          validationGap: `Duplicate Omega stage: ${stage}.`,
+          persistenceStatus: "not-attempted",
+        },
+      };
+    }
+    seen.add(stage);
+    stages.push(stage);
+  }
+  return { ok: true, value: stages };
+}
+
+function normalizeOptionalString(value: unknown, fieldName: string): IAMResult<string | undefined> {
+  if (value === undefined || value === null || value === "") return { ok: true, value: undefined };
+  if (typeof value === "string" && value.trim().length > 0) return { ok: true, value: value.trim() };
+  return {
+    ok: false,
+    error: {
+      iamErrorKind: "persistence-failed",
+      remediation: `${fieldName} must be a non-empty string when provided.`,
+      validationGap: `${fieldName} is malformed.`,
+      persistenceStatus: "not-attempted",
+    },
+  };
+}
+
+function validateOmegaPhaseParams(args: { unitType?: string; unitId?: string; targetArtifactPath?: string }): IAMResult<void> {
+  const hasAny = !!args.unitType || !!args.unitId || !!args.targetArtifactPath;
+  if (!hasAny) return { ok: true, value: undefined };
+  if (!args.unitType || !args.unitId || !args.targetArtifactPath) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "persistence-failed",
+        remediation: "Provide unitType, unitId, and targetArtifactPath together for phase Omega persistence, or omit all three for a standalone run.",
+        validationGap: "Omega phase persistence requires unitType, unitId, and targetArtifactPath together.",
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+  if (!(OMEGA_PHASE_UNIT_TYPES as readonly string[]).includes(args.unitType)) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "persistence-failed",
+        remediation: `Invalid Omega phase unitType. Use one of: ${OMEGA_PHASE_UNIT_TYPES.join(", ")}.`,
+        validationGap: `Unknown Omega phase unit type "${args.unitType}".`,
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+
+  const milestonePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?$/;
+  const slicePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?\/S\d{2}(?:-[A-Za-z0-9]+)?$/;
+  const pattern = args.unitType.endsWith("-milestone") ? milestonePattern : slicePattern;
+  if (!pattern.test(args.unitId)) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "persistence-failed",
+        remediation: args.unitType.endsWith("-milestone")
+          ? "Use a milestone Omega phase unit id such as M001."
+          : "Use a slice Omega phase unit id such as M001/S01.",
+        validationGap: `Malformed Omega phase unit id "${args.unitId}" for ${args.unitType}.`,
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+
+  return { ok: true, value: undefined };
+}
+
+function omegaOutputFromRun(result: {
+  run: { id: string; status: "running" | "complete" | "failed"; stageResults: unknown[]; synthesis?: string };
+  artifactDir: string;
+  runManifestPath: string;
+  synthesisPath?: string;
+  phaseManifestPath?: string;
+  targetArtifactPath?: string;
+  persistenceStatus: NonNullable<IAMError["persistenceStatus"]>;
+}): IAMToolOutput {
+  return {
+    kind: "omega-run",
+    runId: result.run.id,
+    artifactDir: result.artifactDir,
+    ...(result.phaseManifestPath ? { manifestPath: result.phaseManifestPath } : {}),
+    runManifestPath: result.runManifestPath,
+    ...(result.synthesisPath ? { synthesisPath: result.synthesisPath } : {}),
+    stageCount: result.run.stageResults.length,
+    ...(result.run.synthesis ? { synthesis: result.run.synthesis } : {}),
+    status: result.run.status,
+    persistenceStatus: result.persistenceStatus,
+    ...(result.targetArtifactPath ? { target: result.targetArtifactPath } : {}),
+  };
+}
+
+async function runOmegaTool(
+  adapters: IAMToolAdapters,
+  params: { query: unknown; stages?: unknown; persona?: unknown; runes?: unknown; unitType?: unknown; unitId?: unknown; targetArtifactPath?: unknown },
+  options: { canonical: boolean; toolName: string },
+): Promise<IAMResult<IAMToolOutput>> {
+  const query = normalizeOmegaQuery(params.query);
+  if (!query.ok) return query;
+  const stages = normalizeOmegaStages(params.stages, options);
+  if (!stages.ok) return stages;
+  const persona = normalizeOmegaPersona(params.persona);
+  if (!persona.ok) return persona;
+  const runes = normalizeOmegaRunes(params.runes);
+  if (!runes.ok) return runes;
+  const unitType = normalizeOptionalString(params.unitType, "unitType");
+  if (!unitType.ok) return unitType;
+  const unitId = normalizeOptionalString(params.unitId, "unitId");
+  if (!unitId.ok) return unitId;
+  const targetArtifactPath = normalizeOptionalString(params.targetArtifactPath, "targetArtifactPath");
+  if (!targetArtifactPath.ok) return targetArtifactPath;
+
+  const phaseParams = validateOmegaPhaseParams({
+    ...(unitType.value ? { unitType: unitType.value } : {}),
+    ...(unitId.value ? { unitId: unitId.value } : {}),
+    ...(targetArtifactPath.value ? { targetArtifactPath: targetArtifactPath.value } : {}),
   });
+  if (!phaseParams.ok) return phaseParams;
+
+  const unavailable = requireDb(adapters);
+  if (unavailable) return unavailable;
+
+  if (!adapters.runOmega) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "executor-not-wired",
+        remediation: `${options.toolName} requires an Omega runner adapter from the Hammer extension runtime. Configure a model provider and ensure the extension bootstrap wires runOmega before calling this tool.`,
+        persistenceStatus: "not-attempted",
+      },
+    };
+  }
+
+  try {
+    const run = await adapters.runOmega({
+      query: query.value,
+      stages: stages.value,
+      canonical: options.canonical,
+      ...(persona.value ? { persona: persona.value } : {}),
+      ...(runes.value ? { runes: runes.value } : {}),
+      ...(unitType.value ? { unitType: unitType.value } : {}),
+      ...(unitId.value ? { unitId: unitId.value } : {}),
+      ...(targetArtifactPath.value ? { targetArtifactPath: targetArtifactPath.value } : {}),
+    });
+    if (!run.ok) return { ok: false, error: run.error };
+    return ok(omegaOutputFromRun(run.value));
+  } catch (cause) {
+    return {
+      ok: false,
+      error: {
+        iamErrorKind: "omega-stage-failed",
+        remediation: `${options.toolName} Omega runner threw before returning a structured result. Inspect model/persistence diagnostics and retry.`,
+        persistenceStatus: "partial",
+        cause,
+      },
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Group 1 — Omega spiral tools deferred until executor wiring lands in S06
+// Group 1 — Omega spiral tools
 // ---------------------------------------------------------------------------
 
 export async function executeIAMSpiral(
-  _adapters: IAMToolAdapters,
-  _params: { query: string; stages?: string[] },
+  adapters: IAMToolAdapters,
+  params: { query: string; stages?: string[]; persona?: unknown; runes?: unknown; unitType?: unknown; unitId?: unknown; targetArtifactPath?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
-  return spiralDeferred();
+  return runOmegaTool(adapters, params, { canonical: false, toolName: "hammer_spiral" });
 }
 
 export async function executeIAMCanonicalSpiral(
-  _adapters: IAMToolAdapters,
-  _params: { query: string },
+  adapters: IAMToolAdapters,
+  params: { query: string; persona?: unknown; runes?: unknown; unitType?: unknown; unitId?: unknown; targetArtifactPath?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
-  return spiralDeferred();
+  return runOmegaTool(adapters, { ...params, stages: [...CANONICAL_OMEGA_STAGE_NAMES] }, { canonical: true, toolName: "hammer_canonical_spiral" });
 }
 
 // ---------------------------------------------------------------------------
@@ -895,7 +1165,7 @@ function executorNotWired(toolName: string): IAMResult<IAMToolOutput> {
     ok: false,
     error: {
       iamErrorKind: "executor-not-wired",
-      remediation: `${toolName} requires VOLVOX memory-store adapters from the Hammer extension runtime. Wire run/status/diagnose adapters before calling this tool.`,
+      remediation: `${toolName} requires memory-store adapters from the Hammer extension runtime. Wire the required adapter before calling this tool.`,
       persistenceStatus: "not-attempted",
     },
   };

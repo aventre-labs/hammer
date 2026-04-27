@@ -20,7 +20,7 @@ import {
   executeIAMVolvoxStatus, executeIAMVolvoxDiagnose,
 } from "../../src/iam/tools.js";
 import type { TrinityMetadata } from "../../src/iam/trinity.js";
-import type { IAMError, IAMResult, IAMToolAdapters, IAMToolOutput } from "../../src/iam/types.js";
+import type { IAMError, IAMResult, IAMToolAdapters, IAMToolOutput, OmegaRun } from "../../src/iam/types.js";
 
 // ── Shared stubs ─────────────────────────────────────────────────────────────
 
@@ -154,6 +154,34 @@ const stubVolvoxEpoch = {
   },
 };
 
+
+function makeOmegaRun(overrides: Partial<OmegaRun> = {}): OmegaRun {
+  return {
+    id: "omega-run-001",
+    query: "What is Hammer?",
+    runes: [],
+    stages: ["materiality", "vitality", "interiority", "criticality", "connectivity", "lucidity", "necessity", "reciprocity", "totality", "continuity"],
+    stageResults: Array.from({ length: 10 }, (_value, index) => ({
+      stage: {
+        stageName: ["materiality", "vitality", "interiority", "criticality", "connectivity", "lucidity", "necessity", "reciprocity", "totality", "continuity"][index] as OmegaRun["stages"][number],
+        stageNumber: index + 1,
+        runeName: "TEST",
+        archetypeName: "Test Archetype",
+        phaseLabel: "Test Phase",
+        archetypePromptTemplate: "Test {query} {previous_output}",
+      },
+      prompt: `prompt ${index + 1}`,
+      response: `response ${index + 1}`,
+      completedAt: "2026-04-27T00:00:00.000Z",
+    })),
+    status: "complete",
+    synthesis: "Native Omega synthesis",
+    createdAt: "2026-04-27T00:00:00.000Z",
+    completedAt: "2026-04-27T00:01:00.000Z",
+    ...overrides,
+  };
+}
+
 const stubVolvoxDiagnostic = {
   epochId: "volvox-test-epoch",
   memoryId: "m002",
@@ -202,6 +230,18 @@ const stubAdapters: IAMToolAdapters = {
   }),
   getVolvoxStatus: () => ({ latestEpoch: stubVolvoxEpoch, memories: [MEM_A], diagnostics: [stubVolvoxDiagnostic] }),
   diagnoseVolvox: () => ({ diagnostics: [stubVolvoxDiagnostic], blocking: [stubVolvoxDiagnostic] }),
+  runOmega: async (options) => ({
+    ok: true,
+    value: {
+      run: makeOmegaRun({ query: options.query, stages: options.stages, persona: options.persona, runes: options.runes ?? [] }),
+      artifactDir: "/tmp/hammer/omega/tools/omega-run-001",
+      runManifestPath: "/tmp/hammer/omega/tools/omega-run-001/run-manifest.json",
+      synthesisPath: "/tmp/hammer/omega/tools/omega-run-001/synthesis.md",
+      phaseManifestPath: options.unitType ? "/tmp/hammer/omega/phases/research-milestone/M001/omega-run-001/phase-manifest.json" : undefined,
+      targetArtifactPath: options.targetArtifactPath,
+      persistenceStatus: "complete",
+    },
+  }),
 };
 
 const noDbAdapters: IAMToolAdapters = {
@@ -803,29 +843,147 @@ test("executeIAMCheck reports dbAvailable:false through the adapter", async () =
   assert.deepEqual(output.tools, [...EXPECTED_TOOL_NAMES]);
 });
 
-// ── Group D: Spiral deferred structured outputs ─────────────────────────────
+// ── Group D: Native Omega spiral execution ─────────────────────────────────
 
-test("executeIAMSpiral returns structured deferred guidance", async () => {
+test("executeIAMSpiral delegates to the injected native Omega runner and returns run diagnostics", async () => {
+  let seenStages: string[] | undefined;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    runOmega: async (options) => {
+      seenStages = options.stages;
+      return {
+        ok: true,
+        value: {
+          run: makeOmegaRun({ query: options.query, stages: options.stages }),
+          artifactDir: "/tmp/omega-run",
+          runManifestPath: "/tmp/omega-run/run-manifest.json",
+          synthesisPath: "/tmp/omega-run/synthesis.md",
+          persistenceStatus: "complete",
+        },
+      };
+    },
+  };
+
   const output = assertKind(
-    assertOk(await executeIAMSpiral(stubAdapters, { query: "What is Hammer?", stages: ["materiality"] }), "spiral"),
-    "spiral-deferred",
+    assertOk(await executeIAMSpiral(adapters, { query: "What is Hammer?", stages: ["materiality", "vitality"] }), "spiral"),
+    "omega-run",
   );
 
-  assert.equal(typeof output.reason, "string");
-  assert.ok(output.reason.length > 0);
-  assert.equal(typeof output.guidance, "string");
-  assert.ok(output.guidance.length > 0);
-  assert.ok(output.guidance.includes("S06"));
+  assert.deepEqual(seenStages, ["materiality", "vitality"]);
+  assert.equal(output.runId, "omega-run-001");
+  assert.equal(output.artifactDir, "/tmp/omega-run");
+  assert.equal(output.runManifestPath, "/tmp/omega-run/run-manifest.json");
+  assert.equal(output.synthesisPath, "/tmp/omega-run/synthesis.md");
+  assert.equal(output.stageCount, 10);
+  assert.equal(output.synthesis, "Native Omega synthesis");
+  assert.equal(output.status, "complete");
+  assert.equal(output.persistenceStatus, "complete");
 });
 
-test("executeIAMCanonicalSpiral returns structured deferred guidance", async () => {
+test("executeIAMCanonicalSpiral always requests all ten canonical Omega stages", async () => {
+  let seenStages: string[] | undefined;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    runOmega: async (options) => {
+      seenStages = options.stages;
+      return {
+        ok: true,
+        value: {
+          run: makeOmegaRun({ query: options.query, stages: options.stages }),
+          artifactDir: "/tmp/phase-run",
+          runManifestPath: "/tmp/phase-run/run-manifest.json",
+          synthesisPath: "/tmp/phase-run/synthesis.md",
+          phaseManifestPath: "/tmp/phase-run/phase-manifest.json",
+          targetArtifactPath: "/tmp/M001-RESEARCH.md",
+          persistenceStatus: "complete",
+        },
+      };
+    },
+  };
+
   const output = assertKind(
-    assertOk(await executeIAMCanonicalSpiral(noDbAdapters, { query: "What is Hammer?" }), "canonical spiral"),
-    "spiral-deferred",
+    assertOk(
+      await executeIAMCanonicalSpiral(adapters, {
+        query: "What is Hammer?",
+        unitType: "research-milestone",
+        unitId: "M001",
+        targetArtifactPath: "/tmp/M001-RESEARCH.md",
+      }),
+      "canonical spiral",
+    ),
+    "omega-run",
   );
 
-  assert.equal(typeof output.reason, "string");
-  assert.ok(output.reason.length > 0);
-  assert.equal(typeof output.guidance, "string");
-  assert.ok(output.guidance.length > 0);
+  assert.deepEqual(seenStages, ["materiality", "vitality", "interiority", "criticality", "connectivity", "lucidity", "necessity", "reciprocity", "totality", "continuity"]);
+  assert.equal(output.manifestPath, "/tmp/phase-run/phase-manifest.json");
+  assert.equal(output.target, "/tmp/M001-RESEARCH.md");
+});
+
+test("executeIAMSpiral returns executor-not-wired when no Omega runner adapter is installed", async () => {
+  const unwired: IAMToolAdapters = {
+    queryMemories: stubAdapters.queryMemories,
+    getActiveMemories: stubAdapters.getActiveMemories,
+    createMemory: stubAdapters.createMemory,
+    traverseGraph: stubAdapters.traverseGraph,
+    isDbAvailable: stubAdapters.isDbAvailable,
+  };
+
+  const error = assertError(
+    await executeIAMSpiral(unwired, { query: "What is Hammer?" }),
+    "executor-not-wired",
+    "spiral unwired",
+  );
+
+  assert.equal(error.persistenceStatus, "not-attempted");
+  assert.ok(error.remediation.includes("hammer_spiral"));
+});
+
+test("executeIAMSpiral rejects malformed input before calling the Omega runner", async () => {
+  let called = false;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    runOmega: async () => {
+      called = true;
+      return stubAdapters.runOmega!({ query: "x", stages: ["materiality"], canonical: false });
+    },
+  };
+
+  const emptyQuery = assertError(
+    await executeIAMSpiral(adapters, { query: "   " }),
+    "persistence-failed",
+    "spiral empty query",
+  );
+  assert.match(emptyQuery.validationGap ?? "", /query/);
+
+  const badStage = assertError(
+    await executeIAMSpiral(adapters, { query: "What is Hammer?", stages: ["not-a-stage"] }),
+    "invalid-stage-sequence",
+    "spiral bad stage",
+  );
+  assert.match(badStage.remediation, /materiality/);
+  assert.equal(called, false);
+});
+
+test("executeIAMSpiral propagates persistence failures from the Omega runner", async () => {
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    runOmega: async () => ({
+      ok: false,
+      error: {
+        iamErrorKind: "persistence-failed",
+        remediation: "Phase manifest write failed.",
+        persistenceStatus: "partial",
+        target: "/tmp/phase-manifest.json",
+      },
+    }),
+  };
+
+  const error = assertError(
+    await executeIAMSpiral(adapters, { query: "What is Hammer?" }),
+    "persistence-failed",
+    "spiral persistence failure",
+  );
+
+  assert.equal(error.persistenceStatus, "partial");
+  assert.equal(error.target, "/tmp/phase-manifest.json");
 });

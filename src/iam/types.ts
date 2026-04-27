@@ -279,7 +279,7 @@ export type IAMToolOutput =
   | { kind: "volvox-status"; epoch?: VolvoxEpochResult; memories: IAMMemoryListEntry[]; diagnostics: VolvoxDiagnostic[] }
   | { kind: "volvox-diagnostics"; diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] }
   | { kind: "check-result"; tools: string[]; kernelVersion: string; dbAvailable: boolean }
-  | { kind: "spiral-deferred"; reason: string; guidance: string };
+  | { kind: "omega-run"; runId: string; artifactDir: string; manifestPath?: string; runManifestPath: string; synthesisPath?: string; stageCount: number; synthesis?: string; status: OmegaRun["status"] | "partial"; persistenceStatus: NonNullable<IAMError["persistenceStatus"]>; target?: string };
 
 export interface IAMTrinityLens {
   ity?: TrinityVector | Record<string, number>;
@@ -314,6 +314,29 @@ export interface IAMToolVolvoxStatus {
   epochResult?: VolvoxEpochResult | null;
 }
 
+export interface IAMOmegaRunOptions {
+  query: string;
+  stages: OmegaStageName[];
+  canonical: boolean;
+  persona?: OmegaPersona;
+  runes?: RuneName[];
+  unitType?: string;
+  unitId?: string;
+  targetArtifactPath?: string;
+}
+
+export interface IAMOmegaRunResult {
+  run: OmegaRun;
+  artifactDir: string;
+  runManifestPath: string;
+  synthesisPath?: string;
+  phaseManifestPath?: string;
+  targetArtifactPath?: string;
+  persistenceStatus: NonNullable<IAMError["persistenceStatus"]>;
+}
+
+export type IAMOmegaRunner = (options: IAMOmegaRunOptions) => Promise<IAMResult<IAMOmegaRunResult>>;
+
 export interface IAMToolAdapters {
   queryMemories: (query: string, k?: number, category?: string, options?: IAMMemoryQueryOptions) => IAMMemoryListEntry[];
   getActiveMemories: (limit?: number, options?: IAMMemoryQueryOptions) => IAMActiveMemoryEntry[];
@@ -322,5 +345,6 @@ export interface IAMToolAdapters {
   runVolvoxEpoch?: (options?: { trigger?: string; now?: string | Date; thresholds?: Partial<VolvoxThresholds> | null; dryRun?: boolean }) => VolvoxEpochResult | Promise<VolvoxEpochResult>;
   getVolvoxStatus?: () => IAMToolVolvoxStatus | Promise<IAMToolVolvoxStatus>;
   diagnoseVolvox?: (params?: { memoryId?: string; includeInfo?: boolean }) => { diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] } | Promise<{ diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] }>;
+  runOmega?: IAMOmegaRunner;
   isDbAvailable: () => boolean;
 }
