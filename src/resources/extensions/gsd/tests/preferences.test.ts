@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { HAMMER_HOME_ENV } from "../../../../hammer-identity/index.ts";
 import {
   validatePreferences,
   applyModeDefaults,
@@ -55,7 +56,7 @@ test("git.merge_to_main produces deprecation warning", () => {
 test("getIsolationMode defaults to none when preferences have no isolation setting", () => {
   // Validate the default via validatePreferences: when no isolation is set,
   // preferences.git.isolation is undefined, and getIsolationMode returns "none".
-  // Default changed from "worktree" to "none" so GSD works out of the box
+  // Default changed from "worktree" to "none" so Hammer works out of the box
   // without PREFERENCES.md (#2480).
   const { preferences } = validatePreferences({});
   assert.equal(preferences.git?.isolation, undefined, "no isolation in empty prefs");
@@ -751,24 +752,32 @@ test("loadEffectiveGSDPreferences exposes slice_parallel prefs to runtime caller
 test("preferences paths use canonical uppercase filenames", () => {
   const originalCwd = process.cwd();
   const originalGsdHome = process.env.GSD_HOME;
+  const originalHammerHome = process.env[HAMMER_HOME_ENV];
   const tempProject = mkdtempSync(join(tmpdir(), "gsd-prefs-canonical-project-"));
   const tempGsdHome = mkdtempSync(join(tmpdir(), "gsd-prefs-canonical-home-"));
 
   try {
     mkdirSync(join(tempProject, ".gsd"), { recursive: true });
-    process.env.GSD_HOME = tempGsdHome;
+    process.env[HAMMER_HOME_ENV] = tempGsdHome;
+    delete process.env.GSD_HOME;
     process.chdir(tempProject);
 
     assert.equal(basename(getGlobalGSDPreferencesPath()), "PREFERENCES.md");
     assert.ok(
+      getGlobalGSDPreferencesPath().startsWith(tempGsdHome),
+      "global preferences path should prefer HAMMER_HOME when set",
+    );
+    assert.ok(
       getProjectGSDPreferencesPath().endsWith("/.gsd/PREFERENCES.md")
         || getProjectGSDPreferencesPath().endsWith("\\.gsd\\PREFERENCES.md"),
-      "project preferences path should use .gsd/PREFERENCES.md",
+      "legacy project preferences path should use resolved .gsd/PREFERENCES.md when the project is still on the legacy state bridge",
     );
   } finally {
     process.chdir(originalCwd);
     if (originalGsdHome === undefined) delete process.env.GSD_HOME;
     else process.env.GSD_HOME = originalGsdHome;
+    if (originalHammerHome === undefined) delete process.env[HAMMER_HOME_ENV];
+    else process.env[HAMMER_HOME_ENV] = originalHammerHome;
     rmSync(tempProject, { recursive: true, force: true });
     rmSync(tempGsdHome, { recursive: true, force: true });
   }
@@ -963,6 +972,14 @@ test("language: value exactly 50 characters is accepted", () => {
   const { errors, preferences } = validatePreferences({ language: "a".repeat(50) });
   assert.equal(errors.length, 0);
   assert.equal(preferences.language, "a".repeat(50));
+});
+
+test("renderPreferencesForSystemPrompt uses Hammer-facing skill label and legacy compatibility note", () => {
+  const output = renderPreferencesForSystemPrompt({ always_use_skills: ["test"] });
+  assert.match(output, /^## Hammer Skill Preferences/m);
+  assert.match(output, /explicit skill-selection policy for Hammer work/);
+  assert.match(output, /Legacy `GSD Skill Preferences` blocks are parsed as compatibility input/);
+  assert.doesNotMatch(output, /^## GSD Skill Preferences/m);
 });
 
 test("language: renderPreferencesForSystemPrompt includes language instruction when set", () => {

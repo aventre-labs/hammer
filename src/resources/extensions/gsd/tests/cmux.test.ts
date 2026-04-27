@@ -104,7 +104,7 @@ describe("autoEnableCmuxPreferences", () => {
       "version: 1",
       "---",
       "",
-      "# GSD Skill Preferences",
+      "# Hammer Skill Preferences",
     ].join("\n"));
 
     const result = autoEnableCmuxPreferences();
@@ -132,7 +132,7 @@ describe("autoEnableCmuxPreferences", () => {
       "  browser: true",
       "---",
       "",
-      "# GSD Skill Preferences",
+      "# Hammer Skill Preferences",
     ].join("\n"));
 
     const result = autoEnableCmuxPreferences();

@@ -29,7 +29,7 @@ const BASE_VARS = {
   skillActivation: "Load the relevant skills.",
 };
 
-const DEFAULT_SKILL_ACTIVATION = "If a `GSD Skill Preferences` block is present in system context, use it and the `<available_skills>` catalog in your system prompt to decide which skills to load and follow for this unit, without relaxing required verification or artifact rules.";
+const DEFAULT_SKILL_ACTIVATION = "If a `Hammer Skill Preferences` block is present in system context, use it and the `<available_skills>` catalog in your system prompt to decide which skills to load and follow for this unit, without relaxing required verification, artifact, or IAM awareness rules. Treat a legacy `GSD Skill Preferences` block as a compatibility preference label during migration.";
 
 function loadPromptWithDefaultSkillActivation(name: string, vars: Record<string, string> = {}): string {
   return loadPrompt(name, { skillActivation: DEFAULT_SKILL_ACTIVATION, ...vars });

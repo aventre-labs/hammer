@@ -196,7 +196,7 @@ describe('unique-milestone-ids', async () => {
     const renderedCoerced = renderPreferencesForSystemPrompt(prefsCoerced);
     assert.ok(!renderedCoerced.includes('some preference values were ignored'), 'truthy non-boolean coerces without validation error');
 
-    // GSDPreferences interface accepts the field (compile-time check — if this compiles, it works)
+    // Hammer preferences interface accepts the field (compile-time check — if this compiles, it works)
     const prefs: GSDPreferences = { unique_milestone_ids: true, version: 1 };
     assert.ok(prefs.unique_milestone_ids === true, 'GSDPreferences interface accepts unique_milestone_ids');
   }

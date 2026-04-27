@@ -1,5 +1,5 @@
 /**
- * GSD Prompt Loader
+ * Hammer Prompt Loader
  *
  * Reads .md prompt templates from the prompts/ directory and substitutes
  * {{variable}} placeholders with provided values.
@@ -8,8 +8,8 @@
  * They use {{variableName}} syntax for substitution.
  *
  * All templates are eagerly loaded into cache at module init via warmCache().
- * This prevents a running session from being invalidated when another `gsd`
- * launch overwrites ~/.gsd/agent/ with newer templates via initResources().
+ * This prevents a running session from being invalidated when another `hammer`
+ * launch overwrites ~/.hammer/agent/ with newer templates via initResources().
  * Without eager caching, the in-memory extension code (which knows variable
  * set A) can read a newer template from disk (which expects variable set B),
  * causing a "template declares {{X}} but no value was provided" crash
@@ -17,6 +17,7 @@
  * that aren't read until the end of a long auto-mode run.
  */
 
+import { HAMMER_HOME_ENV, HAMMER_GLOBAL_HOME_DIR_NAME } from "../../../hammer-identity/index.js";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { GSDError, GSD_PARSE_ERROR } from "./errors.js";
 import { join, dirname } from "node:path";
@@ -54,19 +55,20 @@ export function resolveExtensionDirFromCandidates(
 }
 
 /**
- * Resolve the GSD extension directory.
+ * Resolve the Hammer workflow extension directory.
  *
  * `import.meta.url` resolves to whichever copy of this module is executing.
  * On Windows (npm global install via MSYS2 / Git Bash) this can resolve to
  * the npm-global `AppData/Roaming/npm/…` path, which does NOT contain the
  * prompts/ and templates/ subtrees that initResources() copies to
- * `~/.gsd/agent/extensions/gsd/`. Detect the mismatch and fall back to
- * the user-local agent directory.
+ * `~/.hammer/agent/extensions/gsd/` (extension-id compatibility path). Detect the mismatch and fall back to
+ * the user-local agent directory. The `gsd` segment remains the extension id
+ * for package compatibility, not product identity.
  */
 function resolveExtensionDir(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  const agentGsdDir = join(gsdHome, "agent", "extensions", "gsd");
+  const hammerHome = process.env[HAMMER_HOME_ENV] || process.env.GSD_HOME || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+  const agentGsdDir = join(hammerHome, "agent", "extensions", "gsd");
   return resolveExtensionDirFromCandidates(moduleDir, agentGsdDir);
 }
 
@@ -76,7 +78,7 @@ const templatesDir = join(__extensionDir, "templates");
 
 /**
  * Return the resolved templates directory path for use in prompts.
- * Avoids hardcoding `~/.gsd/agent/extensions/gsd/templates/` in templates. (#3575)
+ * Avoids hardcoding `~/.hammer/agent/extensions/gsd/templates/` (extension-id compatibility path) in templates. (#3575)
  */
 export function getTemplatesDir(): string {
   return templatesDir;
@@ -124,6 +126,11 @@ function warmCache(): void {
   }
 }
 
+export function _clearPromptTemplateCacheForTests(): void {
+  templateCache.clear();
+  warmCache();
+}
+
 // Snapshot all templates at module load time
 warmCache();
 
@@ -142,7 +149,7 @@ export function loadPrompt(name: string, vars: Record<string, string> = {}): str
   }
 
   const effectiveVars = {
-    skillActivation: "If a `GSD Skill Preferences` block is present in system context, use it and the `<available_skills>` catalog in your system prompt to decide which skills to load and follow for this unit, without relaxing required verification or artifact rules.",
+    skillActivation: "If a `Hammer Skill Preferences` block is present in system context, use it and the `<available_skills>` catalog in your system prompt to decide which skills to load and follow for this unit, without relaxing required verification, artifact, or IAM awareness rules. Treat a legacy `GSD Skill Preferences` block as a compatibility preference label during migration.",
     ...vars,
   };
 
@@ -173,7 +180,7 @@ export function loadPrompt(name: string, vars: Record<string, string> = {}): str
 
     // Use split/join instead of replaceAll to avoid JavaScript's special
     // replacement patterns ($', $`, $&) being interpreted in the value.
-    // See: https://github.com/gsd-build/gsd-2/issues/2968
+    // See: https://github.com/hammer-build/hammer/issues/2968 (migration compatibility issue)
     content = content.split(`{{${key}}}`).join(safeValue);
   }
 

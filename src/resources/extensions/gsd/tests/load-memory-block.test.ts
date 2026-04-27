@@ -26,7 +26,7 @@ test('loadMemoryBlock: renders MEMORY block when critical memories exist', async
 
     const block = await loadMemoryBlock('');
     assert.ok(block.length > 0, 'block should be non-empty when critical memories exist');
-    assert.match(block, /\[MEMORY — Critical and prompt-relevant memories/);
+    assert.match(block, /\[MEMORY — Critical and prompt-relevant memories from the Hammer memory store\]/);
     assert.match(block, /memories table as the single source of truth/);
     assert.match(block, /\[VOLVOX: cell=GERMLINE stability=0\.85 lifecycle=juvenile kirk=0 dormant=0 eligible=true\]/);
     assert.doesNotMatch(block, /diagnostics_json|thresholds_json|\{\"/);

@@ -35,11 +35,31 @@ test("workflow-start prompt defaults to autonomy instead of per-phase confirmati
   assert.doesNotMatch(prompt, /Gate between phases/i);
 });
 
-test("system prompt references CODEBASE.md and /gsd codebase", () => {
+test("system prompt references CODEBASE.md and /hammer codebase", () => {
   const prompt = readPrompt("system");
   assert.match(prompt, /CODEBASE\.md/);
-  assert.match(prompt, /\/gsd codebase \[generate\|update\|stats\]/);
+  assert.match(prompt, /\/hammer codebase \[generate\|update\|stats\]/);
   assert.match(prompt, /auto-refreshes it when tracked files change/i);
+});
+
+test("system prompt declares Hammer identity and awareness-required fail-closed semantics", () => {
+  const prompt = readPrompt("system");
+  assert.match(prompt, /^## Hammer/m);
+  assert.match(prompt, /You are Hammer/i);
+  assert.match(prompt, /## Hammer Awareness Contract/);
+  assert.match(prompt, /Hammer is awareness-required/i);
+  assert.match(prompt, /Fail closed when awareness is required but missing/i);
+  assert.match(prompt, /missing IAM role, missing Omega phase output, missing provenance/i);
+  assert.match(prompt, /structured remediation/i);
+  assert.doesNotMatch(prompt, /^## GSD - Get Shit Done/m);
+  assert.doesNotMatch(prompt, /You are GSD/i);
+});
+
+test("system prompt frames DB-backed gsd_* names as compatibility execution substrate", () => {
+  const prompt = readPrompt("system");
+  assert.match(prompt, /DB-Backed Tool Compatibility/);
+  assert.match(prompt, /DB-backed `gsd_\*` tool-name compatibility aliases/);
+  assert.match(prompt, /available execution substrate, not product identity/i);
 });
 
 test("system prompt hard rules forbid fabricating user responses", () => {

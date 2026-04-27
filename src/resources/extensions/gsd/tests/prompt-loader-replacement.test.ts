@@ -12,6 +12,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { loadPrompt } from "../prompt-loader.ts";
+
 /**
  * Replicate the OLD (buggy) substitution logic from prompt-loader.ts.
  * Uses replaceAll which interprets $' $` $& in the replacement string.
@@ -117,6 +119,65 @@ test("multiple $-pattern values do not cause cascading expansion", () => {
   // The buggy version will be larger due to expansion
   assert.ok(buggyResult.length > fixedResult.length,
     `Buggy result (${buggyResult.length}) should be larger than fixed (${fixedResult.length}) due to $-pattern expansion`);
+});
+
+test("loadPrompt default skillActivation is Hammer-first and preserves legacy preference compatibility", () => {
+  const result = loadPrompt("execute-task", {
+    workingDirectory: "/tmp/test-project",
+    milestoneId: "M001",
+    sliceId: "S01",
+    sliceTitle: "Test Slice",
+    taskId: "T01",
+    taskTitle: "Implement feature",
+    planPath: ".hammer/milestones/M001/slices/S01/S01-PLAN.md",
+    taskPlanPath: ".hammer/milestones/M001/slices/S01/tasks/T01-PLAN.md",
+    taskPlanInline: "Task plan",
+    slicePlanExcerpt: "Slice excerpt",
+    carryForwardSection: "Carry forward",
+    resumeSection: "Resume",
+    priorTaskLines: "- (no prior tasks)",
+    taskSummaryPath: "/tmp/test-project/.hammer/milestones/M001/slices/S01/tasks/T01-SUMMARY.md",
+    inlinedTemplates: "Template",
+    verificationBudget: "~10K chars",
+    overridesSection: "",
+    runtimeContext: "Runtime context",
+    phaseAnchorSection: "Phase anchors",
+    gatesToClose: "Gates",
+  });
+
+  assert.ok(!result.includes("{{skillActivation}}"));
+  assert.match(result, /Hammer Skill Preferences/);
+  assert.match(result, /legacy `GSD Skill Preferences` block as a compatibility preference label/);
+  assert.match(result, /IAM awareness rules/);
+  assert.doesNotMatch(result, /If a `GSD Skill Preferences` block is present in system context/);
+});
+
+test("loadPrompt missing variable errors remain actionable", () => {
+  assert.throws(
+    () => loadPrompt("execute-task", {
+      workingDirectory: "/tmp/test-project",
+      milestoneId: "M001",
+      sliceId: "S01",
+      sliceTitle: "Test Slice",
+      taskId: "T01",
+      // taskTitle intentionally omitted.
+      planPath: ".hammer/milestones/M001/slices/S01/S01-PLAN.md",
+      taskPlanPath: ".hammer/milestones/M001/slices/S01/tasks/T01-PLAN.md",
+      taskPlanInline: "Task plan",
+      slicePlanExcerpt: "Slice excerpt",
+      carryForwardSection: "Carry forward",
+      resumeSection: "Resume",
+      priorTaskLines: "- (no prior tasks)",
+      taskSummaryPath: "/tmp/test-project/.hammer/milestones/M001/slices/S01/tasks/T01-SUMMARY.md",
+      inlinedTemplates: "Template",
+      verificationBudget: "~10K chars",
+      overridesSection: "",
+      runtimeContext: "Runtime context",
+      phaseAnchorSection: "Phase anchors",
+      gatesToClose: "Gates",
+    }),
+    /loadPrompt\("execute-task"\): template declares \{\{taskTitle\}\}/,
+  );
 });
 
 test("realistic execute-task prompt does not explode with $' in slice plan", () => {

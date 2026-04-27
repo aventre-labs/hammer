@@ -187,7 +187,7 @@ test('loadKnowledgeBlock: uses project knowledge alone when no global file', () 
   writeFileSync(join(cwd, '.gsd', 'KNOWLEDGE.md'), 'K001: Use real DB');
 
   const result = loadKnowledgeBlock(gsdHome, cwd);
-  assert.ok(result.block.includes('[KNOWLEDGE — Rules, patterns, and lessons learned]'));
+  assert.ok(result.block.includes('[KNOWLEDGE — Hammer rules, patterns, and lessons learned]'));
   assert.ok(result.block.includes('## Project Knowledge'));
   assert.ok(result.block.includes('K001: Use real DB'));
   assert.ok(!result.block.includes('## Global Knowledge'));
@@ -205,7 +205,7 @@ test('loadKnowledgeBlock: uses global knowledge alone when no project file', () 
   writeFileSync(join(gsdHome, 'agent', 'KNOWLEDGE.md'), 'G001: Respond in English');
 
   const result = loadKnowledgeBlock(gsdHome, cwd);
-  assert.ok(result.block.includes('[KNOWLEDGE — Rules, patterns, and lessons learned]'));
+  assert.ok(result.block.includes('[KNOWLEDGE — Hammer rules, patterns, and lessons learned]'));
   assert.ok(result.block.includes('## Global Knowledge'));
   assert.ok(result.block.includes('G001: Respond in English'));
   assert.ok(!result.block.includes('## Project Knowledge'));

@@ -13,16 +13,16 @@ function readPrompt(name: string): string {
 
 // ─── Layer 1: system.md global guardrail ──────────────────────────────────────
 
-test("system.md anti-patterns section prohibits direct .gsd/gsd.db access", () => {
+test("system.md anti-patterns section prohibits direct Hammer state DB access", () => {
   const prompt = readPrompt("system");
   assert.match(
     prompt,
-    /Never query.*\.gsd\/gsd\.db.*directly/i,
-    "system.md must prohibit direct .gsd/gsd.db access in the anti-patterns section",
+    /Never query.*\.hammer\/gsd\.db.*\.gsd\/gsd\.db.*directly/i,
+    "system.md must prohibit direct Hammer and legacy state DB access in the anti-patterns section",
   );
   assert.match(prompt, /sqlite3/, "system.md DB guardrail must name the sqlite3 CLI");
   assert.match(prompt, /better-sqlite3/, "system.md DB guardrail must name better-sqlite3");
-  assert.match(prompt, /gsd_\*/, "system.md DB guardrail must redirect to gsd_* tools");
+  assert.match(prompt, /gsd_\*/, "system.md DB guardrail must redirect to gsd_* compatibility tools");
 });
 
 test("system.md DB guardrail explains single-writer WAL risk", () => {

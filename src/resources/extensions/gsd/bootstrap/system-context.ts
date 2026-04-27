@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 
+import { HAMMER_HOME_ENV, HAMMER_GLOBAL_HOME_DIR_NAME, HAMMER_STATE_DIR_NAME } from "../../../../hammer-identity/index.js";
 import { logWarning } from "../workflow-logger.js";
 import { debugTime } from "../debug-logger.js";
 import { loadPrompt, getTemplatesDir } from "../prompt-loader.js";
@@ -21,7 +22,8 @@ import { formatOverridesSection, formatShortcut, loadActiveOverrides, loadFile, 
 import { toPosixPath } from "../../shared/mod.js";
 import { autoEnableCmuxPreferences } from "../commands-cmux.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+const hammerHome = process.env[HAMMER_HOME_ENV] || process.env.GSD_HOME || join(homedir(), HAMMER_GLOBAL_HOME_DIR_NAME);
+const legacyGsdHome = process.env.GSD_HOME || join(homedir(), ".gsd"); // legacy global-home bridge
 
 /**
  * Bundled skill triggers — resolved dynamically at runtime instead of
@@ -46,7 +48,7 @@ export const BUNDLED_SKILL_TRIGGERS: Array<{ trigger: string; skill: string }> =
   { trigger: "Block completion claims until verification evidence has been produced in this message", skill: "verify-before-complete" },
   { trigger: "Create a Model Context Protocol (MCP) server — tool design, error handling, Inspector testing, evals", skill: "create-mcp-server" },
   { trigger: "Write documentation, proposals, specs, RFCs, or READMEs for a fresh reader", skill: "write-docs" },
-  { trigger: "Post-mortem a failed GSD auto-mode run using .gsd/activity, .gsd/journal, and .gsd/metrics.json", skill: "forensics" },
+  { trigger: "Post-mortem a failed Hammer auto-mode run using .hammer/activity, .hammer/journal, and .hammer/metrics.json", skill: "forensics" },
   { trigger: "Prepare a clean cross-session handoff — continue.md + summary updates (pause/resume work)", skill: "handoff" },
   { trigger: "Security review with STRIDE threat modeling and exploit-scenario reporting", skill: "security-review" },
   { trigger: "HTTP/REST/GraphQL API design — verbs, status codes, pagination, errors, idempotency, versioning", skill: "api-design" },
@@ -70,15 +72,16 @@ function buildBundledSkillsTable(): string {
 
 function warnDeprecatedAgentInstructions(): void {
   const paths = [
-    join(gsdHome, "agent-instructions.md"),
-    join(process.cwd(), ".gsd", "agent-instructions.md"),
+    join(hammerHome, "agent-instructions.md"),
+    join(legacyGsdHome, "agent-instructions.md"), // legacy global-home bridge
+    join(process.cwd(), HAMMER_STATE_DIR_NAME, "agent-instructions.md"),
+    join(process.cwd(), ".gsd", "agent-instructions.md"), // legacy state bridge
   ];
   for (const path of paths) {
     if (existsSync(path)) {
       console.warn(
-        `[GSD] DEPRECATED: ${path} is no longer loaded. ` +
-        `Migrate your instructions to AGENTS.md (or CLAUDE.md) in the same directory. ` +
-        `See https://github.com/gsd-build/GSD-2/issues/1492`,
+        `[Hammer] DEPRECATED: ${path} is no longer loaded. ` +
+        `Migrate your instructions to AGENTS.md (or CLAUDE.md) in the same directory.`,
       );
     }
   }
@@ -88,7 +91,7 @@ export async function buildBeforeAgentStartResult(
   event: { prompt: string; systemPrompt: string },
   ctx: ExtensionContext,
 ): Promise<{ systemPrompt: string; message?: { customType: string; content: string; display: false } } | undefined> {
-  if (!existsSync(join(process.cwd(), ".gsd"))) return undefined;
+  if (!existsSync(join(process.cwd(), HAMMER_STATE_DIR_NAME)) && !existsSync(join(process.cwd(), ".gsd"))) return undefined; // legacy state bridge
 
   const stopContextTimer = debugTime("context-inject");
   const systemContent = loadPrompt("system", {
@@ -105,7 +108,7 @@ export async function buildBeforeAgentStartResult(
       if (autoEnableCmuxPreferences()) {
         loadedPreferences = loadEffectiveGSDPreferences();
         ctx.ui.notify(
-          "cmux detected — auto-enabled. Run /gsd cmux off to disable.",
+          "cmux detected — auto-enabled. Run /hammer cmux off to disable.",
           "info",
         );
       }
@@ -121,16 +124,16 @@ export async function buildBeforeAgentStartResult(
     preferenceBlock = `\n\n${renderPreferencesForSystemPrompt(loadedPreferences.preferences, report.resolutions)}`;
     if (report.warnings.length > 0) {
       ctx.ui.notify(
-        `GSD skill preferences: ${report.warnings.length} unresolved skill${report.warnings.length === 1 ? "" : "s"}: ${report.warnings.join(", ")}`,
+        `Hammer skill preferences: ${report.warnings.length} unresolved skill${report.warnings.length === 1 ? "" : "s"}: ${report.warnings.join(", ")}`,
         "warning",
       );
     }
   }
 
-  const { block: knowledgeBlock, globalSizeKb } = loadKnowledgeBlock(gsdHome, process.cwd());
+  const { block: knowledgeBlock, globalSizeKb } = loadKnowledgeBlock(hammerHome, process.cwd());
   if (globalSizeKb > 4) {
     ctx.ui.notify(
-      `GSD: ~/.gsd/agent/KNOWLEDGE.md is ${globalSizeKb.toFixed(1)}KB — consider trimming to keep system prompt lean.`,
+      `Hammer: ~/.hammer/agent/KNOWLEDGE.md is ${globalSizeKb.toFixed(1)}KB — consider trimming to keep system prompt lean.`,
       "warning",
     );
   }
@@ -142,7 +145,7 @@ export async function buildBeforeAgentStartResult(
     const { backfillDecisionsToMemories } = await import("../memory-backfill.js");
     const written = backfillDecisionsToMemories();
     if (written > 0) {
-      ctx.ui.notify(`GSD: backfilled ${written} decision${written === 1 ? "" : "s"} into the memory store (ADR-013).`, "info");
+      ctx.ui.notify(`Hammer: backfilled ${written} decision${written === 1 ? "" : "s"} into the memory store (ADR-013).`, "info");
     }
   } catch (e) {
     logWarning("bootstrap", `decisions backfill failed: ${(e as Error).message}`);
@@ -179,14 +182,14 @@ export async function buildBeforeAgentStartResult(
       const rawContent = rawCodebase.trim();
       if (rawContent) {
         // Cap injection size to ~2 000 tokens to avoid bloating every request.
-        // Full map is always available at .gsd/CODEBASE.md.
+        // Full map is always available at the resolved Hammer state root CODEBASE.md.
         const MAX_CODEBASE_CHARS = 8_000;
         const generatedMatch = rawContent.match(/Generated: (\S+)/);
         const generatedAt = generatedMatch?.[1] ?? "unknown";
         const content = rawContent.length > MAX_CODEBASE_CHARS
-          ? rawContent.slice(0, MAX_CODEBASE_CHARS) + "\n\n*(truncated — see .gsd/CODEBASE.md for full map)*"
+          ? rawContent.slice(0, MAX_CODEBASE_CHARS) + "\n\n*(truncated — see the resolved Hammer state root CODEBASE.md for full map)*"
           : rawContent;
-        codebaseBlock = `\n\n[PROJECT CODEBASE — File structure and descriptions (generated ${generatedAt}, auto-refreshed when GSD detects tracked file changes; use /gsd codebase stats for status)]\n\n${content}`;
+        codebaseBlock = `\n\n[PROJECT CODEBASE — Hammer file structure and descriptions (generated ${generatedAt}, auto-refreshed when Hammer detects tracked file changes; use /hammer codebase stats for status)]\n\n${content}`;
       }
     } catch (e) {
       logWarning("bootstrap", `CODEBASE file read failed: ${(e as Error).message}`);
@@ -204,10 +207,10 @@ export async function buildBeforeAgentStartResult(
 
   const subagentModelConfig = resolveModelWithFallbacksForUnit("subagent");
   const subagentModelBlock = subagentModelConfig
-    ? `\n\n## Subagent Model\n\nWhen spawning subagents via the \`subagent\` tool, always pass \`model: "${subagentModelConfig.primary}"\` in the tool call parameters. Never omit this — always specify it explicitly.`
+    ? `\n\n## Subagent Model\n\nWhen spawning subagents via the \`subagent\` tool, always pass \`model: "${subagentModelConfig.primary}"\` in the tool call parameters. Never omit this — always specify it explicitly. IAM_SUBAGENT_CONTRACT-governed prompts keep their role/envelope boundary.`
     : "";
 
-  const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${codebaseBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}${subagentModelBlock}`;
+  const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — HAMMER]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${codebaseBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}${subagentModelBlock}`;
 
   stopContextTimer({
     systemPromptSize: fullSystem.length,
@@ -236,7 +239,7 @@ export async function buildBeforeAgentStartResult(
  * combining two memory sets:
  *
  * 1. Always-on "critical" set — top-ranked active memories in categories
- *    that future GSD turns generally want without asking. After ADR-013
+ *    that future Hammer turns generally want without asking. After ADR-013
  *    expands this to include "architecture", these memories serve as the
  *    auto-injected replacement for inlineDecisionsFromDb when the cutover
  *    in step 6 lands.
@@ -280,21 +283,25 @@ export async function loadMemoryBlock(userPrompt: string): Promise<string> {
     const formatted = formatMemoriesForPrompt(merged, CHAR_BUDGET);
     if (!formatted) return "";
 
-    return `\n\n[MEMORY — Critical and prompt-relevant memories from the GSD memory store]\n\n${formatted}`;
+    return `\n\n[MEMORY — Critical and prompt-relevant memories from the Hammer memory store]\n\n${formatted}`;
   } catch (e) {
     logWarning("bootstrap", `memory block fetch failed: ${(e as Error).message}`);
     return "";
   }
 }
 
-export function loadKnowledgeBlock(gsdHomeDir: string, cwd: string): { block: string; globalSizeKb: number } {
-  // 1. Global knowledge (~/.gsd/agent/KNOWLEDGE.md) — cross-project, user-maintained
+export function loadKnowledgeBlock(gsdHomeDir: string, cwd: string, legacyHomeDir: string = legacyGsdHome): { block: string; globalSizeKb: number } {
+  // 1. Global knowledge (~/.hammer/agent/KNOWLEDGE.md) — cross-project, user-maintained
   let globalKnowledge = "";
   let globalSizeKb = 0;
   const globalKnowledgePath = join(gsdHomeDir, "agent", "KNOWLEDGE.md");
-  if (existsSync(globalKnowledgePath)) {
+  const legacyGlobalKnowledgePath = join(legacyHomeDir, "agent", "KNOWLEDGE.md"); // legacy global-home bridge
+  const resolvedGlobalKnowledgePath = existsSync(globalKnowledgePath)
+    ? globalKnowledgePath
+    : legacyGlobalKnowledgePath;
+  if (existsSync(resolvedGlobalKnowledgePath)) {
     try {
-      const content = readFileSync(globalKnowledgePath, "utf-8").trim();
+      const content = readFileSync(resolvedGlobalKnowledgePath, "utf-8").trim();
       if (content) {
         globalSizeKb = Buffer.byteLength(content, "utf-8") / 1024;
         globalKnowledge = content;
@@ -304,7 +311,7 @@ export function loadKnowledgeBlock(gsdHomeDir: string, cwd: string): { block: st
     }
   }
 
-  // 2. Project knowledge (.gsd/KNOWLEDGE.md) — project-specific
+  // 2. Project knowledge (resolved Hammer state root KNOWLEDGE.md) — project-specific
   let projectKnowledge = "";
   const knowledgePath = resolveGsdRootFile(cwd, "KNOWLEDGE");
   if (existsSync(knowledgePath)) {
@@ -324,7 +331,7 @@ export function loadKnowledgeBlock(gsdHomeDir: string, cwd: string): { block: st
   if (globalKnowledge) parts.push(`## Global Knowledge\n\n${globalKnowledge}`);
   if (projectKnowledge) parts.push(`## Project Knowledge\n\n${projectKnowledge}`);
   return {
-    block: `\n\n[KNOWLEDGE — Rules, patterns, and lessons learned]\n\n${parts.join("\n\n")}`,
+    block: `\n\n[KNOWLEDGE — Hammer rules, patterns, and lessons learned]\n\n${parts.join("\n\n")}`,
     globalSizeKb,
   };
 }
@@ -342,13 +349,13 @@ function buildWorktreeContextBlock(): string {
       `IMPORTANT: Ignore the "Current working directory" shown earlier in this prompt.`,
       `The actual current working directory is: ${toPosixPath(process.cwd())}`,
       "",
-      `You are working inside a GSD worktree.`,
+      `You are working inside a Hammer worktree.`,
       `- Worktree name: ${worktreeName}`,
       `- Worktree path (this is the real cwd): ${toPosixPath(process.cwd())}`,
       `- Main project: ${toPosixPath(worktreeMainCwd)}`,
       `- Branch: worktree/${worktreeName}`,
       "",
-      "All file operations, bash commands, and GSD state resolve against the worktree path above.",
+      "All file operations, bash commands, and Hammer state resolve against the worktree path above.",
       "Use /worktree merge to merge changes back. Use /worktree return to switch back to the main tree.",
     ].join("\n");
   }
@@ -361,14 +368,14 @@ function buildWorktreeContextBlock(): string {
       `IMPORTANT: Ignore the "Current working directory" shown earlier in this prompt.`,
       `The actual current working directory is: ${toPosixPath(process.cwd())}`,
       "",
-      "You are working inside a GSD auto-worktree.",
+      `You are working inside a Hammer auto-worktree.`,
       `- Milestone worktree: ${autoWorktree.worktreeName}`,
       `- Worktree path (this is the real cwd): ${toPosixPath(process.cwd())}`,
       `- Main project: ${toPosixPath(autoWorktree.originalBase)}`,
       `- Branch: ${autoWorktree.branch}`,
       "",
-      "All file operations, bash commands, and GSD state resolve against the worktree path above.",
-      "Write every .gsd artifact in the worktree path above, never in the main project tree.",
+      "All file operations, bash commands, and Hammer state resolve against the worktree path above.",
+      "Write every resolved Hammer state artifact in the worktree path above, never in the main project tree.",
     ].join("\n");
   }
 
@@ -453,8 +460,8 @@ async function buildTaskExecutionContextInjection(
   const overridesSection = formatOverridesSection(activeOverrides);
 
   return [
-    "[GSD Guided Execute Context]",
-    "Use this injected context as startup context for guided task execution. Treat the inlined task plan as the authoritative local execution contract. Use source artifacts to verify details and run checks.",
+    "[Hammer Guided Execute Context]",
+    "Use this injected context as startup context for Hammer guided task execution. Treat the inlined task plan as the authoritative local execution contract. Use source artifacts to verify details, preserve IAM awareness/provenance, and run checks.",
     overridesSection, "",
     "",
     resumeSection,
@@ -607,10 +614,12 @@ export function buildForensicsContextInjection(basePath: string, prompt: string)
  * is complete or the session expires.
  */
 export function clearForensicsMarker(basePath: string): void {
-  const markerPath = join(basePath, ".gsd", "runtime", "active-forensics.json");
-  if (existsSync(markerPath)) {
+  const markerPath = join(basePath, HAMMER_STATE_DIR_NAME, "runtime", "active-forensics.json");
+  const legacyMarkerPath = join(basePath, ".gsd", "runtime", "active-forensics.json"); // legacy state bridge
+  const resolvedMarkerPath = existsSync(markerPath) ? markerPath : legacyMarkerPath;
+  if (existsSync(resolvedMarkerPath)) {
     try {
-      unlinkSync(markerPath);
+      unlinkSync(resolvedMarkerPath);
     } catch (e) {
       logWarning("bootstrap", `unlinkSync forensics marker failed: ${(e as Error).message}`);
     }
