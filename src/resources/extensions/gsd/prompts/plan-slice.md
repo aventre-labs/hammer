@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode.
 
 ## UNIT: Plan Slice {{sliceId}} ("{{sliceTitle}}") — Milestone {{milestoneId}}
 
@@ -18,11 +18,11 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 ## Omega Phase Contract
 
-Before calling `gsd_plan_slice`, complete Hammer's native planning Omega contract.
+Before calling the DB-backed planning tool `gsd_plan_slice`, complete Hammer's native planning Omega contract.
 
 1. Run `hammer_canonical_spiral` after slice planning context is gathered and before the DB-backed planning tool, using `unitType: "plan-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
 2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the planning contract is unsatisfied.
-3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the PLAN content you pass to `gsd_plan_slice`.
+3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the PLAN content you pass to the DB-backed tool-name compatibility bridge `gsd_plan_slice`.
 4. If the Omega run returns an IAM error, times out, or cannot provide complete artifacts, stop before `gsd_plan_slice` and report the error/remediation instead of persisting successful planning.
 
 ## Your Role in the Pipeline
@@ -35,7 +35,7 @@ Before planning this slice, verify that the roadmap's assumptions still hold giv
 
 **If the remaining roadmap needs adjustment, modify it before proceeding:**
 
-- If a downstream slice's title/demo/dependencies are now wrong, call `gsd_reassess_roadmap` with the corrected `sliceChanges.modified` entry.
+- If a downstream slice's title/demo/dependencies are now wrong, call the DB-backed tool-name compatibility bridge `gsd_reassess_roadmap` with the corrected `sliceChanges.modified` entry.
 - If new work surfaced that deserves its own slice, add it via `sliceChanges.added`.
 - If a downstream slice is now redundant or out of scope, remove it via `sliceChanges.removed`.
 - **Bias strongly toward "roadmap is fine."** Most slice completions produce no structural change. Only adjust when there is concrete evidence a downstream slice is wrong — not speculative concern. Over-reassessment is costlier than a later mid-slice replan.
@@ -68,15 +68,15 @@ Then:
 0. If `REQUIREMENTS.md` was preloaded above, identify which Active requirements the roadmap says this slice owns or supports. These are the requirements this plan must deliver — every owned requirement needs at least one task that directly advances it, and verification must prove the requirement is met.
 0a. Call `memory_query` with keywords from the slice title and the source files listed below. Prior architectural decisions, conventions, and gotchas in this area should inform task decomposition — not be re-derived during execution.
 1. Read the templates:
-   - `~/.gsd/agent/extensions/gsd/templates/plan.md`
-   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md`
+   - `~/.gsd/agent/extensions/gsd/templates/plan.md` legacy template path
+   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md` legacy template path
 2. {{skillActivation}} Record the installed skills you expect executors to use in each task plan's `skills_used` frontmatter.
 3. Define slice-level verification — the objective stopping condition for this slice:
    - For non-trivial slices: plan actual test files with real assertions. Name the files.
    - For simple slices: executable commands or script assertions are fine.
    - If the project is non-trivial and has no test framework, the first task should set one up.
    - If this slice establishes a boundary contract, verification must exercise that contract.
-   - Planned test files must only read from or import paths that are tracked in git. Do NOT plan tests whose inputs or fixtures are paths listed in `.gitignore` (e.g. `.gsd/`, `.planning/`, `.audits/`). If the scenario seems to require such a file, plan an inline fixture or a tracked sample instead.
+   - Planned test files must only read from or import paths that are tracked in git. Do NOT plan tests whose inputs or fixtures are paths listed in `.gitignore` (e.g. `.gsd/` legacy state bridge paths, `.planning/`, `.audits/`). If the scenario seems to require such a file, plan an inline fixture or a tracked sample instead.
 4. **For non-trivial slices only** — plan observability, proof level, and integration closure:
    - Include `Observability / Diagnostics` for backend, integration, async, stateful, or UI slices where failure diagnosis matters.
    - Fill `Proof Level` and `Integration Closure` when the slice crosses runtime boundaries or has meaningful integration concerns.
@@ -91,7 +91,7 @@ Then:
    - a matching task plan file with description, steps, must-haves, verification, inputs, and expected output
    - **Inputs and Expected Output must list concrete backtick-wrapped file paths** (e.g. `` `src/types.ts` ``). These are machine-parsed to derive task dependencies — vague prose without paths breaks parallel execution. Every task must have at least one output file path.
    - Observability Impact section **only if the task touches runtime boundaries, async flows, or error paths** — omit it otherwise
-7. **Persist planning state through `gsd_plan_slice`.** Call it with the full slice planning payload (goal, demo, must-haves, verification, tasks, and metadata). The tool inserts all tasks in the same transaction, writes to the DB, and renders `{{outputPath}}` and `{{slicePath}}/tasks/T##-PLAN.md` files automatically. Do **not** call `gsd_plan_task` separately — `gsd_plan_slice` handles task persistence. Do **not** rely on direct `PLAN.md` writes as the source of truth; the DB-backed tool is the canonical write path for slice and task planning state.
+7. **Persist planning state through the DB-backed tool-name compatibility bridge `gsd_plan_slice`.** Call it with the full slice planning payload (goal, demo, must-haves, verification, tasks, and metadata). The tool inserts all tasks in the same transaction, writes to the DB, and renders `{{outputPath}}` and `{{slicePath}}/tasks/T##-PLAN.md` legacy state bridge projection files automatically. Do **not** call the DB-backed tool-name compatibility bridge `gsd_plan_task` separately — the DB-backed tool-name compatibility bridge `gsd_plan_slice` handles task persistence. Do **not** rely on direct `PLAN.md` writes as the source of truth; the DB-backed tool is the canonical write path for slice and task planning state.
 8. **Self-audit the plan.** Walk through each check — if any fail, fix the plan files before moving on:
     - **Completion semantics:** If every task were completed exactly as written, the slice goal/demo should actually be true.
     - **Requirement coverage:** Every must-have in the slice maps to at least one task. No must-have is orphaned. If `REQUIREMENTS.md` exists, every Active requirement this slice owns maps to at least one task.
@@ -101,13 +101,13 @@ Then:
     - **Scope sanity:** Target 2–5 steps and 3–8 files per task. 10+ steps or 12+ files — must split. Each task must be completable in a single fresh context window.
     - **Feature completeness:** Every task produces real, user-facing progress — not just internal scaffolding.
     - **Quality gate coverage:** For non-trivial slices, Threat Surface and Requirement Impact sections are present and specific (not placeholder text). For non-trivial tasks, Failure Modes, Load Profile, and Negative Tests are addressed in the task plan.
-10. If planning produced structural decisions, append them to `.gsd/DECISIONS.md`
+10. If planning produced structural decisions, record them through the DB-backed decision tool so `.gsd/DECISIONS.md` legacy state bridge projections stay generated
 11. {{commitInstruction}}
 
 The slice directory and tasks/ subdirectory already exist. Do NOT mkdir. All work stays in your working directory: `{{workingDirectory}}`.
 
-**Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. You are running in auto-mode — there is no human available to answer questions. Make reasonable assumptions and document them in the plan. If a decision genuinely requires human input, write a note in the relevant task's description and call `gsd_plan_slice` with what you have.
+**Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. You are running in auto-mode — there is no human available to answer questions. Make reasonable assumptions and document them in the plan. If a decision genuinely requires human input, write a note in the relevant task's description and call the DB-backed tool-name compatibility bridge `gsd_plan_slice` with what you have.
 
-**You MUST call `gsd_plan_slice` to persist the planning state before finishing.**
+**You MUST call `gsd_plan_slice` (the DB-backed tool-name compatibility bridge) to persist the planning state before finishing.**
 
 When done, say: "Slice {{sliceId}} planned."

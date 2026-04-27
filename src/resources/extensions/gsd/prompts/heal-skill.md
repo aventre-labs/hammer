@@ -1,5 +1,7 @@
 ## Skill Heal Analysis
 
+Hammer Awareness: this prompt inherits Hammer identity plus IAM/Omega/no-degradation semantics; preserve provenance and use structured remediation rather than weakening the contract.
+
 Analyze the just-completed unit ({{unitId}}) for skill drift.
 
 ### Steps
@@ -17,10 +19,10 @@ Analyze the just-completed unit ({{unitId}}) for skill drift.
 
 4. **Assess drift severity**:
    - **None**: Agent followed skill correctly → write "No drift detected" to {{healArtifact}} and stop
-   - **Minor**: Agent found a better approach but skill isn't wrong → append a note to `.gsd/KNOWLEDGE.md` and stop
+   - **Minor**: Agent found a better approach but skill isn't wrong → append a note to `.gsd/KNOWLEDGE.md` legacy state bridge projection and stop
    - **Significant**: Skill has outdated or incorrect guidance → continue to step 5
 
-5. **If significant drift found**, append a heal suggestion to `.gsd/skill-review-queue.md`:
+5. **If significant drift found**, append a heal suggestion to `.gsd/skill-review-queue.md` legacy state bridge queue:
 
 ```markdown
 ### {{skillName}} (flagged {{date}})

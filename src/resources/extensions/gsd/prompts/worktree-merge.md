@@ -1,4 +1,4 @@
-You are merging changes from worktree **{{worktreeName}}** (branch `{{worktreeBranch}}`) into target branch `{{mainBranch}}`.
+You are merging Hammer changes from worktree **{{worktreeName}}** (branch `{{worktreeBranch}}`) into target branch `{{mainBranch}}`. Preserve IAM awareness, provenance, and no-degradation merge safety: conflicts or missing verification require structured remediation.
 
 ## Working Directory
 
@@ -35,7 +35,7 @@ The worktree was created as a parallel workspace. It may contain code changes, n
 {{codeDiff}}
 ```
 
-### GSD Artifact Diff
+### Hammer Artifact Diff
 
 ```diff
 {{gsdDiff}}
@@ -55,7 +55,7 @@ Classify each changed file:
 - **Config changes** — package.json, tsconfig, build config, etc.
 - **Deleted files** — removed source or config files
 
-**GSD artifact changes:**
+**Hammer artifact changes:**
 - **New milestones** — entirely new M###/ directories with roadmaps
 - **New slices/tasks** — new planning artifacts within existing milestones
 - **Updated roadmaps** — modifications to existing M###-ROADMAP.md files
@@ -121,5 +121,5 @@ git branch -D {{worktreeBranch}}
 
 - Never silently discard changes from either branch
 - When in doubt about a conflict, show both versions and ask the user
-- Preserve all GSD artifact formatting conventions (frontmatter, section structure, checkbox states)
+- Preserve all Hammer artifact formatting conventions (frontmatter, section structure, checkbox states)
 - If the worktree introduced new milestone IDs that conflict with main, flag this immediately

@@ -85,7 +85,7 @@ const AWARENESS_MARKER_RE = /(?:\bIAM\b|\bawareness\b|\bOmega\b|\bTrinity\b|\bVO
 const SUBAGENT_PROSE_RE = /\bsubagents?\b/i;
 const SUBAGENT_GOVERNANCE_RE = /(?:\{\{subagentPrompts\}\}|IAM_SUBAGENT_CONTRACT)/;
 
-const LEGACY_BRIDGE_CONTEXT_RE = /(?:legacy|compat(?:ible|ibility)?|backward[- ]compatible|deprecated|historical|migration|migrate|bootstrap|fallback|bridge|state[- ](?:namespace|path|root|dir)|state\s+bridge|DB-backed|database-backed|execution substrate|tool[- ]?(?:name|schema|call|surface|contract)|available tool|internal|private|file path|artifact path)/i;
+const LEGACY_BRIDGE_CONTEXT_RE = /(?:legacy|compat(?:ible|ibility)?|backward[- ]compatible|deprecated|historical|migration|migrate|bootstrap|fallback|bridge|state[- ](?:namespace|path|root|dir)|state\s+bridge|DB-backed|database-backed|execution substrate|tool[- ]?(?:name|schema|call|surface|contract)|available tool|internal|private|file path|artifact path|stop before|before `gsd_)/i;
 const GSD_TOOL_TOKEN_RE = /\bgsd_[A-Za-z0-9_]+\b/;
 const GSD_STATE_TOKEN_RE = /(?:\.gsd|GSD-WORKFLOW)/;
 
@@ -229,7 +229,7 @@ export function isAllowedLegacyBridgeLine(line) {
   // gsd_* names are executable substrate/tool names only when locally marked
   // as DB-backed, tool, legacy, or compatibility bridges.
   if (GSD_TOOL_TOKEN_RE.test(line)) {
-    return /(?:DB-backed|database-backed|tool[- ]?(?:name|schema|call|surface|contract)|available tool|execution substrate|legacy|compat)/i.test(line);
+    return /(?:DB-backed|database-backed|tool[- ]?(?:name|schema|call|surface|contract)|available tool|execution substrate|legacy|compat|stop before)/i.test(line);
   }
 
   // .gsd and GSD-WORKFLOW pass only when the line says this is state/path or

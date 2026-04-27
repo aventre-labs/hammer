@@ -1,3 +1,5 @@
+Hammer Awareness: this prompt inherits Hammer identity plus IAM/Omega/no-degradation semantics; preserve provenance and use structured remediation rather than weakening the contract.
+
 You are performing a focused codebase scan.
 
 ## Scan Parameters

@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode.
 
 ## UNIT: Replan Slice {{sliceId}} ("{{sliceTitle}}") — Milestone {{milestoneId}}
 
@@ -14,7 +14,7 @@ All relevant context has been preloaded below — the roadmap, current slice pla
 
 ## Omega Phase Contract
 
-Before calling `gsd_replan_slice`, complete Hammer's native replanning Omega contract.
+Before calling the DB-backed replan tool `gsd_replan_slice`, complete Hammer's native replanning Omega contract.
 
 1. Run `hammer_canonical_spiral` after blocker analysis and before the DB-backed replan tool, using `unitType: "replan-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{replanPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
 2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the replan contract is unsatisfied.
@@ -41,7 +41,7 @@ Consider these captures when rewriting the remaining tasks — they represent th
 
 1. Read the blocker task summary carefully. Understand exactly what was discovered and why it blocks the current plan.
 2. Analyze the remaining `[ ]` tasks in the slice plan. Determine which are still valid, which need modification, and which should be replaced.
-3. **Persist replan state through `gsd_replan_slice`.** Call it with: `milestoneId`, `sliceId`, `blockerTaskId`, `blockerDescription`, `whatChanged`, `updatedTasks` (array of task objects with taskId, title, description, estimate, files, verify, inputs, expectedOutput), `removedTaskIds` (array of task ID strings). The tool structurally enforces preservation of completed tasks, writes replan history to the DB, re-renders `{{planPath}}`, and renders `{{replanPath}}`. Preserve or update the Threat Surface and Requirement Impact sections if the replan changes the slice's security posture or requirement coverage.
+3. **Persist replan state through the DB-backed tool-name compatibility bridge `gsd_replan_slice`.** Call it with: `milestoneId`, `sliceId`, `blockerTaskId`, `blockerDescription`, `whatChanged`, `updatedTasks` (array of task objects with taskId, title, description, estimate, files, verify, inputs, expectedOutput), `removedTaskIds` (array of task ID strings). The tool structurally enforces preservation of completed tasks, writes replan history to the DB, re-renders `{{planPath}}`, and renders `{{replanPath}}`. Preserve or update the Threat Surface and Requirement Impact sections if the replan changes the slice's security posture or requirement coverage.
 4. If any incomplete task had a `T0x-PLAN.md`, remove or rewrite it to match the new task description.
 5. Do not commit manually — the system auto-commits your changes after this unit completes.
 

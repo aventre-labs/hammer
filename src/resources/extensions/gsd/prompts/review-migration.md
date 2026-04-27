@@ -1,10 +1,12 @@
-## Review Migrated .gsd Directory
+## Review Migrated .gsd Directory (legacy state bridge)
 
-A `/gsd migrate` command just wrote a `.gsd/` directory from an old `.planning` source. Your job is to audit the output and verify it meets GSD-2 standards before the user starts working with it.
+Hammer Awareness: this prompt inherits Hammer identity plus IAM/Omega/no-degradation semantics; preserve provenance and use structured remediation rather than weakening the contract.
+
+A `/hammer migrate` command for legacy GSD migration just wrote a `.gsd/` directory from an old `.planning` source. Your job is to audit the output and verify it meets Hammer migration standards before the user starts working with it.
 
 ### Source
 - Old `.planning` directory: `{{sourcePath}}`
-- Written `.gsd` directory: `{{gsdPath}}`
+- Written `.gsd` legacy state bridge directory: `{{gsdPath}}`
 
 ### Migration Stats
 {{previewStats}}
@@ -14,7 +16,7 @@ A `/gsd migrate` command just wrote a `.gsd/` directory from an old `.planning` 
 Work through each check. Report PASS/FAIL with specifics. Fix anything fixable in-place.
 
 #### 1. Structure Validation
-- Run `deriveState()` on the `.gsd` directory (import from `state.ts`, pass the **project root** as basePath)
+- Run `deriveState()` on the `.gsd` legacy state bridge directory (import from `state.ts`, pass the **project root** as basePath)
 - Confirm it returns a coherent phase (not `pre-planning` unless the project is truly empty)
 - Confirm activeMilestone, activeSlice, activeTask are sensible for the project's completion state
 - Confirm progress counts match the migration preview stats
@@ -63,4 +65,4 @@ Issues: <list any problems found>
 Fixes applied: <list any in-place fixes made>
 ```
 
-If the overall result is FAIL, explain what needs manual attention. If PASS WITH NOTES, explain what's imperfect but acceptable. If PASS, confirm the `.gsd` directory is ready for GSD-2 auto-mode.
+If the overall result is FAIL, explain what needs manual attention. If PASS WITH NOTES, explain what's imperfect but acceptable. If PASS, confirm the `.gsd` legacy state bridge directory is ready for Hammer auto-mode.

@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode.
 
 ## UNIT: Research Milestone {{milestoneId}} ("{{milestoneTitle}}")
 
@@ -24,7 +24,7 @@ A milestone adding a small feature to an established codebase needs targeted res
 
 Before final research persistence, you must complete Hammer's native Omega phase contract for this governed research unit.
 
-1. Run `hammer_canonical_spiral` after you have enough research context and before `gsd_summary_save`, using:
+1. Run `hammer_canonical_spiral` after you have enough research context and before `gsd_summary_save` (the DB-backed tool-name compatibility bridge), using:
    - `query`: a concise research synthesis question for milestone `{{milestoneId}}` and the evidence you gathered.
    - `unitType`: `"research-milestone"`
    - `unitId`: `"{{milestoneId}}"`
@@ -32,7 +32,7 @@ Before final research persistence, you must complete Hammer's native Omega phase
    - `persona`: `"engineer"` unless a loaded skill gives a stronger reason otherwise.
 2. Treat the tool result as mandatory phase evidence. The response must include a `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). If any value is missing or malformed, the Omega phase contract is unsatisfied.
 3. Include an `## Omega Phase Contract` section in the RESEARCH markdown citing the returned `runId`, `manifestPath`, `artifactDir`, `stageCount`, target artifact path, and synthesis reference.
-4. If `hammer_canonical_spiral` returns an IAM error, times out, or cannot provide complete artifacts, stop and report the IAM error/remediation in your output. Do not call `gsd_summary_save` as if milestone research completed successfully.
+4. If `hammer_canonical_spiral` returns an IAM error, times out, or cannot provide complete artifacts, stop and report the IAM error/remediation in your output. Do not call `gsd_summary_save` as if milestone research completed successfully; it remains the DB-backed tool-name compatibility bridge.
 5. Do not replace the native Omega run with prose guidance or defer it to a later phase; this research prompt is not complete without the run and citation.
 
 Then research the codebase and relevant technologies. Narrate key findings and surprises as you go — what exists, what's missing, what constrains the approach.
@@ -42,8 +42,8 @@ Then research the codebase and relevant technologies. Narrate key findings and s
 4. Use `resolve_library` / `get_library_docs` for unfamiliar libraries — skip this for libraries already used in the codebase
 5. **Web search budget:** You have a limited budget of web searches (max ~15 per session). Use them strategically — prefer `resolve_library` / `get_library_docs` for library documentation. Do NOT repeat the same or similar queries. If a search didn't find what you need, rephrase once or move on. Target 3-5 total web searches for a typical research unit.
 6. Use the **Research** output template from the inlined context above — include only sections that have real content
-7. If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors the user may or may not want.
-8. Call `gsd_summary_save` with `milestone_id: {{milestoneId}}`, `artifact_type: "RESEARCH"`, and the full research markdown as `content` — the tool computes the file path and persists to both DB and disk.
+7. If `.gsd/REQUIREMENTS.md` exists as a legacy state bridge projection, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors the user may or may not want.
+8. Call the DB-backed tool-name compatibility bridge `gsd_summary_save` with `milestone_id: {{milestoneId}}`, `artifact_type: "RESEARCH"`, and the full research markdown as `content` — the tool computes the file path and persists to both DB and disk.
 
 ## Strategic Questions to Answer
 
@@ -57,6 +57,6 @@ Then research the codebase and relevant technologies. Narrate key findings and s
 
 **Research is advisory, not auto-binding.** Surface candidate requirements clearly instead of silently expanding scope.
 
-**You MUST call `gsd_summary_save` with the research content before finishing.**
+**You MUST call the DB-backed tool-name compatibility bridge `gsd_summary_save` with the research content before finishing.**
 
 When done, say: "Milestone {{milestoneId}} researched."

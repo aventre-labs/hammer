@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode.
 
 ## UNIT: Refine Slice {{sliceId}} ("{{sliceTitle}}") — Milestone {{milestoneId}}
 
@@ -20,7 +20,7 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 ## Omega Phase Contract
 
-Before calling `gsd_plan_slice`, complete Hammer's native refinement Omega contract. Run `hammer_canonical_spiral` with `unitType: "refine-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"`. Cite `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, target artifact path, and synthesis reference in the refined PLAN content. If the IAM/Omega run errors, times out, or lacks those fields, stop before `gsd_plan_slice`; do not persist successful refinement.
+Before calling the DB-backed planning tool `gsd_plan_slice`, complete Hammer's native refinement Omega contract. Run `hammer_canonical_spiral` with `unitType: "refine-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"`. Cite `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, target artifact path, and synthesis reference in the refined PLAN content. If the IAM/Omega run errors, times out, or lacks those fields, stop before `gsd_plan_slice`; do not persist successful refinement.
 
 ## Your Role in the Pipeline
 
@@ -53,21 +53,21 @@ Narrate your decomposition reasoning in complete sentences. Explain what the ske
 Then:
 0. If `REQUIREMENTS.md` was preloaded above, identify which Active requirements the sketch says this slice owns or supports. Every owned requirement needs at least one task that directly advances it.
 1. Read the templates:
-   - `~/.gsd/agent/extensions/gsd/templates/plan.md`
-   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md`
+   - `~/.gsd/agent/extensions/gsd/templates/plan.md` legacy template path
+   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md` legacy template path
 2. {{skillActivation}} Record the installed skills you expect executors to use in each task plan's `skills_used` frontmatter.
 3. Define slice-level verification — the objective stopping condition. Plan real test files with real assertions; for simple slices, executable commands are fine.
 4. For non-trivial slices, plan observability / proof level / integration closure, threat surface, and requirement impact. Omit entirely for simple slices.
 5. Decompose the slice into tasks that fit one context window each. Every task must have Why / Files / Do / Verify / Done-when, plus a task plan with description, steps, must-haves, verification, inputs (backtick-wrapped paths), and expected output (backtick-wrapped paths).
-6. **Persist planning state through `gsd_plan_slice`.** Call it with the full payload. The tool writes to the DB and renders `{{outputPath}}` and `{{slicePath}}/tasks/T##-PLAN.md` automatically. Do NOT rely on direct `PLAN.md` writes.
+6. **Persist planning state through the DB-backed tool-name compatibility bridge `gsd_plan_slice`.** Call it with the full payload. The tool writes to the DB and renders `{{outputPath}}` and `{{slicePath}}/tasks/T##-PLAN.md` legacy state bridge projection automatically. Do NOT rely on direct `PLAN.md` writes.
 7. **Self-audit the plan.** If every task were completed exactly as written, the slice goal/demo should actually be true. Every must-have maps to at least one task. Inputs and Expected Output are backtick-wrapped file paths.
-8. If refinement produced structural decisions that diverge from the sketch, append them to `.gsd/DECISIONS.md`.
+8. If refinement produced structural decisions that diverge from the sketch, record them through the DB-backed decision tool so `.gsd/DECISIONS.md` legacy state bridge projections stay generated.
 9. {{commitInstruction}}
 
 The slice directory and tasks/ subdirectory already exist. Do NOT mkdir.
 
 **Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. Document assumptions in the plan.
 
-**You MUST call `gsd_plan_slice` to persist the planning state before finishing.** After it returns successfully, the pipeline will automatically clear the sketch flag on the next state derivation (the on-disk PLAN file is the signal).
+**You MUST call the DB-backed tool-name compatibility bridge `gsd_plan_slice` to persist the planning state before finishing.** After it returns successfully, the pipeline will automatically clear the sketch flag on the next state derivation (the on-disk PLAN file is the signal).
 
 When done, say: "Slice {{sliceId}} refined."

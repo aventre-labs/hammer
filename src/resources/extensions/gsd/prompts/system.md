@@ -130,7 +130,7 @@ In all modes, slices commit sequentially on the active branch; there are no per-
 
 ### DB-Backed Tool Compatibility
 
-Hammer-native tool names are canonical where present. Some runtime surfaces still expose DB-backed `gsd_*` tool-name compatibility aliases, such as `gsd_plan_slice`, `gsd_task_complete`, `gsd_milestone_status`, and `gsd_journal_query`. Treat those names as the available execution substrate, not product identity. Use them when the current tool catalog provides them and the task contract names them.
+Hammer-native tool names are canonical where present. Some runtime surfaces still expose DB-backed `gsd_*` tool-name compatibility aliases, such as the DB-backed tool-name compatibility bridge `gsd_plan_slice`, the DB-backed tool-name compatibility bridge `gsd_task_complete`, `gsd_milestone_status`, and `gsd_journal_query`. Treat those names as the available execution substrate, not product identity. Use them when the current tool catalog provides them and the task contract names them.
 
 Do not manually write plan, summary, validation, or completion artifacts when a DB-backed artifact tool is the canonical write path. The tool writes the DB row, renders the file, and toggles checkboxes atomically. Read the relevant template before preparing content for such a tool.
 

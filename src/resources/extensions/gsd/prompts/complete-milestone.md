@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode. Preserve IAM awareness and no-degradation semantics: if completion evidence, provenance, or verification is missing, block completion with structured remediation.
 
 ## UNIT: Complete Milestone {{milestoneId}} ("{{milestoneTitle}}")
 
@@ -14,37 +14,37 @@ Preloaded context below — the roadmap, compact slice-summary excerpts, require
 
 Start with what the excerpts give you. Read full files when the section heads signal richer context you need.
 
-**On-demand Read ordering:** Complete all slice SUMMARY Reads you need for cross-slice synthesis, the Decision Re-evaluation table, and LEARNINGS **before** calling `gsd_complete_milestone` (step 10). Once that tool runs, the milestone is marked complete in the DB — running out of tool budget between step 10 and the LEARNINGS write (step 12) leaves the milestone committed without its LEARNINGS artifact.
+**On-demand Read ordering:** Complete all slice SUMMARY Reads you need for cross-slice synthesis, the Decision Re-evaluation table, and LEARNINGS **before** calling the DB-backed tool-name compatibility bridge `gsd_complete_milestone` (step 10). Once that tool runs, the milestone is marked complete in the DB — running out of tool budget between step 10 and the LEARNINGS write (step 12) leaves the milestone committed without its LEARNINGS artifact.
 
 {{inlinedContext}}
 
 Then:
 1. Use the **Milestone Summary** output template from the inlined context above
 2. {{skillActivation}}
-3. **Verify code changes exist.** Compare the milestone against its integration branch (usually `main`, `master`, or the recorded integration branch), using the merge-base as the older revision and `HEAD` as the newer revision. If that branch diff lists non-`.gsd/` files, code-change verification passes. If `HEAD` is already the same commit as the integration branch/merge-base (a retry-on-main self-diff), do **not** treat the empty branch diff as proof of missing code. Instead, inspect milestone-scoped commit evidence such as recent commits with `GSD-Unit: {{milestoneId}}` or production `GSD-Task: Sxx/Tyy` trailers whose diff also touches `.gsd/milestones/{{milestoneId}}/`, then check those commits for non-`.gsd/` files. Only record a **verification failure** when neither the branch diff nor milestone-scoped commit evidence shows implementation files.
+3. **Verify code changes exist.** Compare the milestone against its integration branch (usually `main`, `master`, or the recorded integration branch), using the merge-base as the older revision and `HEAD` as the newer revision. If that branch diff lists non-`.gsd/` legacy state bridge files, code-change verification passes. If `HEAD` is already the same commit as the integration branch/merge-base (a retry-on-main self-diff), do **not** treat the empty branch diff as proof of missing code. Instead, inspect milestone-scoped commit evidence such as recent commits with `Hammer-Unit: {{milestoneId}}` or production `Hammer-Task: Sxx/Tyy` trailers whose diff also touches `.gsd/milestones/{{milestoneId}}/` legacy state bridge paths, then check those commits for non-`.gsd/` legacy state bridge files. Only record a **verification failure** when neither the branch diff nor milestone-scoped commit evidence shows implementation files.
 4. Verify each **success criterion** from the milestone definition in `{{roadmapPath}}`. For each criterion, confirm it was met with specific evidence from slice summaries, test results, or observable behavior. Record any criterion that was NOT met as a **verification failure**.
 5. Verify the milestone's **definition of done** — all slices are `[x]`, all slice summaries exist, and any cross-slice integration points work correctly. Record any unmet items as a **verification failure**.
 6. If the roadmap includes a **Horizontal Checklist**, verify each item was addressed during the milestone. Note unchecked items in the milestone summary.
-7. Fill the **Decision Re-evaluation** table in the milestone summary. For each key decision from `.gsd/DECISIONS.md` made during this milestone, evaluate whether it is still valid given what was actually built. Flag decisions that should be revisited next milestone.
+7. Fill the **Decision Re-evaluation** table in the milestone summary. For each key decision from `.gsd/DECISIONS.md` legacy state bridge artifacts made during this milestone, evaluate whether it is still valid given what was actually built. Flag decisions that should be revisited next milestone.
 8. Validate **requirement status transitions**. For each requirement that changed status during this milestone, confirm the transition is supported by evidence. Requirements can move between Active, Validated, Deferred, Blocked, or Out of Scope — but only with proof.
 
-**DB access safety:** Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')` — the engine owns the WAL connection. Use `gsd_milestone_status` to read milestone and slice state. All data you need is already inlined in the context above or accessible via the `gsd_*` tools — never via direct SQL.
+**DB access safety:** Do NOT query `.gsd/gsd.db` legacy state bridge files directly via `sqlite3` or `node -e require('better-sqlite3')` — the engine owns the WAL connection. Use `gsd_milestone_status` to read milestone and slice state. All data you need is already inlined in the context above or accessible via the `gsd_*` tools — never via direct SQL.
 
 ### Verification Gate — STOP if verification failed
 
 **If ANY verification failure was recorded in steps 3, 4, or 5, you MUST follow the failure path below. Do NOT proceed to step 10.**
 
 **Failure path** (verification failed):
-- Do NOT call `gsd_complete_milestone` — the milestone must not be marked as complete.
-- Do NOT update `.gsd/PROJECT.md` to reflect completion.
-- Do NOT update `.gsd/REQUIREMENTS.md` to mark requirements as validated.
+- Do NOT call the DB-backed tool-name compatibility bridge `gsd_complete_milestone` — the milestone must not be marked as complete.
+- Do NOT update `.gsd/PROJECT.md` legacy state bridge projection to reflect completion.
+- Do NOT update `.gsd/REQUIREMENTS.md` legacy state bridge projection to mark requirements as validated.
 - Write a clear summary of what failed and why to help the next attempt.
 - Say: "Milestone {{milestoneId}} verification FAILED — not complete." and stop.
 
 **Success path** (all verifications passed — continue with steps 9–13):
 
-9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with the requirement ID and updated `status` and `validation` fields — the tool regenerates `.gsd/REQUIREMENTS.md` automatically. Do this BEFORE completing the milestone so requirement updates are persisted.
-10. **Persist completion through `gsd_complete_milestone`.** Call it with the parameters below. The tool updates the milestone status in the DB, renders `{{milestoneSummaryPath}}`, and validates all slices are complete before proceeding.
+9. For each requirement whose status changed in step 8, call the DB-backed tool-name compatibility bridge `gsd_requirement_update` with the requirement ID and updated `status` and `validation` fields — the tool regenerates `.gsd/REQUIREMENTS.md` legacy state bridge projection automatically. Do this BEFORE completing the milestone so requirement updates are persisted.
+10. **Persist completion through the DB-backed tool-name compatibility bridge `gsd_complete_milestone`.** Call it with the parameters below. The tool updates the milestone status in the DB, renders `{{milestoneSummaryPath}}`, and validates all slices are complete before proceeding.
 
    **Required parameters:**
    - `milestoneId` (string) — Milestone ID (e.g. M001)
@@ -62,8 +62,8 @@ Then:
    **Optional parameters:**
    - `followUps` (string) — Follow-up items for future milestones
    - `deviations` (string) — Deviations from the original plan
-11. Update `.gsd/PROJECT.md`: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting milestone completion and current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
-12. Extract structured learnings from this milestone and persist them to the GSD memory store. Follow the procedure block immediately below — it writes `{{milestoneId}}-LEARNINGS.md` as the audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). The memory store is the single source of truth for cross-session durable knowledge (ADR-013).
+11. Update `.gsd/PROJECT.md` legacy state bridge projection: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting milestone completion and current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
+12. Extract structured learnings from this milestone and persist them to the Hammer memory store. Follow the procedure block immediately below — it writes `{{milestoneId}}-LEARNINGS.md` as the audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). The memory store is the single source of truth for cross-session durable knowledge (ADR-013).
 
 {{extractLearningsSteps}}
 

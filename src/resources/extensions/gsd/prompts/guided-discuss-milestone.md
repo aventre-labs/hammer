@@ -1,4 +1,6 @@
-Discuss milestone {{milestoneId}} ("{{milestoneTitle}}"). Identify gray areas, ask the user about them, and write `{{milestoneId}}-CONTEXT.md` in the milestone directory with the decisions. Use the **Context** output template below. If a `GSD Skill Preferences` block is present in system context, use it to decide which skills to load and follow; do not override required artifact rules.
+Hammer Awareness: this prompt inherits Hammer identity plus IAM/Omega/no-degradation semantics; preserve provenance and use structured remediation rather than weakening the contract.
+
+Discuss milestone {{milestoneId}} ("{{milestoneTitle}}"). Identify gray areas, ask the user about them, and write `{{milestoneId}}-CONTEXT.md` in the milestone directory with the decisions. Use the **Context** output template below. If a `Hammer Skill Preferences` block is present in system context, use it to decide which skills to load and follow; do not override required artifact rules.
 
 **Structured questions available: {{structuredQuestionsAvailable}}**
 
@@ -44,7 +46,7 @@ After the user answers, investigate further if any answer opens a new unknown, t
 
 After each round of answers, decide whether you already have enough depth to write a strong context file.
 
-- **Incremental persistence:** After every 2 question rounds, silently save a `{{milestoneId}}-CONTEXT-DRAFT.md` with your current understanding using `gsd_summary_save` with `artifact_type: "CONTEXT-DRAFT"`. This protects against session crashes losing all confirmed work. Do NOT mention this save to the user — it's invisible bookkeeping. The final context file will overwrite it.
+- **Incremental persistence:** After every 2 question rounds, silently save a `{{milestoneId}}-CONTEXT-DRAFT.md` with your current understanding using the DB-backed tool-name compatibility bridge `gsd_summary_save` with `artifact_type: "CONTEXT-DRAFT"`. This protects against session crashes losing all confirmed work. Do NOT mention this save to the user — it's invisible bookkeeping. The final context file will overwrite it.
 - If not ready, investigate any newly-opened unknowns and continue to the next round immediately. Do **not** ask a meta "ready to wrap up?" question after every round.
 - Use a single wrap-up prompt only when you genuinely believe the depth checklist is satisfied or the user signals they want to stop.
 - **If `{{structuredQuestionsAvailable}}` is `true` and you need that wrap-up prompt:** use `ask_user_questions` with options:
@@ -112,6 +114,6 @@ Once the user confirms depth:
 
 1. Use the **Context** output template below
 2. `mkdir -p` the milestone directory if needed
-3. Call `gsd_summary_save` with `milestone_id: {{milestoneId}}`, `artifact_type: "CONTEXT"`, and the full context markdown as `content` — the tool writes the file to disk and persists to DB. Preserve the user's exact terminology, emphasis, and framing in the content. Do not paraphrase nuance into generic summaries. The context file is downstream agents' only window into this conversation.
+3. Call the DB-backed tool-name compatibility bridge `gsd_summary_save` with `milestone_id: {{milestoneId}}`, `artifact_type: "CONTEXT"`, and the full context markdown as `content` — the tool writes the file to disk and persists to DB. Preserve the user's exact terminology, emphasis, and framing in the content. Do not paraphrase nuance into generic summaries. The context file is downstream agents' only window into this conversation.
 4. {{commitInstruction}}
 5. Say exactly: `"{{milestoneId}} context written."` — nothing else.

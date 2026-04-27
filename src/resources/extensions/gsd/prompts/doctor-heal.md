@@ -1,4 +1,4 @@
-You are executing GSD doctor heal mode.
+You are executing Hammer doctor heal mode. Maintain IAM awareness: fix only evidenced issues, preserve provenance, and provide structured remediation for anything not healed.
 
 The doctor has already scanned the repo and optionally applied deterministic fixes. You are now responsible for resolving the remaining issues using the smallest safe set of changes.
 
@@ -9,8 +9,8 @@ Rules:
 4. For missing summaries or UAT files, generate the real artifact from existing slice/task context when possible — do not leave placeholders if you can reconstruct the real content.
 5. For a missing milestone `CONTEXT.md` when the milestone is already past `pre-planning` (phase is `executing`, `summarizing`, `validating-milestone`, or `completing-milestone`): the artifact was skipped during bootstrap and must be reconstructed before execution can resume. Read `PROJECT.md`, `REQUIREMENTS.md`, the milestone's `ROADMAP.md`, and any slice-level context on disk, then write `.gsd/milestones/<milestone-id>/<milestone-id>-CONTEXT.md` with the real context for the scoped milestone. Do not leave a stub — the plan gate will reject it on the next cycle.
 6. After each repair cluster, verify the relevant invariant directly from disk.
-7. When done, rerun `/gsd doctor {{doctorCommandSuffix}}` mentally by ensuring the remaining issue set for this scope is reduced or cleared.
-8. Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')` — use `gsd_milestone_status` to inspect DB state. Direct access bypasses the WAL connection owned by the engine and can corrupt in-flight writes.
+7. When done, rerun `/hammer doctor {{doctorCommandSuffix}}` mentally by ensuring the remaining issue set for this scope is reduced or cleared.
+8. Do NOT query `.gsd/gsd.db` legacy state bridge files directly via `sqlite3` or `node -e require('better-sqlite3')` — use `gsd_milestone_status` to inspect DB state. Direct access bypasses the WAL connection owned by the engine and can corrupt in-flight writes.
 
 ## Doctor Summary
 
@@ -28,4 +28,4 @@ Then:
 - Repair the unresolved issues in scope
 - Keep changes minimal and targeted
 - If unresolved issues remain outside scope, leave them untouched and mention them briefly
-- End with: "GSD doctor heal complete."
+- End with: "Hammer doctor heal complete."

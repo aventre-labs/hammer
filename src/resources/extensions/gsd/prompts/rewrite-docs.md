@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode. Preserve IAM awareness and no-degradation semantics: rewrite docs from verified context, keep provenance, and report structured remediation for missing source evidence.
 
 ## UNIT: Rewrite Documents — Apply Override(s) for Milestone {{milestoneId}} ("{{milestoneTitle}}")
 

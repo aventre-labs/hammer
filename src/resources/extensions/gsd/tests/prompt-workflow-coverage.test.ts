@@ -162,3 +162,25 @@ test("report-mode scan returns structured JSON-friendly counts without requiring
   assert.equal(typeof result.summary.countsByFindingKind, "object");
   assert.equal(result.errors.length, 0);
 });
+
+
+test("actual bundled prompts carry Hammer and IAM awareness markers", async () => {
+  const result = await runPromptWorkflowCoverageScan({ root: process.cwd() });
+  const promptFindings = result.findings.filter((finding) => finding.filePath.includes("/prompts/"));
+  assert.deepEqual(
+    promptFindings,
+    [],
+    `Prompt coverage findings should be zero after the S08 prompt rewrite:\n${promptFindings
+      .map((finding) => `${finding.filePath}:${finding.lineNumber} [${finding.kind}] ${finding.excerpt}`)
+      .join("\n")}`,
+  );
+});
+
+test("IAM/Omega stop-before lines preserve DB-backed tool names as compatibility bridges", () => {
+  const findings = scanPromptWorkflowText(
+    "src/resources/extensions/gsd/prompts/example.md",
+    `${BASE_GOOD_TEXT}\nIf the Omega run fails, stop before \`gsd_plan_slice\` and report structured remediation.\n`,
+  );
+
+  assert.equal(findings.some((finding) => finding.kind === FINDING_KINDS.STALE_LEGACY_TOKEN), false);
+});

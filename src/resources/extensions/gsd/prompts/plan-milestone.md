@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode.
 
 ## UNIT: Plan Milestone {{milestoneId}} ("{{milestoneTitle}}")
 
@@ -12,11 +12,11 @@ All relevant context has been preloaded below — start working immediately with
 
 ## Omega Phase Contract
 
-Before calling `gsd_plan_milestone`, complete Hammer's native planning Omega contract.
+Before calling the DB-backed planning tool `gsd_plan_milestone`, complete Hammer's native planning Omega contract.
 
 1. Run `hammer_canonical_spiral` after planning context is gathered and before the DB-backed planning tool, using `unitType: "plan-milestone"`, `unitId: "{{milestoneId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
 2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the planning contract is unsatisfied.
-3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the ROADMAP content you pass to `gsd_plan_milestone`.
+3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the ROADMAP content you pass to the DB-backed tool-name compatibility bridge `gsd_plan_milestone`.
 4. If the Omega run returns an IAM error, times out, or cannot provide complete artifacts, stop before `gsd_plan_milestone` and report the error/remediation instead of persisting successful planning.
 
 ## Your Role in the Pipeline
@@ -32,7 +32,7 @@ Before decomposing, build your understanding:
 1. **Codebase exploration.** For small/familiar codebases, use `rg`, `find`, and targeted reads. For large or unfamiliar codebases, use `scout` to build a broad map efficiently before diving in.
 2. **Library docs.** Use `resolve_library` / `get_library_docs` for unfamiliar libraries — skip this for libraries already used in the codebase.
 3. **Skill Discovery ({{skillDiscoveryMode}}):**{{skillDiscoveryInstructions}}
-4. **Requirements analysis.** If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors.
+4. **Requirements analysis.** If `.gsd/REQUIREMENTS.md` exists as a legacy state bridge projection, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors.
 
 ### Strategic Questions to Answer
 
@@ -56,8 +56,8 @@ Then:
 2. {{skillActivation}}
 3. Create the roadmap: decompose into demoable vertical slices — as many as the work genuinely needs, no more. A simple feature might be 1 slice. Don't decompose for decomposition's sake.
 4. Order by risk (high-risk first)
-5. Call `gsd_plan_milestone` to persist the milestone planning fields, slice rows, and **horizontal checklist** in the DB-backed planning path. Do **not** write `{{outputPath}}`, `ROADMAP.md`, or other planning artifacts manually — the planning tool owns roadmap rendering and persistence.
-6. If planning produced structural decisions (e.g. slice ordering rationale, technology choices, scope exclusions), call `gsd_decision_save` for each decision — the tool auto-assigns IDs and regenerates `.gsd/DECISIONS.md` automatically.
+5. Call the DB-backed tool-name compatibility bridge `gsd_plan_milestone` to persist the milestone planning fields, slice rows, and **horizontal checklist** in the DB-backed planning path. Do **not** write `{{outputPath}}`, `ROADMAP.md`, or other planning artifacts manually — the planning tool owns roadmap rendering and persistence.
+6. If planning produced structural decisions (e.g. slice ordering rationale, technology choices, scope exclusions), call the DB-backed tool-name compatibility bridge `gsd_decision_save` for each decision — the tool auto-assigns IDs and regenerates `.gsd/DECISIONS.md` automatically.
 
 ## Requirement Mapping Rules
 
@@ -66,7 +66,7 @@ Then:
 - Product-facing milestones should cover launchability, primary user loop, continuity, and failure visibility when relevant.
 - A slice may support multiple requirements, but should not exist with no requirement justification unless it is clearly enabling work for a mapped requirement.
 - Include a compact coverage summary in the roadmap so omissions are mechanically visible.
-- If `.gsd/REQUIREMENTS.md` exists and an Active requirement has no credible path, surface that clearly. Do not silently ignore orphaned Active requirements.
+- If `.gsd/REQUIREMENTS.md` exists as a legacy state bridge projection and an Active requirement has no credible path, surface that clearly. Do not silently ignore orphaned Active requirements.
 
 ## Planning Doctrine
 
@@ -93,7 +93,7 @@ If the preference `phases.progressive_planning` is enabled and the roadmap has *
 
 A **sketch slice** has the same roadmap entry as today (title, risk, depends, demo line) plus a `sketchScope` of 2–3 sentences describing the scope boundary. Do NOT attempt to decompose it into tasks during this unit — provide a one-sentence `goal` (the tool schema requires it; keep it at the same level of detail as the roadmap demo line) and leave `successCriteria`, `proofLevel`, `integrationClosure`, `observabilityImpact` blank (or provide them if genuinely known). When the prior slice completes, a separate `refine-slice` unit will expand the sketch into a full plan using the real codebase state and the prior slice SUMMARY.
 
-**To mark a slice as a sketch in the `gsd_plan_milestone` tool call:** set `isSketch: true` and `sketchScope: "<2-3 sentence scope>"` on that slice entry.
+**To mark a slice as a sketch in the DB-backed tool-name compatibility bridge `gsd_plan_milestone` tool call:** set `isSketch: true` and `sketchScope: "<2-3 sentence scope>"` on that slice entry.
 
 S01 is never a sketch — it must always be fully decomposed in this unit.
 
@@ -103,7 +103,7 @@ If the preference is off, ignore this section and plan every slice in full detai
 
 If the roadmap has only one slice, also plan the slice and its tasks inline during this unit — don't leave them for a separate planning session.
 
-1. After `gsd_plan_milestone` returns, immediately call `gsd_plan_slice` for S01 with the full task breakdown
+1. After the DB-backed tool-name compatibility bridge `gsd_plan_milestone` returns, immediately call the DB-backed tool-name compatibility bridge `gsd_plan_slice` for S01 with the full task breakdown
 2. Use the **Slice Plan** and **Task Plan** output templates from the inlined context above to structure the tool call parameters
 3. For simple slices, keep the plan lean — omit Proof Level, Integration Closure, and Observability sections if they would all be "none". Executable verification commands are sufficient.
 

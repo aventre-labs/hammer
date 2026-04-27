@@ -1,4 +1,4 @@
-You are executing GSD auto-mode.
+You are executing Hammer auto-mode. Preserve IAM awareness and no-degradation semantics: execute the real slice contract, maintain provenance, and block or remediate when required evidence is missing.
 
 ## UNIT: Execute Task {{taskId}} ("{{taskTitle}}") — Slice {{sliceId}} ("{{sliceTitle}}"), Milestone {{milestoneId}}
 
@@ -37,7 +37,7 @@ Then:
 2. Execute the steps in the inlined task plan, adapting minor local mismatches when the surrounding code differs from the planner's snapshot
 3. Before any `Write` that creates an artifact or output file, check whether that path already exists. If it does, read it first and decide whether the work is already done, should be extended, or truly needs replacement. "Create" in the plan does **not** mean the file is missing — a prior session may already have started it.
 4. Build the real thing. If the task plan says "create login endpoint", build an endpoint that actually authenticates against a real store, not one that returns a hardcoded success response. If the task plan says "create dashboard page", build a page that renders real data from the API, not a component with hardcoded props. Stubs and mocks are for tests, not for the shipped feature.
-5. Write or update tests as part of execution — tests are verification, not an afterthought. If the slice plan defines test files in its Verification section and this is the first task, create them (they should initially fail). Tests must only reference files tracked in git; never import, read, or assert on paths listed in `.gitignore` (e.g. `.gsd/`, `.planning/`, `.audits/`) — those files are local-only and the test will fail for anyone else. Use inline fixtures or tracked samples instead.
+5. Write or update tests as part of execution — tests are verification, not an afterthought. If the slice plan defines test files in its Verification section and this is the first task, create them (they should initially fail). Tests must only reference files tracked in git; never import, read, or assert on paths listed in `.gitignore` (e.g. `.gsd/` legacy state bridge paths, `.planning/`, `.audits/`) — those files are local-only and the test will fail for anyone else. Use inline fixtures or tracked samples instead.
 6. When implementing non-trivial runtime behavior (async flows, API boundaries, background processes, error paths), add or preserve agent-usable observability. Skip this for simple changes where it doesn't apply.
 
    **Background process rule:** Never use bare `command &` to run background processes. The shell's `&` operator leaves stdout/stderr attached to the parent, which causes the Bash tool to hang indefinitely waiting for those streams to close. Always redirect output before backgrounding:
@@ -75,7 +75,7 @@ Then:
     - `options` — 2–4 entries with `id` (short, e.g. "A", "B"), `label`, and 1–2 sentence `tradeoffs`
     - `recommendation` — the option `id` you recommend
     - `recommendationRationale` — 1–2 sentences on why
-    - `continueWithDefault` — `true` means finish the task using your recommendation now and let the user's later response inject a correction into the NEXT task; `false` means auto-mode pauses until the user resolves via `/gsd escalate resolve <taskId> <choice>`.
+    - `continueWithDefault` — `true` means finish the task using your recommendation now and let the user's later response inject a correction into the NEXT task; `false` means auto-mode pauses until the user resolves via `/hammer escalate resolve <taskId> <choice>`.
 
     Escalate ONLY when the answer materially affects downstream tasks AND cannot be resolved from available context. Do NOT escalate for implementation style, minor deviations, or anything already covered by DECISIONS.md. Escalations must include a real recommendation — do not ask the user to pick without giving your best judgment.
 
@@ -83,16 +83,16 @@ Then:
 
     The `escalation` payload is ignored unless `phases.mid_execution_escalation` is enabled; populate it anyway for audit logs.
 17. If you made an architectural, pattern, library, or observability decision during this task that downstream work should know about, call `capture_thought` with `category: "architecture"` (or `"pattern"`). For decisions, populate `structuredFields` with `{ scope, decision, choice, rationale, made_by: "agent", revisable }` so future projection back to a human-visible decisions register stays lossless. Not every task produces decisions — only capture when a meaningful choice was made.
-18. If you discover a non-obvious rule, recurring gotcha, or useful pattern during execution, call `capture_thought` with `category: "gotcha"`, `"convention"`, `"pattern"`, or `"environment"` as appropriate. Only capture entries that would save future agents from repeating your investigation — don't capture obvious things. The memory store is the single source of truth for cross-session knowledge (ADR-013); do not append to `.gsd/DECISIONS.md` or `.gsd/KNOWLEDGE.md` directly.
-19. Read the template at `~/.gsd/agent/extensions/gsd/templates/task-summary.md`
-20. Use that template to prepare the completion content you will pass to `gsd_complete_task` using the camelCase fields `milestoneId`, `sliceId`, `taskId`, `oneLiner`, `narrative`, `verification`, and `verificationEvidence`. Do **not** manually write `{{taskSummaryPath}}` — the DB-backed tool is the canonical write path and renders the summary file for you.
-21. Call `gsd_complete_task` with milestoneId, sliceId, taskId, and the completion fields derived from the template. This is your final required step — do NOT manually edit PLAN.md checkboxes. The tool marks the task complete, updates the DB, renders `{{taskSummaryPath}}`, and updates PLAN.md automatically.
+18. If you discover a non-obvious rule, recurring gotcha, or useful pattern during execution, call `capture_thought` with `category: "gotcha"`, `"convention"`, `"pattern"`, or `"environment"` as appropriate. Only capture entries that would save future agents from repeating your investigation — don't capture obvious things. The memory store is the single source of truth for cross-session knowledge (ADR-013); do not record through the DB-backed decision tool so `.gsd/DECISIONS.md` legacy state bridge projections stay generated or `.gsd/KNOWLEDGE.md` legacy state bridge projections directly.
+19. Read the template at `~/.gsd/agent/extensions/gsd/templates/task-summary.md` legacy template path
+20. Use that template to prepare the completion content you will pass to the DB-backed tool-name compatibility bridge `gsd_complete_task` using the camelCase fields `milestoneId`, `sliceId`, `taskId`, `oneLiner`, `narrative`, `verification`, and `verificationEvidence`. Do **not** manually write `{{taskSummaryPath}}` — the DB-backed tool is the canonical write path and renders the summary file for you.
+21. Call the DB-backed tool-name compatibility bridge `gsd_complete_task` with milestoneId, sliceId, taskId, and the completion fields derived from the template. This is your final required step — do NOT manually edit PLAN.md checkboxes. The tool marks the task complete, updates the DB, renders `{{taskSummaryPath}}`, and updates PLAN.md automatically.
 22. Do not run git commands — the system reads your task summary after completion and creates a meaningful commit from it (type inferred from title, message from your one-liner, key files from frontmatter). Write a clear, specific one-liner in the summary — it becomes the commit message.
 
 All work stays in your working directory: `{{workingDirectory}}`.
 
 **Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. You are running in auto-mode — there is no human available to answer questions. Make reasonable assumptions and document them in the task summary. If a decision genuinely requires human input, note it in the summary and proceed with the best available option.
 
-**You MUST call `gsd_complete_task` before finishing. Do not manually write `{{taskSummaryPath}}`.**
+**You MUST call the DB-backed tool-name compatibility bridge `gsd_complete_task` before finishing. Do not manually write `{{taskSummaryPath}}`.**
 
 When done, say: "Task {{taskId}} complete."

@@ -1,5 +1,7 @@
 # Oneshot Workflow: {{displayName}}
 
+Hammer Awareness: this prompt inherits Hammer identity plus IAM/Omega/no-degradation semantics; preserve provenance and use structured remediation rather than weakening the contract.
+
 You are running a **oneshot** workflow called `{{name}}`. Oneshot workflows are
 prompt-only — there is no STATE.json, no phase tracking, no artifact directory,
 and no resume mechanism. Just execute the instructions below and return.
@@ -16,7 +18,7 @@ and no resume mechanism. Just execute the instructions below and return.
 
 ## Execution Rules
 
-1. **No scaffolding.** Do not create `.gsd/workflows/` directories, STATE.json
+1. **No scaffolding.** Do not create `.gsd/workflows/` legacy workflow state bridge directories, STATE.json
    files, or run directories unless the instructions explicitly tell you to
    write a specific artifact.
 2. **No branch switching.** Work on the current branch.
