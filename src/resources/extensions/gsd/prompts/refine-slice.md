@@ -18,6 +18,10 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 {{dependencySummaries}}
 
+## Omega Phase Contract
+
+Before calling `gsd_plan_slice`, complete Hammer's native refinement Omega contract. Run `hammer_canonical_spiral` with `unitType: "refine-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"`. Cite `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, target artifact path, and synthesis reference in the refined PLAN content. If the IAM/Omega run errors, times out, or lacks those fields, stop before `gsd_plan_slice`; do not persist successful refinement.
+
 ## Your Role in the Pipeline
 
 ### Respect the Sketch Scope

@@ -256,3 +256,13 @@ test("#4782 phase 2: run-uat and gate-evaluate use the smallest budget tier", ()
     );
   }
 });
+
+
+test("S06: governed planning manifests advertise omega-phase-artifact on demand", () => {
+  for (const unitType of ["plan-milestone", "plan-slice", "refine-slice", "replan-slice"] as const) {
+    assert.ok(
+      UNIT_MANIFESTS[unitType].artifacts.onDemand.includes("omega-phase-artifact"),
+      `${unitType} should expose compact Omega phase artifacts as on-demand context`,
+    );
+  }
+});

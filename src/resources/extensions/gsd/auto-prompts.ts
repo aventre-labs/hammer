@@ -32,7 +32,7 @@ import {
   type GateDefinition,
 } from "./gate-registry.js";
 import { formatDecisionsCompact, formatRequirementsCompact } from "./structured-data-formatter.js";
-import { readPhaseAnchor, formatAnchorForPrompt } from "./phase-anchor.js";
+import { readPhaseAnchor, formatAnchorForPrompt, formatOmegaPhaseArtifactsForPrompt } from "./phase-anchor.js";
 import { composeInlinedContext, type ArtifactResolver } from "./unit-context-composer.js";
 import { logWarning } from "./workflow-logger.js";
 import { inlineGraphSubgraph } from "./graph-context.js";
@@ -1312,6 +1312,13 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
   // Inject phase handoff anchor from research phase (if available)
   const researchAnchor = readPhaseAnchor(base, mid, "research-milestone");
   if (researchAnchor) inlined.push(formatAnchorForPrompt(researchAnchor));
+  const milestoneOmegaContext = formatOmegaPhaseArtifactsForPrompt(base, [{
+    unitType: "research-milestone",
+    unitId: mid,
+    label: "Milestone research Omega",
+    ...(researchPath ? { expectedTargetArtifactPath: researchPath } : {}),
+  }]);
+  if (milestoneOmegaContext) inlined.push(milestoneOmegaContext);
 
   inlined.push(await inlineFile(contextPath, contextRel, "Milestone Context"));
   const researchInline = await inlineFileOptional(researchPath, researchRel, "Milestone Research");
@@ -1497,6 +1504,13 @@ async function renderSlicePrompt(options: {
   // Phase handoff anchor from research phase (if available)
   const researchSliceAnchor = readPhaseAnchor(base, mid, "research-slice");
   if (researchSliceAnchor) inlined.push(formatAnchorForPrompt(researchSliceAnchor));
+  const sliceOmegaContext = formatOmegaPhaseArtifactsForPrompt(base, [{
+    unitType: "research-slice",
+    unitId: `${mid}/${sid}`,
+    label: "Slice research Omega",
+    ...(researchPath ? { expectedTargetArtifactPath: researchPath } : {}),
+  }]);
+  if (sliceOmegaContext) inlined.push(sliceOmegaContext);
 
   // Roadmap excerpt with full-roadmap fallback
   const roadmapExcerpt = await inlineRoadmapExcerpt(base, mid, sid);
@@ -2214,6 +2228,13 @@ export async function buildReplanSlicePrompt(
   const sliceContextRel = relSliceFile(base, mid, sid, "CONTEXT");
 
   const inlined: string[] = [];
+  const replanOmegaContext = formatOmegaPhaseArtifactsForPrompt(base, [{
+    unitType: "plan-slice",
+    unitId: `${mid}/${sid}`,
+    label: "Current slice plan Omega",
+    ...(slicePlanPath ? { expectedTargetArtifactPath: slicePlanPath } : {}),
+  }]);
+  if (replanOmegaContext) inlined.push(replanOmegaContext);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const sliceCtxInline = await inlineFileOptional(sliceContextPath, sliceContextRel, "Slice Context (from discussion)");
   if (sliceCtxInline) inlined.push(sliceCtxInline);

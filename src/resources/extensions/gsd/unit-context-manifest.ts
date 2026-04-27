@@ -60,6 +60,7 @@ export const ARTIFACT_KEYS = [
   "decisions",
   "project",
   "templates",
+  "omega-phase-artifact",
 ] as const;
 
 export type ArtifactKey = typeof ARTIFACT_KEYS[number];
@@ -338,7 +339,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     artifacts: {
       inline: ["project", "requirements", "decisions", "milestone-research", "templates"],
       excerpt: [],
-      onDemand: [],
+      onDemand: ["omega-phase-artifact"],
     },
     maxSystemPromptChars: COMMON_BUDGET_LARGE,
   },
@@ -413,7 +414,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     artifacts: {
       inline: ["roadmap", "slice-research", "dependency-summaries", "requirements", "decisions", "templates"],
       excerpt: [],
-      onDemand: [],
+      onDemand: ["omega-phase-artifact"],
     },
     maxSystemPromptChars: COMMON_BUDGET_LARGE,
   },
@@ -427,7 +428,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     artifacts: {
       inline: ["slice-plan", "slice-research", "dependency-summaries", "templates"],
       excerpt: [],
-      onDemand: [],
+      onDemand: ["omega-phase-artifact"],
     },
     maxSystemPromptChars: COMMON_BUDGET_MEDIUM,
   },
@@ -441,7 +442,7 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     artifacts: {
       inline: ["slice-plan", "slice-research", "dependency-summaries", "prior-task-summaries", "templates"],
       excerpt: [],
-      onDemand: [],
+      onDemand: ["omega-phase-artifact"],
     },
     maxSystemPromptChars: COMMON_BUDGET_MEDIUM,
   },

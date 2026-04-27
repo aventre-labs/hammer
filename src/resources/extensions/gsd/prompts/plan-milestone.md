@@ -10,6 +10,15 @@ All relevant context has been preloaded below — start working immediately with
 
 {{inlinedContext}}
 
+## Omega Phase Contract
+
+Before calling `gsd_plan_milestone`, complete Hammer's native planning Omega contract.
+
+1. Run `hammer_canonical_spiral` after planning context is gathered and before the DB-backed planning tool, using `unitType: "plan-milestone"`, `unitId: "{{milestoneId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
+2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the planning contract is unsatisfied.
+3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the ROADMAP content you pass to `gsd_plan_milestone`.
+4. If the Omega run returns an IAM error, times out, or cannot provide complete artifacts, stop before `gsd_plan_milestone` and report the error/remediation instead of persisting successful planning.
+
 ## Your Role in the Pipeline
 
 You are the first deep look at this milestone. You have full tool access — explore the codebase, look up docs, investigate technology choices. Your job is to understand the landscape and then strategically decompose the work into demoable slices.

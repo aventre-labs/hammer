@@ -397,3 +397,34 @@ test("parallel-research-slices prompt requires per-slice Omega manifests", () =>
   assert.doesNotMatch(prompt, /scriptorium/i);
 });
 
+
+
+// ─── S06: planning prompts require native Omega phase contracts ────────
+
+const PLANNING_OMEGA_PROMPTS = [
+  { name: "plan-milestone", tool: "gsd_plan_milestone", expectedUnitType: "plan-milestone", expectedUnitId: /unitId`?:\s*`?"\{\{milestoneId\}\}"/ },
+  { name: "plan-slice", tool: "gsd_plan_slice", expectedUnitType: "plan-slice", expectedUnitId: /unitId`?:\s*`?"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/ },
+  { name: "guided-plan-slice", tool: "gsd_plan_slice", expectedUnitType: "plan-slice", expectedUnitId: /unitId:\s*"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/ },
+  { name: "replan-slice", tool: "gsd_replan_slice", expectedUnitType: "replan-slice", expectedUnitId: /unitId`?:\s*`?"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/ },
+  { name: "refine-slice", tool: "gsd_plan_slice", expectedUnitType: "refine-slice", expectedUnitId: /unitId:\s*"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/ },
+] as const;
+
+for (const contract of PLANNING_OMEGA_PROMPTS) {
+  test(`${contract.name} prompt requires native Omega before planning persistence`, () => {
+    const prompt = readPrompt(contract.name);
+    assert.match(prompt, /## Omega Phase Contract/);
+    assert.match(prompt, /hammer_canonical_spiral/);
+    assert.match(prompt, new RegExp(`unitType` + "`?:\\s*`?\"" + contract.expectedUnitType + "\""));
+    assert.match(prompt, contract.expectedUnitId);
+    assert.match(prompt, /targetArtifactPath/);
+    assert.match(prompt, new RegExp(`before (?:the DB-backed .* tool|` + "`" + contract.tool + "`" + `)`, "i"));
+    assert.match(prompt, /runId/);
+    assert.match(prompt, /manifestPath/);
+    assert.match(prompt, /artifactDir/);
+    assert.match(prompt, /stageCount`? of `?10/i);
+    assert.match(prompt, /synthesis(?:Path| reference)/i);
+    assert.match(prompt, /IAM|Omega run returns/i);
+    assert.match(prompt, new RegExp(`stop before ` + "`" + contract.tool + "`"));
+    assert.doesNotMatch(prompt, /scriptorium/i);
+  });
+}

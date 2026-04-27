@@ -16,6 +16,15 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 {{dependencySummaries}}
 
+## Omega Phase Contract
+
+Before calling `gsd_plan_slice`, complete Hammer's native planning Omega contract.
+
+1. Run `hammer_canonical_spiral` after slice planning context is gathered and before the DB-backed planning tool, using `unitType: "plan-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{outputPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
+2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the planning contract is unsatisfied.
+3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the PLAN content you pass to `gsd_plan_slice`.
+4. If the Omega run returns an IAM error, times out, or cannot provide complete artifacts, stop before `gsd_plan_slice` and report the error/remediation instead of persisting successful planning.
+
 ## Your Role in the Pipeline
 
 You have full tool access. Before decomposing, explore the relevant code to ground your plan in reality.

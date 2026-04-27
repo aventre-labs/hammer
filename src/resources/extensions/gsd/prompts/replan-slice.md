@@ -12,6 +12,15 @@ All relevant context has been preloaded below — the roadmap, current slice pla
 
 {{inlinedContext}}
 
+## Omega Phase Contract
+
+Before calling `gsd_replan_slice`, complete Hammer's native replanning Omega contract.
+
+1. Run `hammer_canonical_spiral` after blocker analysis and before the DB-backed replan tool, using `unitType: "replan-slice"`, `unitId: "{{milestoneId}}/{{sliceId}}"`, `targetArtifactPath: "{{replanPath}}"`, and `persona: "engineer"` unless a loaded skill gives a stronger reason otherwise.
+2. The tool result must include `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). Missing run id, manifest path, stage count, or synthesis reference means the replan contract is unsatisfied.
+3. Cite the returned `runId`, `manifestPath`, target artifact path, stage count, and synthesis reference in the REPLAN content/tool rationale.
+4. If the Omega run returns an IAM error, times out, or cannot provide complete artifacts, stop before `gsd_replan_slice` and report the error/remediation instead of persisting successful replanning.
+
 ## Capture Context
 
 The following user-captured thoughts triggered or informed this replan:
