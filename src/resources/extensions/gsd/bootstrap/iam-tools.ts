@@ -42,8 +42,14 @@ import type {
 function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
   return {
     isDbAvailable: () => dbAvailable,
-    queryMemories: (query, k = 10, category) =>
-      queryMemoriesRanked({ query, k, ...(category ? { category } : {}) })
+    queryMemories: (query, k = 10, category, options) =>
+      queryMemoriesRanked({
+        query,
+        k,
+        ...(category ? { category } : {}),
+        ...(options?.trinityLayer ? { trinityLayer: options.trinityLayer } : {}),
+        ...(options?.trinityLens ? { trinityLens: options.trinityLens } : {}),
+      })
         .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, category: r.memory.category, trinity: r.memory.trinity })),
     getActiveMemories: (limit = 30) =>
       getActiveMemoriesRanked(limit)
@@ -52,7 +58,14 @@ function buildAdapters(dbAvailable: boolean): IAMToolAdapters {
     traverseGraph: (startId, depth = 2) => {
       const graph = traverseGraph(startId, depth);
       return {
-        nodes: graph.nodes.map((n) => ({ id: n.id, category: n.category, content: n.content, confidence: n.confidence, trinity: n.trinity })),
+        nodes: graph.nodes.map((n) => ({
+          id: n.id,
+          category: n.category,
+          content: n.content,
+          confidence: n.confidence,
+          trinity: n.trinity,
+          provenanceSummary: n.provenanceSummary,
+        })),
         edges: graph.edges.map((e) => ({ fromId: e.from, toId: e.to, relation: e.rel })),
       };
     },
@@ -115,6 +128,39 @@ async function runIAMTool(execute: (adapters: IAMToolAdapters, params: any) => P
   }
 }
 
+const trinityLayerSchema = Type.Union([Type.Literal("social"), Type.Literal("knowledge"), Type.Literal("generative")], {
+  description: "Optional Trinity layer filter or metadata value.",
+});
+
+const trinityVectorSchema = Type.Record(Type.String(), Type.Number({ minimum: 0, maximum: 1 }), {
+  description: "Normalized Trinity vector scores (0–1). Unknown keys are ignored by IAM normalization.",
+});
+
+const trinityLensSchema = Type.Object({
+  ity: Type.Optional(trinityVectorSchema),
+  pathy: Type.Optional(trinityVectorSchema),
+}, { description: "Optional Trinity -ity/-pathy vector lens for deterministic ranking." });
+
+const trinityValidationStateSchema = Type.Union([
+  Type.Literal("unvalidated"),
+  Type.Literal("validated"),
+  Type.Literal("contested"),
+  Type.Literal("deprecated"),
+], { description: "Optional Trinity validation state." });
+
+const trinityMetadataSchema = Type.Object({
+  layer: Type.Optional(trinityLayerSchema),
+  ity: Type.Optional(trinityVectorSchema),
+  pathy: Type.Optional(trinityVectorSchema),
+  provenance: Type.Optional(Type.Record(Type.String(), Type.Unknown(), {
+    description: "Optional provenance/source-relation metadata. Do not include secrets.",
+  })),
+  validation: Type.Optional(Type.Object({
+    state: Type.Optional(trinityValidationStateSchema),
+    score: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  })),
+}, { description: "Optional Trinity metadata payload. Unknown vector keys and malformed values are normalized by IAM." });
+
 export function registerIAMTools(pi: ExtensionAPI): void {
   const recallTool = {
     name: "hammer_recall",
@@ -124,8 +170,10 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_recall to search Hammer memory for relevant prior knowledge."],
     parameters: Type.Object({
       query: Type.String({ description: "Keywords to search for" }),
-      k: Type.Optional(Type.Number({ description: "Max results (default 10)" })),
+      k: Type.Optional(Type.Number({ description: "Max results (default 10, max 100)", minimum: 1, maximum: 100 })),
       category: Type.Optional(Type.String({ description: "Filter by category" })),
+      trinityLayer: Type.Optional(trinityLayerSchema),
+      trinityLens: Type.Optional(trinityLensSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -216,7 +264,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_explore to inspect related memories around a known memory id."],
     parameters: Type.Object({
       memoryId: Type.String({ description: "Memory ID to start from" }),
-      depth: Type.Optional(Type.Number({ description: "Traversal depth (default 2)" })),
+      depth: Type.Optional(Type.Number({ description: "Traversal depth (0–5, default 2)", minimum: 0, maximum: 5 })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -275,7 +323,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_cluster to see category distribution for memories matching a query."],
     parameters: Type.Object({
       query: Type.String({ description: "Keywords to search for" }),
-      k: Type.Optional(Type.Number({ description: "Max results (default 20)" })),
+      k: Type.Optional(Type.Number({ description: "Max results (default 20, max 100)", minimum: 1, maximum: 100 })),
+      trinityLayer: Type.Optional(trinityLayerSchema),
+      trinityLens: Type.Optional(trinityLensSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -293,7 +343,8 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptSnippet: "Map active memory categories",
     promptGuidelines: ["Use hammer_landscape to inspect the active memory category distribution."],
     parameters: Type.Object({
-      limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 50)" })),
+      limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 50, max 100)", minimum: 1, maximum: 100 })),
+      trinityLayer: Type.Optional(trinityLayerSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -312,7 +363,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_tension to gather memories that may contain unresolved tensions."],
     parameters: Type.Object({
       query: Type.String({ description: "Keywords to search for" }),
-      k: Type.Optional(Type.Number({ description: "Max results (default 10)" })),
+      k: Type.Optional(Type.Number({ description: "Max results (default 10, max 100)", minimum: 1, maximum: 100 })),
+      trinityLayer: Type.Optional(trinityLayerSchema),
+      trinityLens: Type.Optional(trinityLensSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -397,8 +450,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptSnippet: "Harvest active memories by category",
     promptGuidelines: ["Use hammer_harvest to retrieve active memories with category summary context."],
     parameters: Type.Object({
-      limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 30)" })),
+      limit: Type.Optional(Type.Number({ description: "Max active memories to inspect (default 30, max 100)", minimum: 1, maximum: 100 })),
       category: Type.Optional(Type.String({ description: "Filter active memories by category" })),
+      trinityLayer: Type.Optional(trinityLayerSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -418,7 +472,16 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       category: Type.String({ description: "Memory category" }),
       content: Type.String({ description: "Durable memory content" }),
-      confidence: Type.Optional(Type.Number({ description: "Confidence from 0.1 to 0.99" })),
+      confidence: Type.Optional(Type.Number({ description: "Confidence from 0.1 to 0.99", minimum: 0.1, maximum: 0.99 })),
+      trinity: Type.Optional(trinityMetadataSchema),
+      trinityLayer: Type.Optional(trinityLayerSchema),
+      trinityIty: Type.Optional(trinityVectorSchema),
+      trinityPathy: Type.Optional(trinityVectorSchema),
+      trinityProvenance: Type.Optional(Type.Record(Type.String(), Type.Unknown(), {
+        description: "Optional provenance/source-relation metadata. Do not include secrets.",
+      })),
+      trinityValidationState: Type.Optional(trinityValidationStateSchema),
+      trinityValidationScore: Type.Optional(Type.Number({ description: "Optional validation score (0–1).", minimum: 0, maximum: 1 })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();
@@ -437,7 +500,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_provenance to inspect graph context for a specific memory id."],
     parameters: Type.Object({
       memoryId: Type.String({ description: "Memory ID to start from" }),
-      depth: Type.Optional(Type.Number({ description: "Traversal depth (default 3)" })),
+      depth: Type.Optional(Type.Number({ description: "Traversal depth (0–5, default 3)", minimum: 0, maximum: 5 })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const dbAvailable = await ensureDbOpen();

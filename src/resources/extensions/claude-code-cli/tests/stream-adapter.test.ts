@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -50,6 +50,8 @@ const WORKFLOW_MCP_ENV_KEYS = [
 	"GSD_WORKFLOW_MCP_ARGS",
 	"GSD_WORKFLOW_MCP_ENV",
 	"GSD_WORKFLOW_MCP_CWD",
+	"GSD_CLI_PATH",
+	"GSD_BIN_PATH",
 ] as const;
 
 type WorkflowMcpEnvKey = (typeof WORKFLOW_MCP_ENV_KEYS)[number];
@@ -794,6 +796,7 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			GSD_WORKFLOW_MCP_ARGS: JSON.stringify(["packages/mcp-server/dist/cli.js"]),
 			GSD_WORKFLOW_MCP_ENV: JSON.stringify({ GSD_CLI_PATH: "/tmp/gsd" }),
 			GSD_WORKFLOW_MCP_CWD: "/tmp/project",
+			GSD_CLI_PATH: "/tmp/gsd",
 		});
 		try {
 
@@ -893,9 +896,6 @@ describe("stream-adapter — session persistence (#2859)", () => {
 	});
 
 	test("buildSdkOptions auto-detects local workflow MCP dist CLI when present", () => {
-		// GSD_CLI_PATH isn't in WORKFLOW_MCP_ENV_KEYS, so save+restore it
-		// manually around setWorkflowMcpEnv which handles the MCP keys.
-		const prevCliPath = process.env.GSD_CLI_PATH;
 		const restore = setWorkflowMcpEnv({});
 		const originalCwd = process.cwd();
 		const repoDir = mkdtempSync(join(tmpdir(), "claude-mcp-detect-"));
@@ -928,12 +928,6 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			process.chdir(originalCwd);
 			rmSync(repoDir, { recursive: true, force: true });
 			restore();
-			// GSD_CLI_PATH isn't in setWorkflowMcpEnv's scope — restore it here.
-			if (prevCliPath === undefined) {
-				delete process.env.GSD_CLI_PATH;
-			} else {
-				process.env.GSD_CLI_PATH = prevCliPath;
-			}
 		}
 	});
 
@@ -951,6 +945,18 @@ describe("stream-adapter — session persistence (#2859)", () => {
 		} finally {
 			restore();
 		}
+	});
+
+	test("pump enables MCP trust auto-approval around SDK query in headless/no-UI runs", () => {
+		const source = readFileSync(resolve(import.meta.dirname, "..", "stream-adapter.ts"), "utf-8");
+		const envSetIdx = source.indexOf('process.env.GSD_MCP_AUTO_APPROVE_TRUST = "1";');
+		const queryIdx = source.indexOf("const queryResult = sdk.query({");
+		const restoreIdx = source.indexOf("restoreSdkMcpAutoApproveEnv?.();", queryIdx);
+		assert.ok(envSetIdx > -1, "stream adapter should enable MCP trust auto-approval before SDK query");
+		assert.ok(queryIdx > -1, "stream adapter should call sdk.query");
+		assert.ok(restoreIdx > -1, "stream adapter should restore MCP trust auto-approval after SDK query settles");
+		assert.ok(envSetIdx < queryIdx, "MCP trust auto-approval must be set before sdk.query");
+		assert.ok(queryIdx < restoreIdx, "MCP trust auto-approval cleanup must run after sdk.query");
 	});
 });
 

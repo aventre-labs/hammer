@@ -6,7 +6,17 @@
  * extension tree.
  */
 
-import type { TrinityMetadata } from "./trinity.js";
+import type {
+  TrinityLayer,
+  TrinityMetadata,
+  TrinitySourceRelation,
+  TrinityVector,
+} from "./trinity.js";
+import type {
+  VolvoxDiagnostic,
+  VolvoxEpochResult,
+  VolvoxMetadata,
+} from "./volvox.js";
 
 // ---------------------------------------------------------------------------
 // Omega Protocol — ten-stage names
@@ -213,12 +223,23 @@ export interface OmegaRunConfig {
 // IAM public tool layer — pure executor contracts
 // ---------------------------------------------------------------------------
 
+export interface IAMGraphProvenanceSummary {
+  sourceUnitType?: string;
+  sourceUnitId?: string;
+  sourceId?: string;
+  artifactPath?: string;
+  sourceRelationCount: number;
+  sourceRelations: TrinitySourceRelation[];
+}
+
 export interface GraphNode {
   id: string;
   category: string;
   content: string;
   confidence: number;
   trinity?: TrinityMetadata;
+  volvox?: VolvoxMetadata;
+  provenanceSummary?: IAMGraphProvenanceSummary;
 }
 
 export interface GraphEdge {
@@ -233,6 +254,7 @@ export interface IAMMemoryListEntry {
   score: number;
   category: string;
   trinity?: TrinityMetadata;
+  volvox?: VolvoxMetadata;
 }
 
 export interface IAMActiveMemoryEntry {
@@ -241,23 +263,49 @@ export interface IAMActiveMemoryEntry {
   confidence: number;
   category: string;
   trinity?: TrinityMetadata;
+  volvox?: VolvoxMetadata;
 }
 
 export type IAMToolOutput =
   | { kind: "memory-list"; memories: IAMMemoryListEntry[] }
-  | { kind: "memory-created"; id: string; content: string; category: string; trinity?: TrinityMetadata }
+  | { kind: "memory-created"; id: string; content: string; category: string; trinity?: TrinityMetadata; volvox?: VolvoxMetadata }
   | { kind: "rune-contract"; rune: RuneContract }
   | { kind: "rune-list"; runes: RuneContract[] }
   | { kind: "savesuccess-report"; scorecard: SavesuccessScorecard; report: string; success: boolean }
-  | { kind: "knowledge-map"; categories: Record<string, number>; total: number }
+  | { kind: "knowledge-map"; categories: Record<string, number>; layers?: Record<string, number>; total: number }
   | { kind: "graph-walk"; nodes: GraphNode[]; edges: GraphEdge[] }
+  | { kind: "volvox-epoch"; epoch: VolvoxEpochResult }
+  | { kind: "volvox-status"; epoch?: VolvoxEpochResult; memories: IAMMemoryListEntry[]; diagnostics: VolvoxDiagnostic[] }
+  | { kind: "volvox-diagnostics"; diagnostics: VolvoxDiagnostic[]; blocking: VolvoxDiagnostic[] }
   | { kind: "check-result"; tools: string[]; kernelVersion: string; dbAvailable: boolean }
   | { kind: "spiral-deferred"; reason: string; guidance: string };
 
+export interface IAMTrinityLens {
+  ity?: TrinityVector | Record<string, number>;
+  pathy?: TrinityVector | Record<string, number>;
+}
+
+export interface IAMMemoryQueryOptions {
+  trinityLayer?: TrinityLayer;
+  trinityLens?: IAMTrinityLens;
+}
+
+export type IAMCreateMemoryTrinityInput = Partial<TrinityMetadata> | null;
+
+export interface IAMCreateMemoryFields {
+  category: string;
+  content: string;
+  confidence?: number;
+  source_unit_type?: string;
+  source_unit_id?: string;
+  structuredFields?: Record<string, unknown> | null;
+  trinity?: IAMCreateMemoryTrinityInput;
+}
+
 export interface IAMToolAdapters {
-  queryMemories: (query: string, k?: number, category?: string) => IAMMemoryListEntry[];
+  queryMemories: (query: string, k?: number, category?: string, options?: IAMMemoryQueryOptions) => IAMMemoryListEntry[];
   getActiveMemories: (limit?: number) => IAMActiveMemoryEntry[];
-  createMemory: (fields: { category: string; content: string; confidence?: number; source_unit_type?: string; structuredFields?: Record<string, unknown> | null; trinity?: Partial<TrinityMetadata> | null }) => string | null;
+  createMemory: (fields: IAMCreateMemoryFields) => string | null;
   traverseGraph: (startId: string, depth?: number) => { nodes: GraphNode[]; edges: Array<{ fromId: string; toId: string; relation: string }> };
   isDbAvailable: () => boolean;
 }

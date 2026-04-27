@@ -140,11 +140,17 @@ test('memory-relations: traverseGraph nodes carry Trinity metadata', () => {
   createMemory({
     category: 'pattern',
     content: 'A Trinity node',
+    source_unit_type: 'task',
+    source_unit_id: 'M001/S04/T03',
     trinity: {
       layer: 'generative',
       ity: { creativity: 0.9 },
       pathy: {},
-      provenance: { sourceRelations: [] },
+      provenance: {
+        sourceId: 'SRC-123',
+        artifactPath: 'milestones/M001/slices/S04/tasks/T03-PLAN.md',
+        sourceRelations: [{ type: 'derived_from', targetId: 'T03-PLAN', targetKind: 'task-plan', weight: 0.75 }],
+      },
       validation: { state: 'validated', score: 1 },
     },
   });
@@ -158,6 +164,10 @@ test('memory-relations: traverseGraph nodes carry Trinity metadata', () => {
   assert.equal(first?.trinity?.layer, 'generative');
   assert.deepStrictEqual(first?.trinity?.ity, { creativity: 0.9 });
   assert.deepStrictEqual(first?.trinity?.validation, { state: 'validated', score: 1 });
+  assert.equal(first?.provenanceSummary?.sourceUnitId, 'M001/S04/T03');
+  assert.equal(first?.provenanceSummary?.sourceId, 'SRC-123');
+  assert.equal(first?.provenanceSummary?.sourceRelationCount, 1);
+  assert.deepStrictEqual(first?.provenanceSummary?.sourceRelations, [{ type: 'derived_from', targetId: 'T03-PLAN', targetKind: 'task-plan', weight: 0.75 }]);
   assert.equal(second?.trinity?.layer, 'knowledge', 'legacy/default graph nodes keep deterministic Trinity metadata');
 
   closeDatabase();

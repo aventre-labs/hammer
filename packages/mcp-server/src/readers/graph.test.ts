@@ -197,6 +197,11 @@ describe('buildGraph', () => {
     for (const node of graph.nodes) {
       assert.ok(node.trinity, `node ${node.id} should include Trinity metadata`);
       assert.ok(['social', 'knowledge', 'generative'].includes(node.trinity.layer), `valid layer for ${node.id}`);
+      assert.equal(node.trinityLayer, node.trinity.layer, 'top-level trinityLayer alias should mirror nested metadata');
+      assert.deepEqual(node.ity, node.trinity.ity, 'top-level -ity alias should mirror nested metadata');
+      assert.deepEqual(node.pathy, node.trinity.pathy, 'top-level -pathy alias should mirror nested metadata');
+      assert.deepEqual(node.provenance, node.trinity.provenance, 'top-level provenance alias should mirror nested metadata');
+      assert.deepEqual(node.validationSummary, node.trinity.validation, 'top-level validation summary should mirror nested metadata');
       assert.deepEqual(node.trinity.ity, {}, 'artifact graph defaults keep empty -ity vector');
       assert.deepEqual(node.trinity.pathy, {}, 'artifact graph defaults keep empty -pathy vector');
       assert.ok(Array.isArray(node.trinity.provenance.sourceRelations), 'sourceRelations should be an array');
@@ -561,6 +566,68 @@ describe('graphQuery', () => {
       lower.nodes.map((n) => n.id).sort(),
       upper.nodes.map((n) => n.id).sort(),
     );
+  });
+
+  it('decorates legacy graph.json query results with deterministic Trinity defaults', async () => {
+    const gsdRoot = join(projectDir, '.gsd');
+    const legacyGraph: KnowledgeGraph = {
+      builtAt: new Date().toISOString(),
+      nodes: [
+        { id: 'legacy-node', label: 'Legacy Auth Graph Node', type: 'decision', confidence: 'EXTRACTED' },
+      ],
+      edges: [],
+    };
+    writeFileSync(join(gsdRoot, 'graphs', 'graph.json'), JSON.stringify(legacyGraph), 'utf-8');
+
+    const result = await graphQuery(projectDir, 'Legacy Auth');
+    const node = result.nodes.find((n) => n.id === 'legacy-node');
+
+    assert.equal(node?.trinity?.layer, 'knowledge');
+    assert.equal(node?.trinityLayer, 'knowledge');
+    assert.deepEqual(node?.ity, {});
+    assert.deepEqual(node?.pathy, {});
+    assert.equal(node?.validationSummary?.state, 'validated');
+    assert.equal(node?.validationSummary?.score, 1);
+  });
+
+  it('normalizes malformed Trinity metadata from graph.json instead of leaking invalid values', async () => {
+    const gsdRoot = join(projectDir, '.gsd');
+    const malformedGraph = {
+      builtAt: new Date().toISOString(),
+      nodes: [
+        {
+          id: 'malformed-trinity-node',
+          label: 'Malformed Auth Graph Node',
+          type: 'task',
+          confidence: 'INFERRED',
+          trinity: {
+            layer: 'not-a-layer',
+            ity: { factuality: 1.5, imaginary: 1 },
+            pathy: { empathy: -1, reciprocity: 0.25 },
+            provenance: {
+              sourceRelations: [
+                { type: 'not-a-relation', targetId: 'bad' },
+                { type: 'derived_from', targetId: 'artifact://auth', targetKind: 'artifact', weight: 2 },
+              ],
+            },
+            validation: { state: 'not-a-state', score: 2 },
+          },
+        },
+      ],
+      edges: [],
+    };
+    writeFileSync(join(gsdRoot, 'graphs', 'graph.json'), JSON.stringify(malformedGraph), 'utf-8');
+
+    const result = await graphQuery(projectDir, 'Malformed Auth');
+    const node = result.nodes.find((n) => n.id === 'malformed-trinity-node');
+
+    assert.equal(node?.trinity?.layer, 'generative', 'task fallback layer should replace invalid layer');
+    assert.deepEqual(node?.trinity?.ity, { factuality: 1 }, 'known vector scores should be clamped and unknown keys dropped');
+    assert.deepEqual(node?.trinity?.pathy, { empathy: 0, reciprocity: 0.25 });
+    assert.deepEqual(node?.trinity?.provenance.sourceRelations, [
+      { type: 'derived_from', targetId: 'artifact://auth', targetKind: 'artifact', weight: 1 },
+    ]);
+    assert.deepEqual(node?.trinity?.validation, { state: 'unvalidated', score: 1 });
   });
 
   it('budget trims AMBIGUOUS edges first — keeps INFERRED edge when budget only forces one drop', async () => {

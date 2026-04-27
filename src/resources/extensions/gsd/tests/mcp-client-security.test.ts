@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   _buildMcpChildEnvForTest,
   _buildMcpTrustConfirmOptionsForTest,
+  _shouldAutoApproveMcpTrustForTest,
 } from "../../mcp-client/index.ts";
 
 // Note: four source-grep tests that scanned `mcp-client/index.ts` for
@@ -44,4 +45,10 @@ test("MCP stdio trust confirmation is abort-aware", () => {
 
   assert.equal(options.timeout, 120_000);
   assert.equal(options.signal, controller.signal);
+});
+
+test("MCP stdio trust auto-approval is enabled for autoloop/headless env", () => {
+  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_MCP_AUTO_APPROVE_TRUST: "1" } as NodeJS.ProcessEnv), true);
+  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_HEADLESS: "1" } as NodeJS.ProcessEnv), true);
+  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_MCP_AUTO_APPROVE_TRUST: "0" } as NodeJS.ProcessEnv), false);
 });

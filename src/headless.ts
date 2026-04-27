@@ -402,8 +402,8 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   if (injector) {
     clientOptions.env = injector.getSecretEnvVars()
   }
-  // Signal headless mode to the extension (skips UAT human pause, etc.)
-  clientOptions.env = { ...(clientOptions.env as Record<string, string> || {}), GSD_HEADLESS: '1' } // GSD_HEADLESS is a legacy alias for compatibility — bootstrap-migration
+  // Signal headless mode to the extension (skips UAT human pause, auto-approves MCP trust, etc.)
+  clientOptions.env = { ...(clientOptions.env as Record<string, string> || {}), GSD_HEADLESS: '1', GSD_MCP_AUTO_APPROVE_TRUST: '1' }
   // Propagate --tools to the child process so headless auto can run with a
   // bounded tool surface after Hammer registers canonical tools plus legacy aliases.
   if (options.tools && options.tools.length > 0) {

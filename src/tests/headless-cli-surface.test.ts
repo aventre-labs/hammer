@@ -21,6 +21,8 @@ import {
 
 import type { OutputFormat, HeadlessJsonResult } from '../headless-types.js'
 import { VALID_OUTPUT_FORMATS } from '../headless-types.js'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ─── Extracted parsing logic (mirrors headless.ts) ─────────────────────────
 
@@ -42,6 +44,7 @@ interface HeadlessOptions {
   eventFilter?: Set<string>
   resumeSession?: string
   bare?: boolean
+  tools?: string[]
 }
 
 function parseHeadlessArgs(argv: string[]): HeadlessOptions {
@@ -104,6 +107,8 @@ function parseHeadlessArgs(argv: string[]): HeadlessOptions {
         options.responseTimeout = parseInt(args[++i], 10)
       } else if (arg === '--resume' && i + 1 < args.length) {
         options.resumeSession = args[++i]
+      } else if (arg === '--tools' && i + 1 < args.length) {
+        options.tools = args[++i].split(',').map((s) => s.trim()).filter(Boolean)
       } else if (arg === '--bare') {
         options.bare = true
       }
@@ -314,6 +319,17 @@ test('--supervised still works and implies stream-json', () => {
 test('--answers still works', () => {
   const opts = parseHeadlessArgs(['node', 'gsd', 'headless', '--answers', 'answers.json', 'auto'])
   assert.equal(opts.answers, 'answers.json')
+})
+
+test('--tools still works', () => {
+  const opts = parseHeadlessArgs(['node', 'gsd', 'headless', '--tools', 'read,bash,mcp_call', 'auto'])
+  assert.deepEqual(opts.tools, ['read', 'bash', 'mcp_call'])
+})
+
+test('headless child env enables MCP trust auto-approval', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'headless.ts'), 'utf-8')
+  assert.match(source, /GSD_HEADLESS:\s*'1'/)
+  assert.match(source, /GSD_MCP_AUTO_APPROVE_TRUST:\s*'1'/)
 })
 
 test('positional command parsing still works', () => {

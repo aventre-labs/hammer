@@ -265,6 +265,10 @@ export type {
 // ─────────────────────────────────────────────────────────────────────────────
 const s = new AutoSession();
 
+function hasCommandSessionControl(ctx: ExtensionContext | null | undefined): boolean {
+  return typeof (ctx as Partial<ExtensionCommandContext> | null | undefined)?.newSession === "function";
+}
+
 /** Throttle STATE.md rebuilds — at most once per 30 seconds */
 const STATE_REBUILD_MIN_INTERVAL_MS = 30_000;
 
@@ -317,6 +321,30 @@ function restoreMilestoneLockEnv(): void {
   s.previousMilestoneLockEnv = null;
   s.hadMilestoneLockEnv = false;
   s.milestoneLockEnvCaptured = false;
+}
+
+function captureMcpTrustAutoApproveEnv(): void {
+  if (!s.mcpTrustAutoApproveEnvCaptured) {
+    s.hadMcpTrustAutoApproveEnv = Object.prototype.hasOwnProperty.call(process.env, "GSD_MCP_AUTO_APPROVE_TRUST");
+    s.previousMcpTrustAutoApproveEnv = process.env.GSD_MCP_AUTO_APPROVE_TRUST ?? null;
+    s.mcpTrustAutoApproveEnvCaptured = true;
+  }
+
+  process.env.GSD_MCP_AUTO_APPROVE_TRUST = "1";
+}
+
+function restoreMcpTrustAutoApproveEnv(): void {
+  if (!s.mcpTrustAutoApproveEnvCaptured) return;
+
+  if (s.hadMcpTrustAutoApproveEnv && s.previousMcpTrustAutoApproveEnv !== null) {
+    process.env.GSD_MCP_AUTO_APPROVE_TRUST = s.previousMcpTrustAutoApproveEnv;
+  } else {
+    delete process.env.GSD_MCP_AUTO_APPROVE_TRUST;
+  }
+
+  s.previousMcpTrustAutoApproveEnv = null;
+  s.hadMcpTrustAutoApproveEnv = false;
+  s.mcpTrustAutoApproveEnvCaptured = false;
 }
 
 function normalizeSessionFilePath(raw: unknown): string | null {
@@ -459,6 +487,10 @@ function stopAutoCommandPolling(): void {
 }
 
 export { type AutoDashboardData } from "./auto-dashboard.js";
+
+export function enableMcpTrustAutoApproveForAutoMode(): void {
+  captureMcpTrustAutoApproveEnv();
+}
 
 export function getAutoDashboardData(): AutoDashboardData {
   const ledger = getLedger();
@@ -739,6 +771,7 @@ function handleLostSessionLock(
   stopAutoCommandPolling();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
+  restoreMcpTrustAutoApproveEnv();
   deregisterSigtermHandler();
   const base = lockBase();
   const lockFilePath = base ? join(gsdRoot(base), "auto.lock") : "unknown";
@@ -777,6 +810,7 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   stopAutoCommandPolling();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
+  restoreMcpTrustAutoApproveEnv();
 
   // Clear crash lock and release session lock so the next `/gsd next` does
   // not see a stale lock with the current PID and treat it as a "remote"
@@ -1109,6 +1143,7 @@ export async function stopAuto(
     if (ctx) initHealthWidget(ctx);
     restoreProjectRootEnv();
     restoreMilestoneLockEnv();
+    restoreMcpTrustAutoApproveEnv();
 
     // Drop the active-tool baseline so a subsequent /gsd auto run on the
     // same `pi` instance recaptures from the live tool set rather than
@@ -1210,6 +1245,7 @@ export async function pauseAuto(
   deactivateGSD();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
+  restoreMcpTrustAutoApproveEnv();
   s.pendingVerificationRetry = null;
   s.verificationRetryCount.clear();
   ctx?.ui.setStatus("gsd-auto", "paused");
@@ -1416,7 +1452,7 @@ export async function startAuto(
     return;
   }
 
-  if (typeof (ctx as Partial<ExtensionCommandContext>).newSession !== "function") {
+  if (!hasCommandSessionControl(ctx)) {
     const message =
       "Auto-mode requires a command context with newSession() to dispatch fresh units. Run /hammer auto from an interactive command context.";
     ctx.ui.notify(message, "warning");
@@ -1747,6 +1783,7 @@ export async function startAuto(
     registerSigtermHandler,
     lockBase,
     buildResolver,
+    captureMcpTrustAutoApprove: enableMcpTrustAutoApproveForAutoMode,
   };
 
   const ready = await bootstrapAutoSession(
@@ -1878,14 +1915,38 @@ export async function dispatchHookUnit(
   hookModel: string | undefined,
   targetBasePath: string,
 ): Promise<boolean> {
+  const commandCtxCandidate = hasCommandSessionControl(ctx) ? ctx : s.cmdCtx;
+  if (!hasCommandSessionControl(commandCtxCandidate)) {
+    const message =
+      `Cannot dispatch hook ${hookName}: no command context with newSession() is available. Run /hammer auto from an interactive command context to resume.`;
+    ctx.ui.notify(message, "warning");
+    logWarning("engine", message, {
+      file: "auto.ts",
+      hookName,
+      triggerUnitType,
+      triggerUnitId,
+    });
+    debugLog("dispatchHookUnit", {
+      phase: "missing-command-context",
+      hookName,
+      triggerUnitType,
+      triggerUnitId,
+    });
+    return false;
+  }
+
+  const commandCtx = commandCtxCandidate as ExtensionCommandContext;
+
   if (!s.active) {
     s.active = true;
     s.stepMode = true;
-    s.cmdCtx = ctx as ExtensionCommandContext;
+    s.cmdCtx = commandCtx;
     s.basePath = targetBasePath;
     s.autoStartTime = Date.now();
     s.currentUnit = null;
     s.pendingQuickTasks = [];
+  } else {
+    s.cmdCtx = commandCtx;
   }
 
   const hookUnitType = `hook/${hookName}`;
@@ -1897,7 +1958,20 @@ export async function dispatchHookUnit(
     startedAt: hookStartedAt,
   };
 
-  const result = await s.cmdCtx!.newSession();
+  let result: { cancelled: boolean };
+  try {
+    result = await commandCtx.newSession();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.ui.notify(`Hook ${hookName} session creation failed: ${message}`, "warning");
+    logWarning("engine", `hook session creation failed: ${message}`, {
+      file: "auto.ts",
+      hookName,
+      triggerUnitType,
+      triggerUnitId,
+    });
+    return false;
+  }
   if (result.cancelled) {
     await stopAuto(ctx, pi);
     return false;

@@ -18,6 +18,7 @@ import {
 } from "../memory-store.js";
 import type { Memory, RankedMemory } from "../memory-store.js";
 import { traverseGraph } from "../memory-relations.js";
+import type { MemoryGraphProvenanceSummary } from "../memory-relations.js";
 import {
   buildDefaultTrinityMetadata,
   normalizeTrinityLayer,
@@ -422,6 +423,7 @@ export interface GraphNode {
   content: string;
   confidence: number;
   trinity?: TrinityMetadata;
+  provenanceSummary?: MemoryGraphProvenanceSummary;
 }
 
 export interface GraphEdge {
@@ -498,7 +500,13 @@ export function executeGsdGraph(params: GsdGraphParams): ToolExecutionResult {
         operation: "gsd_graph",
         mode: "query",
         memoryId,
-        nodes: nodes.map((n) => ({ id: n.id, category: n.category, content: n.content, trinity: n.trinity })),
+        nodes: nodes.map((n) => ({
+          id: n.id,
+          category: n.category,
+          content: n.content,
+          trinity: n.trinity,
+          provenanceSummary: n.provenanceSummary,
+        })),
         edges: edges.map((e) => ({ from: e.from, to: e.to, rel: e.rel })),
       },
     };

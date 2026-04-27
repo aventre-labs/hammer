@@ -37,6 +37,13 @@ interface TestNode {
   confidence: string;
   description?: string;
   sourceFile?: string;
+  trinity?: unknown;
+  trinityLayer?: unknown;
+  ity?: unknown;
+  pathy?: unknown;
+  provenance?: unknown;
+  validation?: unknown;
+  validationSummary?: unknown;
 }
 
 interface TestEdge {
@@ -330,6 +337,93 @@ describe("inlineGraphSubgraph — node formatting", () => {
       const result = await inlineGraphSubgraph(projectDir, "Auth", { budget: 3000 });
       assert.ok(result !== null, "result should not be null");
       assert.ok(result!.includes("EXTRACTED"), "should include the confidence tier in node line");
+    } finally {
+      cleanup(projectDir);
+    }
+  });
+
+  it("falls back to old node formatting when Trinity fields are absent", async () => {
+    const projectDir = makeProjectDir({
+      nodes: [makeNode({ id: "n1", label: "OldGraphNode", sourceFile: "STATE.md" })],
+      edges: [],
+    });
+    try {
+      const result = await inlineGraphSubgraph(projectDir, "OldGraph", { budget: 3000 });
+      assert.ok(result !== null, "result should not be null");
+      assert.ok(!result!.includes("Trinity:"), "old graph.json nodes without Trinity metadata should keep old formatting");
+    } finally {
+      cleanup(projectDir);
+    }
+  });
+
+  it("includes compact Trinity annotations when node metadata is present", async () => {
+    const projectDir = makeProjectDir({
+      nodes: [makeNode({
+        id: "n1",
+        label: "TrinityDecisionNode",
+        type: "decision",
+        confidence: "EXTRACTED",
+        sourceFile: "milestones/M001/M001-LEARNINGS.md",
+        trinity: {
+          layer: "knowledge",
+          ity: { factuality: 0.9, specificity: 0.7, continuity: 0.5, stability: 0.3 },
+          pathy: { reciprocity: 0.4 },
+          provenance: {
+            artifactPath: "milestones/M001/M001-LEARNINGS.md",
+            sourceRelations: [
+              { type: "derived_from", targetId: "milestones/M001/M001-LEARNINGS.md", targetKind: "artifact", weight: 1 },
+            ],
+          },
+          validation: { state: "validated", score: 0.8 },
+        },
+      })],
+      edges: [],
+    });
+    try {
+      const result = await inlineGraphSubgraph(projectDir, "TrinityDecision", { budget: 3000 });
+      assert.ok(result !== null, "result should not be null");
+      assert.ok(result!.includes("[Trinity: layer=knowledge"), "should include layer annotation");
+      assert.ok(result!.includes("ity=factuality:0.9,specificity:0.7,continuity:0.5"), "should summarize top -ity values only");
+      assert.ok(result!.includes("pathy=reciprocity:0.4"), "should summarize -pathy values");
+      assert.ok(result!.includes("validation=validated@0.8"), "should include validation summary");
+      assert.ok(result!.includes("provenance=milestones/M001/M001-LEARNINGS.md,1 rel"), "should summarize provenance compactly");
+      assert.ok(!result!.includes("stability"), "should not dump every vector entry into prompt context");
+      assert.ok(!result!.includes("sourceRelations"), "should not render raw provenance JSON");
+    } finally {
+      cleanup(projectDir);
+    }
+  });
+
+  it("normalizes malformed Trinity annotations without rendering invalid raw values", async () => {
+    const projectDir = makeProjectDir({
+      nodes: [makeNode({
+        id: "n1",
+        label: "MalformedTrinityNode",
+        type: "task",
+        confidence: "INFERRED",
+        trinityLayer: "not-a-layer",
+        ity: { factuality: 1.2, imaginary: 1 },
+        pathy: "not-a-vector",
+        provenance: {
+          sourceRelations: [
+            { type: "not-a-relation", targetId: "bad" },
+            { type: "derived_from", targetId: "artifact://safe", weight: 2 },
+          ],
+        },
+        validationSummary: { state: "not-a-state", score: 2 },
+      })],
+      edges: [],
+    });
+    try {
+      const result = await inlineGraphSubgraph(projectDir, "MalformedTrinity", { budget: 3000 });
+      assert.ok(result !== null, "result should not be null");
+      assert.ok(result!.includes("layer=generative"), "invalid layer should fall back from node type");
+      assert.ok(result!.includes("ity=factuality:1"), "known vector scores should be clamped");
+      assert.ok(result!.includes("validation=unvalidated@1"), "invalid validation state should default deterministically");
+      assert.ok(result!.includes("provenance=n1,1 rel"), "valid source relations should be counted without raw JSON");
+      assert.ok(!result!.includes("not-a-layer"), "invalid layer value should not be rendered");
+      assert.ok(!result!.includes("imaginary"), "unknown vector keys should not be rendered");
+      assert.ok(!result!.includes("not-a-relation"), "invalid relation values should not be rendered");
     } finally {
       cleanup(projectDir);
     }

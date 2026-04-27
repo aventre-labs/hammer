@@ -18,12 +18,37 @@ import {
   executeIAMCompile, executeIAMCheck, executeIAMSpiral,
   executeIAMCanonicalSpiral,
 } from "../../src/iam/tools.js";
+import type { TrinityMetadata } from "../../src/iam/trinity.js";
 import type { IAMError, IAMResult, IAMToolAdapters, IAMToolOutput } from "../../src/iam/types.js";
 
 // ── Shared stubs ─────────────────────────────────────────────────────────────
 
-const MEM_A = { id: "m001", content: "hammer is aware", score: 0.9, category: "architecture" };
-const MEM_B = { id: "m002", content: "IAM governs", score: 0.7, category: "convention" };
+const TRINITY_A: TrinityMetadata = {
+  layer: "knowledge",
+  ity: { factuality: 0.9, stability: 0.8 },
+  pathy: { empathy: 0.1 },
+  provenance: {
+    sourceUnitType: "task",
+    sourceUnitId: "M001/S04/T01",
+    sourceRelations: [{ type: "derived_from", targetId: "SRC-1", targetKind: "summary", weight: 0.8 }],
+  },
+  validation: { state: "validated", score: 0.9 },
+};
+
+const TRINITY_B: TrinityMetadata = {
+  layer: "social",
+  ity: { risk: 0.95, stability: 0.1 },
+  pathy: { risk: 0.1, reciprocity: 0.2 },
+  provenance: {
+    sourceUnitType: "task",
+    sourceUnitId: "M001/S04/T02",
+    sourceRelations: [{ type: "contradicts", targetId: "m001", targetKind: "memory", weight: 0.7 }],
+  },
+  validation: { state: "contested", score: 0.25 },
+};
+
+const MEM_A = { id: "m001", content: "hammer is aware", score: 0.9, category: "architecture", trinity: TRINITY_A };
+const MEM_B = { id: "m002", content: "IAM governs", score: 0.7, category: "convention", trinity: TRINITY_B };
 
 const ACTIVE_MEM_A = { ...MEM_A, confidence: 0.9 };
 const ACTIVE_MEM_B = { ...MEM_B, confidence: 0.7 };
@@ -52,14 +77,27 @@ const EXPECTED_TOOL_NAMES = [
 
 const stubAdapters: IAMToolAdapters = {
   isDbAvailable: () => true,
-  queryMemories: (_q, k = 10, category) =>
+  queryMemories: (_q, k = 10, category, options) =>
     [MEM_A, MEM_B]
       .filter((memory) => !category || memory.category === category)
+      .filter((memory) => !options?.trinityLayer || memory.trinity.layer === options.trinityLayer)
       .slice(0, k),
   getActiveMemories: (limit = 30) => [ACTIVE_MEM_A, ACTIVE_MEM_B].slice(0, limit),
   createMemory: (fields) => `created-${fields.category}-001`,
   traverseGraph: (startId) => ({
-    nodes: [{ id: startId, category: "architecture", content: "test node", confidence: 0.8 }],
+    nodes: [{
+      id: startId,
+      category: "architecture",
+      content: "test node",
+      confidence: 0.8,
+      trinity: TRINITY_A,
+      provenanceSummary: {
+        sourceUnitType: "task",
+        sourceUnitId: "M001/S04/T01",
+        sourceRelationCount: 1,
+        sourceRelations: TRINITY_A.provenance.sourceRelations,
+      },
+    }],
     edges: [{ fromId: startId, toId: "m999", relation: "related_to" }],
   }),
 };
@@ -129,6 +167,48 @@ test("executeIAMRecall passes category filtering through the adapter", async () 
   assert.equal(output.memories[0].category, "architecture");
 });
 
+test("executeIAMRecall passes Trinity layer/lens filters and normalizes returned metadata", async () => {
+  let seenK: number | undefined;
+  let seenLayer: string | undefined;
+  let seenLens: unknown;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    queryMemories: (_q, k = 10, _category, options) => {
+      seenK = k;
+      seenLayer = options?.trinityLayer;
+      seenLens = options?.trinityLens;
+      return [{
+        ...MEM_A,
+        trinity: {
+          ...TRINITY_A,
+          ity: { factuality: 2, bogus: 1 } as never,
+          validation: { state: "not-real", score: 2 } as never,
+        },
+      }];
+    },
+  };
+
+  const output = assertKind(
+    assertOk(
+      await executeIAMRecall(adapters, {
+        query: "hammer",
+        k: 500,
+        trinityLayer: "knowledge",
+        trinityLens: { ity: { factuality: 0.5, bogus: 1 }, pathy: { empathy: 0.3 } },
+      }),
+      "recall Trinity filters",
+    ),
+    "memory-list",
+  );
+
+  assert.equal(seenK, 100, "IAM executors clamp broad recall limits before adapter calls");
+  assert.equal(seenLayer, "knowledge");
+  assert.deepEqual(seenLens, { ity: { factuality: 0.5 }, pathy: { empathy: 0.3 } });
+  assert.equal(output.memories[0].trinity?.ity.factuality, 1);
+  assert.equal((output.memories[0].trinity?.ity as Record<string, unknown>).bogus, undefined);
+  assert.deepEqual(output.memories[0].trinity?.validation, { state: "unvalidated", score: 1 });
+});
+
 test("executeIAMQuick returns at most one top memory", async () => {
   const output = assertKind(
     assertOk(await executeIAMQuick(stubAdapters, { query: "hammer" }), "quick"),
@@ -169,6 +249,43 @@ test("executeIAMRemember creates a memory-created output with a persisted id", a
   assert.equal(output.content, "IAM stays pure");
 });
 
+test("executeIAMRemember persists explicit Trinity metadata and returns the normalized payload", async () => {
+  let createdFields: Parameters<IAMToolAdapters["createMemory"]>[0] | null = null;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    createMemory: (fields) => {
+      createdFields = fields;
+      return "created-trinity-001";
+    },
+  };
+
+  const output = assertKind(
+    assertOk(
+      await executeIAMRemember(adapters, {
+        category: "pattern",
+        content: "Use Trinity-aware IAM tools",
+        confidence: 0.88,
+        trinityLayer: "generative",
+        trinityIty: { creativity: 2, unknown: 1 },
+        trinityPathy: { reciprocity: 0.6 },
+        trinityProvenance: { sourceUnitId: "M001/S04/T03", sourceRelations: [{ type: "derived_from", targetId: "T03-PLAN" }] },
+        trinityValidationState: "contested",
+        trinityValidationScore: 0.4,
+      }),
+      "remember Trinity metadata",
+    ),
+    "memory-created",
+  );
+
+  assert.equal(output.id, "created-trinity-001");
+  assert.equal(output.trinity?.layer, "generative");
+  assert.deepEqual(output.trinity?.ity, { creativity: 1 });
+  assert.deepEqual(output.trinity?.pathy, { reciprocity: 0.6 });
+  assert.deepEqual(output.trinity?.validation, { state: "contested", score: 0.4 });
+  assert.equal(createdFields?.trinity?.layer, "generative");
+  assert.equal(createdFields?.trinity?.provenance.sourceUnitId, "M001/S04/T03");
+});
+
 test("executeIAMHarvest returns active memories with a category summary prefix", async () => {
   const output = assertKind(
     assertOk(await executeIAMHarvest(stubAdapters, { limit: 2 }), "harvest"),
@@ -201,6 +318,7 @@ test("executeIAMCluster returns a knowledge-map with totals by category", async 
   assert.equal(output.total, 2);
   assert.equal(output.categories.architecture, 1);
   assert.equal(output.categories.convention, 1);
+  assert.deepEqual(output.layers, { knowledge: 1, social: 1 });
 });
 
 test("executeIAMLandscape maps the active memory category landscape", async () => {
@@ -211,6 +329,7 @@ test("executeIAMLandscape maps the active memory category landscape", async () =
 
   assert.equal(output.total, 2);
   assert.deepEqual(output.categories, { architecture: 1, convention: 1 });
+  assert.deepEqual(output.layers, { knowledge: 1, social: 1 });
 });
 
 test("executeIAMBridge merges memories from two query sides without duplicates", async () => {
@@ -244,8 +363,40 @@ test("executeIAMProvenance walks graph provenance from a memory id", async () =>
 
   assert.equal(output.nodes.length, 1);
   assert.equal(output.nodes[0].id, "m001");
+  assert.equal(output.nodes[0].trinity?.layer, "knowledge");
+  assert.equal(output.nodes[0].provenanceSummary?.sourceUnitId, "M001/S04/T01");
+  assert.equal(output.nodes[0].provenanceSummary?.sourceRelationCount, 1);
   assert.equal(output.edges.length, 1);
   assert.equal(output.edges[0].relation, "related_to");
+});
+
+test("executeIAMProvenance rejects missing graph start ids with a structured error", async () => {
+  const error = assertError(
+    await executeIAMProvenance(stubAdapters, { memoryId: "   ", depth: 1 }),
+    "persistence-failed",
+    "provenance missing id",
+  );
+
+  assert.ok(error.remediation.includes("memoryId"));
+});
+
+test("executeIAMExplore clamps traversal depth before calling the adapter", async () => {
+  let seenDepth: number | undefined;
+  const adapters: IAMToolAdapters = {
+    ...stubAdapters,
+    traverseGraph: (startId, depth = 2) => {
+      seenDepth = depth;
+      return stubAdapters.traverseGraph(startId, depth);
+    },
+  };
+
+  const output = assertKind(
+    assertOk(await executeIAMExplore(adapters, { memoryId: "m002", depth: 99 }), "explore depth clamp"),
+    "graph-walk",
+  );
+
+  assert.equal(seenDepth, 5);
+  assert.equal(output.nodes[0].id, "m002");
 });
 
 test("executeIAMExplore walks graph edges from a memory id", async () => {
@@ -259,15 +410,18 @@ test("executeIAMExplore walks graph edges from a memory id", async () => {
   assert.deepEqual(output.edges[0], { fromId: "m002", toId: "m999", relation: "related_to" });
 });
 
-test("executeIAMTension returns memories annotated as a heuristic tension scan", async () => {
+test("executeIAMTension ranks contested and vector-opposed memories ahead of plain category hits", async () => {
   const output = assertKind(
     assertOk(await executeIAMTension(stubAdapters, { query: "risk", k: 2 }), "tension"),
     "memory-list",
   );
 
   assert.equal(output.memories.length, 2);
-  assert.ok(output.memories[0].content.startsWith("[heuristic tension scan"));
-  assert.ok(output.memories[1].content.includes("IAM governs"));
+  assert.equal(output.memories[0].id, "m002");
+  assert.ok(output.memories[0].content.startsWith("[tension score="));
+  assert.match(output.memories[0].content, /contested|low-validation|vector-opposition/);
+  assert.equal(output.memories[0].trinity?.validation.state, "contested");
+  assert.ok(output.memories[1].content.includes("hammer is aware"));
 });
 
 // ── Group B: DB-unavailable and persistence-failure paths ───────────────────

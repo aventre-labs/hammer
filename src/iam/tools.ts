@@ -8,11 +8,24 @@
 
 import { getRune, listRunes, validateRuneNames } from "./rune-registry.js";
 import { validateSavesuccess, formatSavesuccessReport } from "./savesuccess.js";
+import {
+  TRINITY_LAYERS,
+  TRINITY_VECTOR_KEYS,
+  buildDefaultTrinityMetadata,
+  normalizeTrinityMetadata,
+  normalizeTrinityVector,
+} from "./trinity.js";
+import type { TrinityLayer, TrinityMetadata, TrinityVectorKey } from "./trinity.js";
 import type {
+  GraphNode,
+  IAMActiveMemoryEntry,
   IAMError,
+  IAMMemoryListEntry,
+  IAMMemoryQueryOptions,
   IAMResult,
   IAMToolAdapters,
   IAMToolOutput,
+  IAMTrinityLens,
   RuneName,
   SavesuccessScorecard,
 } from "./types.js";
@@ -50,18 +63,20 @@ const DB_UNAVAILABLE_ERROR: IAMError = {
   persistenceStatus: "not-attempted",
 };
 
-type MemoryListEntry = {
-  id: string;
-  content: string;
-  score: number;
-  category: string;
+type TrinityQueryParams = {
+  trinityLayer?: unknown;
+  trinityLens?: unknown;
 };
 
-type ActiveMemoryEntry = {
-  id: string;
-  content: string;
-  confidence: number;
+type TrinityRememberParams = {
   category: string;
+  trinity?: unknown;
+  trinityLayer?: unknown;
+  trinityIty?: unknown;
+  trinityPathy?: unknown;
+  trinityProvenance?: unknown;
+  trinityValidationState?: unknown;
+  trinityValidationScore?: unknown;
 };
 
 function ok(value: IAMToolOutput): IAMResult<IAMToolOutput> {
@@ -91,6 +106,106 @@ function requireDb(adapters: IAMToolAdapters): IAMResult<IAMToolOutput> | null {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function clampLimit(value: unknown, fallback: number, max = 100): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  if (value < 1) return 1;
+  if (value > max) return max;
+  return Math.floor(value);
+}
+
+function clampDepth(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 5) return 5;
+  return Math.floor(value);
+}
+
+function normalizeOptionalTrinityLayer(value: unknown): TrinityLayer | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (TRINITY_LAYERS as readonly string[]).includes(normalized)
+    ? (normalized as TrinityLayer)
+    : undefined;
+}
+
+function normalizeIAMTrinityLens(value: unknown): IAMTrinityLens | undefined {
+  if (!isRecord(value)) return undefined;
+  const ity = normalizeTrinityVector(value.ity);
+  const pathy = normalizeTrinityVector(value.pathy);
+  const lens: IAMTrinityLens = {};
+  if (Object.keys(ity).length > 0) lens.ity = ity;
+  if (Object.keys(pathy).length > 0) lens.pathy = pathy;
+  return lens.ity || lens.pathy ? lens : undefined;
+}
+
+function normalizeQueryOptions(params: TrinityQueryParams): IAMMemoryQueryOptions | undefined {
+  const options: IAMMemoryQueryOptions = {};
+  const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
+  const trinityLens = normalizeIAMTrinityLens(params.trinityLens);
+  if (trinityLayer) options.trinityLayer = trinityLayer;
+  if (trinityLens) options.trinityLens = trinityLens;
+  return options.trinityLayer || options.trinityLens ? options : undefined;
+}
+
+function normalizeEntryTrinity<T extends { category: string; trinity?: unknown }>(entry: T): T {
+  if (!hasOwn(entry, "trinity")) return entry;
+  const fallbackLayer = buildDefaultTrinityMetadata({ category: entry.category }).layer;
+  return {
+    ...entry,
+    trinity: normalizeTrinityMetadata(entry.trinity, fallbackLayer),
+  };
+}
+
+function normalizeGraphNode(node: GraphNode): GraphNode {
+  const normalized = normalizeEntryTrinity(node);
+  if (!normalized.trinity) return normalized;
+  return {
+    ...normalized,
+    provenanceSummary: normalized.provenanceSummary ?? buildProvenanceSummary(normalized.trinity),
+  };
+}
+
+function buildProvenanceSummary(metadata: TrinityMetadata): NonNullable<GraphNode["provenanceSummary"]> {
+  const provenance = metadata.provenance;
+  return {
+    ...(provenance.sourceUnitType ? { sourceUnitType: provenance.sourceUnitType } : {}),
+    ...(provenance.sourceUnitId ? { sourceUnitId: provenance.sourceUnitId } : {}),
+    ...(provenance.sourceId ? { sourceId: provenance.sourceId } : {}),
+    ...(provenance.artifactPath ? { artifactPath: provenance.artifactPath } : {}),
+    sourceRelationCount: provenance.sourceRelations.length,
+    sourceRelations: provenance.sourceRelations,
+  };
+}
+
+function normalizeRememberTrinity(params: TrinityRememberParams): TrinityMetadata {
+  const raw = isRecord(params.trinity) ? params.trinity : {};
+  const rawValidation = isRecord(raw.validation) ? raw.validation : {};
+  const fallback = buildDefaultTrinityMetadata({ category: params.category, sourceUnitType: "iam-tool" });
+  return normalizeTrinityMetadata(
+    {
+      layer: params.trinityLayer ?? raw.layer ?? fallback.layer,
+      ity: params.trinityIty ?? raw.ity,
+      pathy: params.trinityPathy ?? raw.pathy,
+      provenance: params.trinityProvenance ?? raw.provenance,
+      validation: {
+        ...rawValidation,
+        ...(params.trinityValidationState === undefined ? {} : { state: params.trinityValidationState }),
+        ...(params.trinityValidationScore === undefined ? {} : { score: params.trinityValidationScore }),
+      },
+    },
+    fallback.layer,
+    fallback.provenance,
+  );
+}
+
 function countByCategory(
   memories: Array<{ category: string }>,
 ): Record<string, number> {
@@ -101,13 +216,28 @@ function countByCategory(
   return categories;
 }
 
-function activeMemoryToListEntry(memory: ActiveMemoryEntry): MemoryListEntry {
-  return {
+function activeMemoryToListEntry(memory: IAMActiveMemoryEntry): IAMMemoryListEntry {
+  return normalizeEntryTrinity({
     id: memory.id,
     content: memory.content,
     score: memory.confidence,
     category: memory.category,
-  };
+    ...(hasOwn(memory, "trinity") ? { trinity: memory.trinity } : {}),
+  });
+}
+
+function countByLayer(
+  memories: Array<{ category: string; trinity?: unknown }>,
+): Record<string, number> {
+  const layers: Record<string, number> = {};
+  for (const memory of memories) {
+    const fallbackLayer = buildDefaultTrinityMetadata({ category: memory.category }).layer;
+    const layer = hasOwn(memory, "trinity")
+      ? normalizeTrinityMetadata(memory.trinity, fallbackLayer).layer
+      : fallbackLayer;
+    layers[layer] = (layers[layer] ?? 0) + 1;
+  }
+  return layers;
 }
 
 function formatCategorySummary(
@@ -249,12 +379,14 @@ export async function executeIAMCanonicalSpiral(
 
 export async function executeIAMRecall(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number; category?: string },
+  params: { query: string; k?: number; category?: string; trinityLayer?: unknown; trinityLens?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const memories = adapters.queryMemories(params.query, params.k ?? 10, params.category);
+  const memories = adapters
+    .queryMemories(params.query, clampLimit(params.k, 10), params.category, normalizeQueryOptions(params))
+    .map(normalizeEntryTrinity);
   return ok({ kind: "memory-list", memories });
 }
 
@@ -265,7 +397,7 @@ export async function executeIAMQuick(
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const memories = adapters.queryMemories(params.query, 1).slice(0, 1);
+  const memories = adapters.queryMemories(params.query, 1).slice(0, 1).map(normalizeEntryTrinity);
   return ok({ kind: "memory-list", memories });
 }
 
@@ -277,7 +409,7 @@ export async function executeIAMRefract(
   if (unavailable) return unavailable;
 
   const memories = adapters.queryMemories(params.query, 5).map((memory) => ({
-    ...memory,
+    ...normalizeEntryTrinity(memory),
     content: `[${params.lens} lens] ${memory.content}`,
   }));
   return ok({ kind: "memory-list", memories });
@@ -285,17 +417,30 @@ export async function executeIAMRefract(
 
 export async function executeIAMRemember(
   adapters: IAMToolAdapters,
-  params: { category: string; content: string; confidence?: number },
+  params: {
+    category: string;
+    content: string;
+    confidence?: number;
+    trinity?: unknown;
+    trinityLayer?: unknown;
+    trinityIty?: unknown;
+    trinityPathy?: unknown;
+    trinityProvenance?: unknown;
+    trinityValidationState?: unknown;
+    trinityValidationScore?: unknown;
+  },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
+  const trinity = normalizeRememberTrinity(params);
   const id = adapters.createMemory({
     category: params.category,
     content: params.content,
     confidence: params.confidence,
     source_unit_type: "iam-tool",
     structuredFields: { iam_tool: "remember" },
+    trinity,
   });
 
   if (!id) {
@@ -309,19 +454,23 @@ export async function executeIAMRemember(
     id,
     content: params.content,
     category: params.category,
+    trinity,
   });
 }
 
 export async function executeIAMHarvest(
   adapters: IAMToolAdapters,
-  params: { limit?: number; category?: string },
+  params: { limit?: number; category?: string; trinityLayer?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
+  const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
   const active = adapters
-    .getActiveMemories(params.limit ?? 30)
-    .filter((memory) => !params.category || memory.category === params.category);
+    .getActiveMemories(clampLimit(params.limit, 30))
+    .map(normalizeEntryTrinity)
+    .filter((memory) => !params.category || memory.category === params.category)
+    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer);
   const categories = countByCategory(active);
   const summary = formatCategorySummary(categories, active.length);
   const memories = active.map((memory) => ({
@@ -334,30 +483,38 @@ export async function executeIAMHarvest(
 
 export async function executeIAMCluster(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number },
+  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const memories = adapters.queryMemories(params.query, params.k ?? 20);
+  const memories = adapters
+    .queryMemories(params.query, clampLimit(params.k, 20), undefined, normalizeQueryOptions(params))
+    .map(normalizeEntryTrinity);
   return ok({
     kind: "knowledge-map",
     categories: countByCategory(memories),
+    layers: countByLayer(memories),
     total: memories.length,
   });
 }
 
 export async function executeIAMLandscape(
   adapters: IAMToolAdapters,
-  params: { limit?: number },
+  params: { limit?: number; trinityLayer?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const memories = adapters.getActiveMemories(params.limit ?? 50);
+  const trinityLayer = normalizeOptionalTrinityLayer(params.trinityLayer);
+  const memories = adapters
+    .getActiveMemories(clampLimit(params.limit, 50))
+    .map(normalizeEntryTrinity)
+    .filter((memory) => !trinityLayer || normalizeTrinityMetadata(memory.trinity, buildDefaultTrinityMetadata({ category: memory.category }).layer).layer === trinityLayer);
   return ok({
     kind: "knowledge-map",
     categories: countByCategory(memories),
+    layers: countByLayer(memories),
     total: memories.length,
   });
 }
@@ -369,12 +526,12 @@ export async function executeIAMBridge(
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const limit = params.k ?? 10;
-  const combined = new Map<string, MemoryListEntry>();
-  for (const memory of adapters.queryMemories(params.queryA, limit)) {
+  const limit = clampLimit(params.k, 10);
+  const combined = new Map<string, IAMMemoryListEntry>();
+  for (const memory of adapters.queryMemories(params.queryA, limit).map(normalizeEntryTrinity)) {
     combined.set(memory.id, memory);
   }
-  for (const memory of adapters.queryMemories(params.queryB, limit)) {
+  for (const memory of adapters.queryMemories(params.queryB, limit).map(normalizeEntryTrinity)) {
     if (!combined.has(memory.id)) {
       combined.set(memory.id, memory);
     }
@@ -390,14 +547,14 @@ export async function executeIAMCompare(
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const limit = params.k ?? 10;
+  const limit = clampLimit(params.k, 10);
   const memoriesA = adapters.queryMemories(params.queryA, limit).map((memory) => ({
-    ...memory,
+    ...normalizeEntryTrinity(memory),
     id: `A:${memory.id}`,
     content: `[A:${params.queryA}] ${memory.content}`,
   }));
   const memoriesB = adapters.queryMemories(params.queryB, limit).map((memory) => ({
-    ...memory,
+    ...normalizeEntryTrinity(memory),
     id: `B:${memory.id}`,
     content: `[B:${params.queryB}] ${memory.content}`,
   }));
@@ -412,8 +569,13 @@ export async function executeIAMProvenance(
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const graph = adapters.traverseGraph(params.memoryId, params.depth ?? 3);
-  return ok({ kind: "graph-walk", nodes: graph.nodes, edges: graph.edges });
+  const memoryId = params.memoryId.trim();
+  if (!memoryId) {
+    return persistenceFailed("A memoryId is required before IAM provenance can traverse the memory graph.");
+  }
+
+  const graph = adapters.traverseGraph(memoryId, clampDepth(params.depth, 3));
+  return ok({ kind: "graph-walk", nodes: graph.nodes.map(normalizeGraphNode), edges: graph.edges });
 }
 
 export async function executeIAMExplore(
@@ -423,21 +585,108 @@ export async function executeIAMExplore(
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const graph = adapters.traverseGraph(params.memoryId, params.depth ?? 2);
-  return ok({ kind: "graph-walk", nodes: graph.nodes, edges: graph.edges });
+  const memoryId = params.memoryId.trim();
+  if (!memoryId) {
+    return persistenceFailed("A memoryId is required before IAM explore can traverse the memory graph.");
+  }
+
+  const graph = adapters.traverseGraph(memoryId, clampDepth(params.depth, 2));
+  return ok({ kind: "graph-walk", nodes: graph.nodes.map(normalizeGraphNode), edges: graph.edges });
+}
+
+function trinityTensionSignals(memory: IAMMemoryListEntry): { score: number; reasons: string[] } {
+  const fallbackLayer = buildDefaultTrinityMetadata({ category: memory.category }).layer;
+  const metadata = hasOwn(memory, "trinity")
+    ? normalizeTrinityMetadata(memory.trinity, fallbackLayer)
+    : null;
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (metadata) {
+    const validation = metadata.validation;
+    if (validation.state === "contested") {
+      score += 4;
+      reasons.push("contested");
+    } else if (validation.state === "deprecated") {
+      score += 2.5;
+      reasons.push("deprecated");
+    } else if (validation.state === "unvalidated") {
+      score += 0.75;
+      reasons.push("unvalidated");
+    }
+
+    if (validation.score < 0.5) {
+      score += Math.round((0.5 - validation.score) * 2 * 100) / 100;
+      reasons.push("low-validation");
+    }
+
+    const opposition = trinityVectorOpposition(metadata);
+    if (opposition > 0) {
+      score += opposition;
+      reasons.push(`vector-opposition:${formatScore(opposition)}`);
+    }
+  }
+
+  if (memory.category === "gotcha" || memory.category === "risk") {
+    score += 0.5;
+    reasons.push(`category:${memory.category}`);
+  }
+
+  if (reasons.length === 0) reasons.push("no-trinity-tension-signals");
+  return { score: Math.round(score * 100) / 100, reasons };
+}
+
+function trinityVectorOpposition(metadata: TrinityMetadata): number {
+  let score = 0;
+  for (const key of TRINITY_VECTOR_KEYS) {
+    const vectorKey = key as TrinityVectorKey;
+    const ity = metadata.ity[vectorKey] ?? 0;
+    const pathy = metadata.pathy[vectorKey] ?? 0;
+    const diff = Math.abs(ity - pathy);
+    if (diff >= 0.5 && Math.max(ity, pathy) >= 0.6) {
+      score += diff;
+    }
+  }
+
+  const risk = Math.max(metadata.ity.risk ?? 0, metadata.pathy.risk ?? 0);
+  const stability = Math.max(metadata.ity.stability ?? 0, metadata.pathy.stability ?? 0);
+  if (risk >= 0.6 && stability <= 0.4) {
+    score += risk - stability;
+  }
+
+  return Math.round(score * 100) / 100;
+}
+
+function formatScore(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
 }
 
 export async function executeIAMTension(
   adapters: IAMToolAdapters,
-  params: { query: string; k?: number },
+  params: { query: string; k?: number; trinityLayer?: unknown; trinityLens?: unknown },
 ): Promise<IAMResult<IAMToolOutput>> {
   const unavailable = requireDb(adapters);
   if (unavailable) return unavailable;
 
-  const memories = adapters.queryMemories(params.query, params.k ?? 10).map((memory) => ({
-    ...memory,
-    content: `[heuristic tension scan; semantic contradiction filtering arrives in S04] ${memory.content}`,
-  }));
+  const memories = adapters
+    .queryMemories(params.query, clampLimit(params.k, 10), undefined, normalizeQueryOptions(params))
+    .map(normalizeEntryTrinity)
+    .map((memory, index) => {
+      const tension = trinityTensionSignals(memory);
+      return {
+        memory: {
+          ...memory,
+          content: `[tension score=${formatScore(tension.score)} reasons=${tension.reasons.join(",")}] ${memory.content}`,
+        },
+        index,
+        tension,
+      };
+    })
+    .sort((a, b) => {
+      if (b.tension.score !== a.tension.score) return b.tension.score - a.tension.score;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.memory);
   return ok({ kind: "memory-list", memories });
 }
 

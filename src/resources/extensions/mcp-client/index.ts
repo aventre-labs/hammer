@@ -171,6 +171,10 @@ export function _buildMcpTrustConfirmOptionsForTest(signal?: AbortSignal): { tim
 	return signal ? { timeout: 120_000, signal } : { timeout: 120_000 };
 }
 
+export function _shouldAutoApproveMcpTrustForTest(env: NodeJS.ProcessEnv = process.env): boolean {
+	return env.GSD_MCP_AUTO_APPROVE_TRUST === "1" || env.GSD_HEADLESS === "1";
+}
+
 async function assertTrustedStdioServer(
 	config: McpServerConfig,
 	ctx?: ExtensionContext,
@@ -179,6 +183,7 @@ async function assertTrustedStdioServer(
 	if (config.transport !== "stdio") return undefined;
 	const trustKey = stdioTrustKey(config);
 	if (trustedStdioServers.has(trustKey)) return undefined;
+	if (_shouldAutoApproveMcpTrustForTest()) return trustKey;
 
 	if (!ctx?.hasUI) {
 		throw new Error(

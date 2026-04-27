@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from '
 import { join, resolve } from 'node:path';
 import { resolveGsdRoot, findMilestoneIds, resolveMilestoneDir, findSliceIds, resolveSliceDir } from './paths.js';
 import { withGraphNodeTrinity } from './trinity.js';
-import type { TrinityMetadata } from './trinity.js';
+import type { TrinityLayer, TrinityMetadata, TrinityProvenance, TrinityValidation, TrinityVector } from './trinity.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +48,11 @@ export interface GraphNode {
   confidence: ConfidenceTier;
   sourceFile?: string;
   trinity?: TrinityMetadata;
+  trinityLayer?: TrinityLayer;
+  ity?: TrinityVector;
+  pathy?: TrinityVector;
+  provenance?: TrinityProvenance;
+  validationSummary?: TrinityValidation;
 }
 
 export interface GraphEdge {
@@ -109,6 +114,16 @@ function graphTmpPath(gsdRoot: string): string {
 
 function snapshotPath(gsdRoot: string): string {
   return join(graphsDir(gsdRoot), '.last-build-snapshot.json');
+}
+
+function withDecoratedGraphNodes(graph: KnowledgeGraph): KnowledgeGraph {
+  return {
+    ...graph,
+    nodes: Array.isArray(graph.nodes)
+      ? graph.nodes.map((node) => withGraphNodeTrinity(node))
+      : [],
+    edges: Array.isArray(graph.edges) ? graph.edges : [],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,13 +594,13 @@ export async function buildGraph(projectDir: string): Promise<KnowledgeGraph> {
     if (seen.has(n.id)) return false;
     seen.add(n.id);
     return true;
-  }).map((node) => withGraphNodeTrinity(node));
+  });
 
-  return {
+  return withDecoratedGraphNodes({
     nodes: dedupedNodes,
     edges,
     builtAt: new Date().toISOString(),
-  };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +620,8 @@ export async function writeGraph(gsdRoot: string, graph: KnowledgeGraph): Promis
   const tmp = graphTmpPath(gsdRoot);
   const final = graphJsonPath(gsdRoot);
 
-  writeFileSync(tmp, JSON.stringify(graph, null, 2), 'utf-8');
+  const decorated = withDecoratedGraphNodes(graph);
+  writeFileSync(tmp, JSON.stringify(decorated, null, 2), 'utf-8');
   renameSync(tmp, final);
 }
 
@@ -631,7 +647,7 @@ export async function writeSnapshot(gsdRoot: string): Promise<void> {
   } catch {
     return;
   }
-  const snapshot = { ...graph, snapshotAt: new Date().toISOString() };
+  const snapshot = { ...withDecoratedGraphNodes(graph), snapshotAt: new Date().toISOString() };
 
   writeFileSync(snapshotPath(gsdRoot), JSON.stringify(snapshot, null, 2), 'utf-8');
 }
@@ -758,7 +774,7 @@ export async function graphQuery(
   let graph: KnowledgeGraph;
   try {
     const raw = readFileSync(graphPath, 'utf-8');
-    graph = JSON.parse(raw) as KnowledgeGraph;
+    graph = withDecoratedGraphNodes(JSON.parse(raw) as KnowledgeGraph);
   } catch {
     return { nodes: [], edges: [], term, budget };
   }

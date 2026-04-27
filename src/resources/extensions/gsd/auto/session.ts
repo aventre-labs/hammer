@@ -100,6 +100,9 @@ export class AutoSession {
   hadMilestoneLockEnv = false;
   milestoneLockEnvCaptured = false;
   sessionMilestoneLock: string | null = null;
+  previousMcpTrustAutoApproveEnv: string | null = null;
+  hadMcpTrustAutoApproveEnv = false;
+  mcpTrustAutoApproveEnvCaptured = false;
   gitService: GitServiceImpl | null = null;
 
   // ── Dispatch counters ────────────────────────────────────────────────────
@@ -254,6 +257,9 @@ export class AutoSession {
     this.hadMilestoneLockEnv = false;
     this.milestoneLockEnvCaptured = false;
     this.sessionMilestoneLock = null;
+    this.previousMcpTrustAutoApproveEnv = null;
+    this.hadMcpTrustAutoApproveEnv = false;
+    this.mcpTrustAutoApproveEnvCaptured = false;
     this.gitService = null;
 
     // Dispatch

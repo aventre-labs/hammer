@@ -9,6 +9,8 @@
 import { logWarning } from "./workflow-logger.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { normalizeTrinityMetadata } from "../../../iam/trinity.js";
+import type { TrinityLayer, TrinityMetadata, TrinityProvenance, TrinityVector } from "../../../iam/trinity.js";
 
 interface GraphNode {
   id: string;
@@ -16,6 +18,14 @@ interface GraphNode {
   type: string;
   confidence: string;
   description?: string;
+  sourceFile?: string;
+  trinity?: unknown;
+  trinityLayer?: unknown;
+  ity?: unknown;
+  pathy?: unknown;
+  provenance?: unknown;
+  validation?: unknown;
+  validationSummary?: unknown;
 }
 
 interface GraphEdge {
@@ -52,6 +62,106 @@ let resolvedGraphApi = false;
 export interface GraphSubgraphOptions {
   /** Budget in tokens passed to graphQuery (1 node ≈ 20 tokens, 1 edge ≈ 10 tokens) */
   budget: number;
+}
+
+const GRAPH_TYPE_LAYER_DEFAULTS: Record<string, TrinityLayer> = {
+  milestone: "knowledge",
+  slice: "generative",
+  task: "generative",
+  rule: "knowledge",
+  pattern: "generative",
+  lesson: "knowledge",
+  decision: "knowledge",
+  concept: "knowledge",
+  surprise: "knowledge",
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+function fallbackLayerForGraphType(type: string): TrinityLayer {
+  return GRAPH_TYPE_LAYER_DEFAULTS[type] ?? "knowledge";
+}
+
+function hasTrinityFields(node: GraphNode): boolean {
+  return node.trinity !== undefined ||
+    node.trinityLayer !== undefined ||
+    node.ity !== undefined ||
+    node.pathy !== undefined ||
+    node.provenance !== undefined ||
+    node.validation !== undefined ||
+    node.validationSummary !== undefined;
+}
+
+function normalizeNodeTrinity(node: GraphNode): TrinityMetadata | null {
+  if (!hasTrinityFields(node)) return null;
+
+  const raw = isPlainObject(node.trinity)
+    ? node.trinity
+    : {
+        layer: node.trinityLayer,
+        ity: node.ity,
+        pathy: node.pathy,
+        provenance: node.provenance,
+        validation: node.validationSummary ?? node.validation,
+      };
+
+  const fallbackProvenance: Partial<TrinityProvenance> = {
+    sourceId: node.id,
+    ...(node.sourceFile ? { artifactPath: node.sourceFile } : {}),
+    sourceRelations: node.sourceFile
+      ? [{ type: "derived_from", targetId: node.sourceFile, targetKind: "artifact", weight: 1 }]
+      : [],
+  };
+
+  return normalizeTrinityMetadata(raw, fallbackLayerForGraphType(node.type), fallbackProvenance);
+}
+
+function formatTrinityScore(score: number): string {
+  return Number.isInteger(score)
+    ? String(score)
+    : score.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatVectorSummary(label: "ity" | "pathy", vector: TrinityVector): string | null {
+  const entries = Object.entries(vector)
+    .flatMap(([key, value]) => (
+      typeof value === "number" && Number.isFinite(value) ? [[key, value] as const] : []
+    ))
+    .sort(([, left], [, right]) => right - left)
+    .slice(0, 3)
+    .map(([key, value]) => `${key}:${formatTrinityScore(value)}`);
+
+  return entries.length > 0 ? `${label}=${entries.join(",")}` : null;
+}
+
+function formatProvenanceSummary(provenance: TrinityProvenance): string | null {
+  const source = provenance.artifactPath ?? provenance.sourceUnitId ?? provenance.sourceId;
+  const relationCount = provenance.sourceRelations.length;
+  const parts: string[] = [];
+  if (source) parts.push(source);
+  if (relationCount > 0) parts.push(`${relationCount} rel${relationCount === 1 ? "" : "s"}`);
+  return parts.length > 0 ? `provenance=${parts.join(",")}` : null;
+}
+
+function formatTrinityAnnotation(node: GraphNode): string {
+  const trinity = normalizeNodeTrinity(node);
+  if (!trinity) return "";
+
+  const parts = [`layer=${trinity.layer}`];
+  const itySummary = formatVectorSummary("ity", trinity.ity);
+  const pathySummary = formatVectorSummary("pathy", trinity.pathy);
+  if (itySummary) parts.push(itySummary);
+  if (pathySummary) parts.push(pathySummary);
+  parts.push(`validation=${trinity.validation.state}@${formatTrinityScore(trinity.validation.score)}`);
+
+  const provenanceSummary = formatProvenanceSummary(trinity.provenance);
+  if (provenanceSummary) parts.push(provenanceSummary);
+
+  return ` [Trinity: ${parts.join("; ")}]`;
 }
 
 function readGraphFile(projectDir: string): GraphFileShape | null {
@@ -183,7 +293,8 @@ export async function inlineGraphSubgraph(
     // Format nodes as a compact list
     const nodeLines = result.nodes.map((node) => {
       const desc = node.description ? ` — ${node.description}` : "";
-      return `- **${node.label}** (\`${node.type}\`, ${node.confidence})${desc}`;
+      const trinity = formatTrinityAnnotation(node);
+      return `- **${node.label}** (\`${node.type}\`, ${node.confidence})${trinity}${desc}`;
     });
 
     // Format edges as relations (only if present)
