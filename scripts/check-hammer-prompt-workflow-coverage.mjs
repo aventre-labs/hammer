@@ -52,28 +52,27 @@ export const TARGET_SURFACE_RULES = [
     description: "Workflow command, dispatch, manifest, and IAM policy source surfaces owned by S08.",
     pathPattern: String.raw`^src/resources/extensions/gsd/(?:commands-workflow-templates|workflow-templates|workflow-dispatch|custom-workflow-engine|unit-context-manifest|iam-subagent-policy)\.ts$`,
   },
-];
-
-export const S09_ALLOWLIST_RULES = [
-  {
-    id: "s09-gsd-orchestrator-docs",
-    scope: "allowlist",
-    description: "S09 owns the gsd-orchestrator documentation and command skill rewrite.",
-    pathPattern: String.raw`^gsd-orchestrator(?:/|$)`,
-  },
   {
     id: "s09-generated-artifact-templates",
-    scope: "allowlist",
-    description: "S09 owns generated artifact template/doc surfaces under the legacy extension tree.",
-    pathPattern: String.raw`^src/resources/extensions/gsd/templates(?:/|$)`,
+    scope: "scan",
+    description: "Generated artifact template markdown surfaces owned by S09.",
+    pathPattern: String.raw`^src/resources/extensions/gsd/templates/.+\.md$`,
   },
   {
     id: "s09-extension-doc-surfaces",
-    scope: "allowlist",
-    description: "S09 owns extension-local generated docs/proposals that are not runtime prompt or workflow surfaces.",
-    pathPattern: String.raw`^src/resources/extensions/gsd/(?:docs|generated-docs|generated-templates)(?:/|$)`,
+    scope: "scan",
+    description: "Extension-local docs and generated doc/template markdown surfaces owned by S09.",
+    pathPattern: String.raw`^src/resources/extensions/gsd/(?:docs|generated-docs|generated-templates)/.+\.md$`,
+  },
+  {
+    id: "s09-gsd-orchestrator-docs",
+    scope: "scan",
+    description: "gsd-orchestrator markdown and SKILL surfaces owned by S09.",
+    pathPattern: String.raw`^gsd-orchestrator/.+\.md$`,
   },
 ];
+
+export const S09_ALLOWLIST_RULES = [];
 
 const BINARY_EXTENSION_RE = /\.(?:avif|bmp|class|dll|dylib|eot|gif|gz|ico|jar|jpeg|jpg|mov|mp3|mp4|otf|pdf|png|pyc|so|sqlite|sqlite3|tgz|ttf|webm|webp|woff|woff2|zip)$/i;
 
@@ -545,6 +544,7 @@ export function renderCoverageReport(result, { maxFindings = 200 } = {}) {
     `Scanned prompt/workflow files: ${summary.scannedFileCount}`,
     `Scanned lines: ${summary.scannedLineCount}`,
     `Explicit S09 allowlisted files: ${summary.allowlistedCount}`,
+    `Zero-allowlist readiness: ${summary.allowlistedCount === 0 ? "ready" : "blocked"}`,
     `Skipped non-surface files: ${summary.skippedNonSurfaceCount}`,
     `Skipped binary/missing files: ${summary.skippedBinaryCount}/${summary.skippedMissingCount}`,
     `Violations: ${summary.violationCount}`,
