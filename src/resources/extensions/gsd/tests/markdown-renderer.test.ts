@@ -566,7 +566,18 @@ test('── markdown-renderer: renderTaskSummary round-trip ──', async () =
     insertMilestone({ id: 'M001', title: 'Test', status: 'active' });
     insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Slice', status: 'pending' });
 
-    const summaryContent = makeTaskSummaryContent('T01');
+    const summaryContent = makeTaskSummaryContent('T01') + [
+      '## Diagnostics',
+      '',
+      '- Hammer/IAM inspection path: test fixture.',
+      '',
+      '## Continuity Notes',
+      '',
+      '- **IAM provenance:** fixture evidence.',
+      '- **No-degradation boundary:** fixture boundary.',
+      '- **Trinity/VOLVOX continuity:** fixture continuity.',
+      '',
+    ].join('\n');
     insertTask({
       id: 'T01',
       sliceId: 'S01',
@@ -595,6 +606,7 @@ test('── markdown-renderer: renderTaskSummary round-trip ──', async () =
     assert.deepStrictEqual(parsed.frontmatter.duration, '45m', 'parsed summary has correct duration');
     assert.ok(parsed.title.includes('T01'), 'parsed summary title contains task ID');
     assert.ok(parsed.whatHappened.includes('Built the test feature'), 'whatHappened content preserved');
+    assert.match(rendered, /^## Diagnostics$/m, 'task summary exposes Hammer/IAM diagnostics section');
   } finally {
     closeDatabase();
     cleanupDir(tmpDir);
@@ -652,8 +664,8 @@ test('── markdown-renderer: renderSliceSummary round-trip ──', async () 
     adapter.prepare(
       `UPDATE slices SET full_summary_md = :sm, full_uat_md = :um WHERE milestone_id = 'M001' AND id = 'S01'`,
     ).run({
-      ':sm': '---\nid: S01\nparent: M001\nmilestone: M001\nduration: 2h\nverification_result: all-pass\ncompleted_at: 2025-01-01\nblocker_discovered: false\nprovides: []\nrequires: []\naffects: []\nkey_files:\n  - src/index.ts\nkey_decisions: []\npatterns_established: []\ndrill_down_paths: []\nobservability_surfaces: []\n---\n\n# S01: Test Slice Summary\n\n**Completed core functionality**\n\n## What Happened\n\nBuilt the slice.\n\n## Deviations\n\nNone.\n',
-      ':um': '# S01 UAT\n\n## UAT Type\n\n- UAT mode: artifact-driven\n\n## Checks\n\n- All tests pass\n',
+      ':sm': '---\nid: S01\nparent: M001\nmilestone: M001\nduration: 2h\nverification_result: all-pass\ncompleted_at: 2025-01-01\nblocker_discovered: false\nprovides: []\nrequires: []\naffects: []\nkey_files:\n  - src/index.ts\nkey_decisions: []\npatterns_established: []\ndrill_down_paths: []\nobservability_surfaces: []\n---\n\n# S01: Test Slice Summary\n\n**Completed core functionality**\n\n## Hammer Awareness Handoff\n\nHammer/IAM provenance fixture.\n\n## What Happened\n\nBuilt the slice.\n\n## Deviations\n\nNone.\n\n## Forward Intelligence\n\n### What the next slice should know\n- fixture\n\n### What\'s fragile\n- fixture\n\n### Authoritative diagnostics\n- fixture\n\n### What assumptions changed\n- fixture\n\n### Continuity to preserve\n- fixture\n',
+      ':um': '# S01 UAT\n\n## Hammer Awareness Contract\n\nFixture Hammer/IAM contract.\n\n## UAT Type\n\n- UAT mode: artifact-driven\n\n## Checks\n\n- All tests pass\n',
     });
 
     const ok = await renderSliceSummary(tmpDir, 'M001', 'S01');
@@ -667,6 +679,8 @@ test('── markdown-renderer: renderSliceSummary round-trip ──', async () 
 
     const summaryContent = fs.readFileSync(summaryPath, 'utf-8');
     assert.ok(summaryContent.includes('Test Slice Summary'), 'summary content correct');
+    assert.match(summaryContent, /^## Forward Intelligence$/m, 'slice summary exposes forward intelligence handoff');
+    assert.match(summaryContent, /Continuity to preserve/, 'slice summary exposes continuity handoff');
 
     // Verify UAT file
     const uatPath = path.join(
@@ -676,6 +690,7 @@ test('── markdown-renderer: renderSliceSummary round-trip ──', async () 
 
     const uatContent = fs.readFileSync(uatPath, 'utf-8');
     assert.ok(uatContent.includes('artifact-driven'), 'UAT content correct');
+    assert.match(uatContent, /Hammer Awareness Contract/, 'UAT wrapper exposes Hammer awareness contract');
   } finally {
     closeDatabase();
     cleanupDir(tmpDir);

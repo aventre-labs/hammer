@@ -134,9 +134,10 @@ describe("complete-milestone", () => {
       "prompt contains 'Verification Gate' section",
     );
 
-    // Failure path must block gsd_complete_milestone
-    assert.ok(
-      prompt.includes("Do NOT call `gsd_complete_milestone`"),
+    // Failure path must block the DB-backed milestone completion tool (legacy name is a compatibility bridge)
+    assert.match(
+      prompt,
+      /Do NOT call .*gsd_complete_milestone/,
       "failure path explicitly blocks calling the completion tool",
     );
 
@@ -173,8 +174,8 @@ describe("complete-milestone", () => {
     );
     assert.match(
       prompt,
-      /GSD-(?:Task|Unit)/,
-      "prompt should direct main-branch retries toward milestone-scoped GSD commit evidence",
+      /Hammer-(?:Task|Unit)|GSD-(?:Task|Unit)/,
+      "prompt should direct main-branch retries toward milestone-scoped Hammer/GSD commit evidence",
     );
   });
 
@@ -473,14 +474,59 @@ describe("complete-milestone", () => {
 
       const result = await handleCompleteMilestone(params, base);
 
-      // The call may return an error (milestone already complete) or success
-      // but in either case the SUMMARY.md must NOT be overwritten.
+      assert.ok(!("error" in result), `handler failed: ${"error" in result ? result.error : ""}`);
       const actualContent = readFileSync(summaryPath, "utf-8");
       assert.strictEqual(
         actualContent,
         originalContent,
         "existing SUMMARY.md must not be overwritten on re-dispatch (#4598)",
       );
+    } finally {
+      try { closeDatabase(); } catch { /* */ }
+      clearPathCache();
+      clearParseCache();
+      cleanup(base);
+    }
+  });
+
+  test("handleCompleteMilestone renders Hammer/IAM continuity sections", async () => {
+    const { handleCompleteMilestone } = await import("../tools/complete-milestone.ts");
+    const base = createFixtureBase();
+    const mid = "M002";
+    const dbPath = join(base, ".gsd", "gsd.db");
+    try {
+      openDatabase(dbPath);
+      mkdirSync(join(base, ".gsd", "milestones", mid), { recursive: true });
+      insertMilestone({ id: mid, title: "Hammer Completion", status: "active" });
+      insertSlice({ id: "S01", milestoneId: mid, title: "Slice One", status: "complete" });
+      insertTask({ id: "T01", sliceId: "S01", milestoneId: mid, title: "Task One", status: "complete" });
+
+      const result = await handleCompleteMilestone({
+        milestoneId: mid,
+        title: "Hammer Completion",
+        oneLiner: "Completed Hammer generated artifact renderer alignment",
+        narrative: "Aligned task, slice, and milestone artifacts.",
+        successCriteriaResults: "All slice checks passed with Hammer/IAM diagnostics.",
+        definitionOfDoneResults: "Definition of done met.",
+        requirementOutcomes: "R001 active → validated — renderer tests passed.",
+        keyDecisions: ["Keep legacy state bridges explicit"],
+        keyFiles: ["src/resources/extensions/gsd/tools/complete-milestone.ts"],
+        lessonsLearned: ["Renderer output must carry forward intelligence."],
+        followUps: "None.",
+        deviations: "None.",
+        verificationPassed: true,
+      }, base);
+
+      assert.ok(!("error" in result), `handler failed: ${"error" in result ? result.error : ""}`);
+      if (!("error" in result)) {
+        const summary = readFileSync(result.summaryPath, "utf-8");
+        assert.match(summary, /^## Hammer Awareness Handoff/m);
+        assert.match(summary, /^## Cross-Slice Verification/m);
+        assert.match(summary, /^## Decision Re-evaluation/m);
+        assert.match(summary, /^## Forward Intelligence/m);
+        assert.match(summary, /^## Files Created\/Modified/m);
+        assert.match(summary, /Hammer\/IAM generated-artifact language/);
+      }
     } finally {
       try { closeDatabase(); } catch { /* */ }
       clearPathCache();

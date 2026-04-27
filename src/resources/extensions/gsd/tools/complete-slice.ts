@@ -68,6 +68,20 @@ function sliceGateFieldForId(
   }
 }
 
+function renderStringList(values: readonly string[], empty = "None."): string {
+  return values.length > 0 ? values.map(value => `- ${value}`).join("\n") : empty;
+}
+
+function describeKeyFiles(values: readonly string[]): string {
+  return values.length > 0 ? values.map(value => `\`${value}\``).join(", ") : "No key files recorded.";
+}
+
+function describeFilesModified(values: readonly { path: string; description: string }[]): string {
+  return values.length > 0
+    ? values.map(value => `${value.path} — ${value.description || "modified"}`).join("; ")
+    : "No file-level descriptions recorded.";
+}
+
 /**
  * Render slice summary markdown matching the template format.
  * YAML frontmatter uses snake_case keys for parseSummary() compatibility.
@@ -131,9 +145,7 @@ function renderSliceSummaryMarkdown(params: CompleteSliceParams): string {
     ? requirementsValidated.map(r => `- ${r.id} — ${r.proof}`).join("\n")
     : "None.";
 
-  const reqSurfaced = requirementsSurfaced.length > 0
-    ? requirementsSurfaced.map(r => `- ${r}`).join("\n")
-    : "None.";
+  const reqSurfaced = renderStringList(requirementsSurfaced);
 
   const reqInvalidated = requirementsInvalidated.length > 0
     ? requirementsInvalidated.map(r => `- ${r.id} — ${r.what}`).join("\n")
@@ -143,6 +155,21 @@ function renderSliceSummaryMarkdown(params: CompleteSliceParams): string {
   const filesMod = filesModified.length > 0
     ? filesModified.map(f => `- \`${f.path}\` — ${f.description}`).join("\n")
     : "None.";
+
+  const downstreamProvides = provides.length > 0 ? provides.join("; ") : "No explicit provides were recorded; inspect task summaries before downstream consumption.";
+  const downstreamAffects = affects.length > 0 ? affects.join(", ") : "No downstream slices listed.";
+  const fragileSignals = observabilitySurfaces.length > 0
+    ? observabilitySurfaces.map(surface => `- ${surface} — keep this diagnostic stable for Hammer/IAM no-degradation checks.`).join("\n")
+    : "- No dedicated runtime surface recorded — use the verification commands and generated artifacts as the authoritative diagnostic signal.";
+  const authoritativeDiagnostics = [
+    `- ${params.sliceId}-SUMMARY.md — source of truth for Hammer/IAM provenance, Q8 closure, and forward handoff.`,
+    `- ${params.sliceId}-UAT.md — user-acceptance wrapper with Hammer awareness evidence.`,
+    `- Task drill-down paths — ${drillDownPaths.length > 0 ? drillDownPaths.join(", ") : "not recorded; inspect the tasks directory if more detail is needed."}`,
+  ].join("\n");
+  const continuityToPreserve = [
+    `- Generated artifacts should continue to name Hammer/IAM awareness, no-degradation, and provenance boundaries for ${params.sliceId}.`,
+    `- Downstream contract: ${downstreamProvides}`,
+  ].join("\n");
 
   return `---
 id: ${params.sliceId}
@@ -173,6 +200,10 @@ blocker_discovered: false
 # ${params.sliceId}: ${params.sliceTitle}
 
 **${params.oneLiner}**
+
+## Hammer Awareness Handoff
+
+This slice summary is the handoff from one Hammer work queue segment to the next. Preserve IAM provenance for consumed upstream artifacts, produced downstream contracts, and verification evidence; missing awareness or no-degradation proof is a blocking gap, not a silent fallback.
 
 ## What Happened
 
@@ -217,6 +248,27 @@ ${params.followUps || "None."}
 ## Files Created/Modified
 
 ${filesMod}
+
+## Forward Intelligence
+
+### What the next slice should know
+- ${downstreamProvides}
+- Downstream affected slices: ${downstreamAffects}
+- Key files: ${describeKeyFiles(keyFiles)}
+- File changes: ${describeFilesModified(filesModified)}
+
+### What's fragile
+${fragileSignals}
+
+### Authoritative diagnostics
+${authoritativeDiagnostics}
+
+### What assumptions changed
+- Deviations: ${params.deviations || "None."}
+- Known limitations: ${params.knownLimitations || "None."}
+
+### Continuity to preserve
+${continuityToPreserve}
 `;
 }
 
@@ -229,7 +281,17 @@ function renderUatMarkdown(params: CompleteSliceParams): string {
 **Milestone:** ${params.milestoneId}
 **Written:** ${new Date().toISOString()}
 
+## Hammer Awareness Contract
+
+Run this UAT against the user-visible Hammer outcome and its awareness contract. IAM provenance must identify what evidence was observed; missing awareness, no-degradation, or Trinity/VOLVOX continuity signals are failure signals unless the slice explicitly scoped them out.
+
 ${params.uatContent}
+
+## Awareness / Provenance Evidence
+
+- **IAM provenance observed:** ${params.verification || "No verification evidence recorded."}
+- **No-degradation checked:** ${params.operationalReadiness?.trim() || "No operational readiness evidence recorded; treat as not applicable only if the slice scoped out runtime concerns."}
+- **Trinity/VOLVOX continuity:** Generated slice summary and UAT artifacts preserve the downstream continuity handoff for ${params.sliceId}.
 `;
 }
 

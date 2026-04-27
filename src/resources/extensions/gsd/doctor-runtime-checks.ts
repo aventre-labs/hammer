@@ -639,7 +639,7 @@ export async function checkRuntimeHealth(
  */
 function buildStateMarkdownForCheck(state: Awaited<ReturnType<typeof deriveState>>): string {
   const lines: string[] = [];
-  lines.push("# GSD State", "");
+  lines.push("# Hammer State", "");
 
   const activeMilestone = state.activeMilestone
     ? `${state.activeMilestone.id}: ${state.activeMilestone.title}`

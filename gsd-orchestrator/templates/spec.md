@@ -1,4 +1,6 @@
-# [Product Name]
+# [Product Name] — Hammer Spec Template
+
+> Hammer/IAM awareness: include provenance, verification expectations, and no-degradation blockers for this product.
 
 ## What
 [One paragraph: what this product does. Be concrete — "A CLI tool that converts CSV files to JSON" not "A data transformation solution".]

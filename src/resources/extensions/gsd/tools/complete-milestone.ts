@@ -58,6 +58,14 @@ export interface CompleteMilestoneResult {
   summaryPath: string;
 }
 
+function renderList(values: readonly string[], empty = "None."): string {
+  return values.length > 0 ? values.map(value => `- ${value}`).join("\n") : empty;
+}
+
+function renderFiles(values: readonly string[]): string {
+  return values.length > 0 ? values.map(value => `- \`${value}\` — milestone-level changed or inspected file`).join("\n") : "None.";
+}
+
 function renderMilestoneSummaryMarkdown(params: CompleteMilestoneParams): string {
   const now = new Date().toISOString();
   const displayTitle = stripIdPrefix(params.title, params.milestoneId);
@@ -79,6 +87,25 @@ function renderMilestoneSummaryMarkdown(params: CompleteMilestoneParams): string
     ? lessonsLearned.map(l => `  - ${l}`).join("\n")
     : "  - (none)";
 
+  const crossSliceVerification = params.successCriteriaResults ?? "Not provided.";
+  const decisionRows = keyDecisions.length > 0
+    ? keyDecisions.map(decision => `| ${decision} | Captured during ${params.milestoneId}. | Review with delivered evidence. | Keep unless future Hammer/IAM diagnostics contradict it. |`).join("\n")
+    : "| None recorded | No milestone decision was provided. | N/A | No action. |";
+  const nextMilestoneLessons = renderList(lessonsLearned, "- No lessons recorded; read slice summaries for detailed handoff.");
+  const fragileItems = [
+    params.deviations?.trim() ? `- Deviations — ${params.deviations.trim()}` : "- Deviations — None recorded.",
+    params.followUps?.trim() ? `- Follow-ups — ${params.followUps.trim()}` : "- Follow-ups — None recorded.",
+  ].join("\n");
+  const authoritativeDiagnostics = [
+    `- Milestone validation and completion summary for ${params.milestoneId} — verifies success criteria and definition-of-done closure.`,
+    "- Slice SUMMARY/UAT artifacts — verify cross-slice Hammer/IAM provenance and no-degradation continuity.",
+    "- Hammer identity and prompt/workflow scanners — detect stale visible identity or missing awareness markers.",
+  ].join("\n");
+  const continuity = [
+    `- Preserve Hammer/IAM generated-artifact language for ${params.milestoneId}; do not regress to markerless summaries.`,
+    "- Keep explicit legacy .gsd/gsd_* compatibility bridges only where the execution substrate still requires them.",
+  ].join("\n");
+
   return `---
 id: ${params.milestoneId}
 title: "${displayTitle}"
@@ -96,9 +123,17 @@ ${lessonsYaml}
 
 **${params.oneLiner}**
 
+## Hammer Awareness Handoff
+
+This milestone summary is the durable Hammer transition record. Preserve IAM provenance for success criteria, requirement outcomes, and decisions; missing awareness, no-degradation evidence, or Trinity/VOLVOX continuity must be named as a blocker or follow-up instead of hidden in prose.
+
 ## What Happened
 
 ${params.narrative}
+
+## Cross-Slice Verification
+
+${crossSliceVerification}
 
 ## Success Criteria Results
 
@@ -112,6 +147,33 @@ ${params.definitionOfDoneResults ?? "Not provided."}
 
 ${params.requirementOutcomes ?? "Not provided."}
 
+## Requirement Changes
+
+${params.requirementOutcomes ?? "Not provided."}
+
+## Decision Re-evaluation
+
+| Decision | Original Rationale | Still Valid? | Action |
+|----------|-------------------|-------------|--------|
+${decisionRows}
+
+## Forward Intelligence
+
+### What the next milestone should know
+${nextMilestoneLessons}
+
+### What's fragile
+${fragileItems}
+
+### Authoritative diagnostics
+${authoritativeDiagnostics}
+
+### What assumptions changed
+- Requirement outcomes: ${params.requirementOutcomes ?? "Not provided."}
+
+### Continuity to preserve
+${continuity}
+
 ## Deviations
 
 ${params.deviations || "None."}
@@ -119,6 +181,10 @@ ${params.deviations || "None."}
 ## Follow-ups
 
 ${params.followUps || "None."}
+
+## Files Created/Modified
+
+${renderFiles(keyFiles)}
 `;
 }
 

@@ -214,12 +214,32 @@ const verificationEvidence = [
   );
 }
 
-// Test 13: no verification evidence renders empty table row
+// Test 13: no verification evidence renders empty table row plus Hammer/IAM diagnostics
 {
   const output = renderSummaryContent(taskRow, SLICE_ID, MILESTONE_ID, []);
   assertTrue(
     output.includes("No verification commands discovered"),
     "Empty evidence array must render placeholder row",
+  );
+  assertTrue(
+    output.includes("## Hammer Awareness Handoff"),
+    "renderSummaryContent must include Hammer Awareness Handoff section",
+  );
+  assertTrue(
+    output.includes("## Diagnostics"),
+    "renderSummaryContent must include Diagnostics section",
+  );
+  assertTrue(
+    output.includes("Hammer/IAM inspection path"),
+    "Diagnostics section must include Hammer/IAM inspection path",
+  );
+  assertTrue(
+    output.includes("## Continuity Notes"),
+    "renderSummaryContent must include continuity handoff notes",
+  );
+  assertTrue(
+    output.includes("No verification evidence rows were recorded"),
+    "Diagnostics must flag missing verification evidence as an unproven no-degradation boundary",
   );
 }
 

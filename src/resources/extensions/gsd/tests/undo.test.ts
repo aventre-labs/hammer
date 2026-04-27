@@ -293,7 +293,7 @@ test("handleUndoTask accepts partial ID (T01) and resolves from state", async ()
     writeFileSync(
       join(base, ".gsd", "STATE.md"),
       [
-        "# GSD State",
+        "# Hammer State",
         "",
         "- Phase: executing",
         "- Active Milestone: M001",

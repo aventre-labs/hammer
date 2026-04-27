@@ -162,6 +162,8 @@ describe("complete-slice closes complete-slice-owned gates", () => {
       const summary = fs.readFileSync(result.summaryPath, "utf-8");
       assert.match(summary, /^## Operational Readiness/m);
       assert.match(summary, /Health signal: \/health/);
+      assert.match(summary, /^## Forward Intelligence/m);
+      assert.match(summary, /Hammer\/IAM provenance/);
     }
   });
 });

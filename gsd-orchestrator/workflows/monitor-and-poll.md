@@ -1,6 +1,8 @@
 # Monitor and Poll
 
-Check status of a GSD project, handle blockers, track costs, and decide next actions.
+> Hammer/IAM awareness: treat blockers, missing provenance, or absent no-degradation proof as remediation signals.
+
+Check status of a Hammer project, handle blockers, track costs, and decide next actions.
 
 ## Checking Project State
 
@@ -8,14 +10,14 @@ The `query` command is your primary monitoring tool. It's instant (~50ms), costs
 
 ```bash
 cd /path/to/project
-gsd headless query
+hammer headless query
 ```
 
 ### Key fields to inspect
 
 ```bash
 # Overall status
-gsd headless query | jq '{
+hammer headless query | jq '{
   phase: .state.phase,
   milestone: .state.activeMilestone.id,
   slice: .state.activeSlice.id,
@@ -25,11 +27,11 @@ gsd headless query | jq '{
 }'
 
 # What should happen next
-gsd headless query | jq '.next'
+hammer headless query | jq '.next'
 # Returns: { "action": "dispatch", "unitType": "execute-task", "unitId": "M001/S01/T01" }
 
 # Is it done?
-gsd headless query | jq '.state.phase'
+hammer headless query | jq '.state.phase'
 # "complete" = done, "blocked" = needs you, anything else = in progress
 ```
 
@@ -59,10 +61,10 @@ When exit code is `10` or phase is `blocked`:
 
 ```bash
 # 1. Understand the blocker
-gsd headless query | jq '{phase: .state.phase, blockers: .state.blockers, nextAction: .state.nextAction}'
+hammer headless query | jq '{phase: .state.phase, blockers: .state.blockers, nextAction: .state.nextAction}'
 
 # 2. Option A: Steer around it
-gsd headless steer "Skip the database dependency, use in-memory storage instead"
+hammer headless steer "Skip the database dependency, use in-memory storage instead"
 
 # 3. Option B: Supply pre-built answers
 cat > fix.json << 'EOF'
@@ -71,13 +73,13 @@ cat > fix.json << 'EOF'
   "defaults": { "strategy": "first_option" }
 }
 EOF
-gsd headless --answers fix.json auto
+hammer headless --answers fix.json auto
 
 # 4. Option C: Force a specific phase
-gsd headless dispatch replan
+hammer headless dispatch replan
 
 # 5. Option D: Escalate to user
-echo "GSD build blocked. Phase: $(gsd headless query | jq -r '.state.phase')"
+echo "Hammer build blocked. Phase: $(hammer headless query | jq -r '.state.phase')"
 echo "Manual intervention required."
 ```
 
@@ -85,13 +87,13 @@ echo "Manual intervention required."
 
 ```bash
 # Current cumulative cost
-gsd headless query | jq '.cost.total'
+hammer headless query | jq '.cost.total'
 
 # Per-worker breakdown
-gsd headless query | jq '.cost.workers'
+hammer headless query | jq '.cost.workers'
 
 # After a step (from HeadlessJsonResult)
-RESULT=$(gsd headless --output-format json next 2>/dev/null)
+RESULT=$(hammer headless --output-format json next 2>/dev/null)
 echo "$RESULT" | jq '.cost'
 ```
 
@@ -101,11 +103,11 @@ echo "$RESULT" | jq '.cost'
 MAX_BUDGET=15.00
 
 check_budget() {
-  TOTAL=$(gsd headless query | jq -r '.cost.total')
+  TOTAL=$(hammer headless query | jq -r '.cost.total')
   OVER=$(echo "$TOTAL > $MAX_BUDGET" | bc -l)
   if [ "$OVER" = "1" ]; then
     echo "Budget exceeded: \$$TOTAL > \$$MAX_BUDGET"
-    gsd headless stop
+    hammer headless stop
     return 1
   fi
   return 0
@@ -120,7 +122,7 @@ For agents that need to periodically check on a build:
 cd /path/to/project
 
 poll_project() {
-  STATE=$(gsd headless query 2>/dev/null)
+  STATE=$(hammer headless query 2>/dev/null)
   if [ -z "$STATE" ]; then
     echo "NO_PROJECT"
     return
@@ -154,34 +156,34 @@ If a build was interrupted or you need to continue:
 cd /path/to/project
 
 # Check current state
-gsd headless query | jq '.state.phase'
+hammer headless query | jq '.state.phase'
 
 # Resume from where it left off
-gsd headless --output-format json auto 2>/dev/null
+hammer headless --output-format json auto 2>/dev/null
 
 # Or resume a specific session
-gsd headless --resume "$SESSION_ID" --output-format json auto 2>/dev/null
+hammer headless --resume "$SESSION_ID" --output-format json auto 2>/dev/null
 ```
 
 ## Reading Build Artifacts
 
-After completion, inspect what GSD produced:
+After completion, inspect what Hammer produced:
 
 ```bash
 cd /path/to/project
 
 # Project summary
-cat .gsd/PROJECT.md
+cat .hammer/PROJECT.md
 
 # What was decided
-cat .gsd/DECISIONS.md
+cat .hammer/DECISIONS.md
 
 # Requirements and their validation status
-cat .gsd/REQUIREMENTS.md
+cat .hammer/REQUIREMENTS.md
 
 # Milestone summary
-cat .gsd/milestones/M001-*/M001-*-SUMMARY.md 2>/dev/null
+cat .hammer/milestones/M001-*/M001-*-SUMMARY.md 2>/dev/null
 
-# Git history (GSD commits per-slice)
+# Git history (Hammer commits per-slice)
 git log --oneline
 ```

@@ -226,12 +226,16 @@ console.log('\n=== complete-slice: handler happy path ===');
     assertMatch(summaryContent, /## What Happened/, 'summary should have What Happened section');
     assertMatch(summaryContent, /## Verification/, 'summary should have Verification section');
     assertMatch(summaryContent, /## Requirements Advanced/, 'summary should have Requirements Advanced section');
+    assertMatch(summaryContent, /## Forward Intelligence/, 'summary should have Forward Intelligence section');
+    assertMatch(summaryContent, /Hammer\/IAM provenance/, 'summary should preserve Hammer/IAM provenance language');
 
     // (b) Verify UAT.md exists on disk
     assertTrue(fs.existsSync(result.uatPath), 'UAT file should exist on disk');
     const uatContent = fs.readFileSync(result.uatPath, 'utf-8');
     assertMatch(uatContent, /# S01: Test Slice — UAT/, 'UAT should have correct title');
     assertMatch(uatContent, /Milestone:\*\* M001/, 'UAT should reference milestone');
+    assertMatch(uatContent, /Hammer Awareness Contract/, 'UAT should include Hammer awareness contract');
+    assertMatch(uatContent, /Awareness \/ Provenance Evidence/, 'UAT should include provenance evidence section');
     assertMatch(uatContent, /Smoke Test/, 'UAT should contain smoke test from params');
 
     // (c) Verify roadmap shows S01 complete ([x]) and S02 pending ([ ]) in checkbox list.

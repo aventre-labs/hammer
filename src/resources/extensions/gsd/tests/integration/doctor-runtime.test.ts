@@ -163,7 +163,7 @@ describe('doctor-runtime', async () => {
 
       // Verify content has expected structure
       const content = readFileSync(stateFilePath, "utf-8");
-      assert.ok(content.includes("# GSD State"), "STATE.md has header");
+      assert.ok(content.includes("# Hammer State"), "STATE.md has Hammer header");
       assert.ok(content.includes("M001"), "STATE.md references milestone");
     });
 
@@ -174,7 +174,7 @@ describe('doctor-runtime', async () => {
 
       // Write a STATE.md with wrong phase/milestone info
       const stateFilePath = join(dir, ".gsd", "STATE.md");
-      writeFileSync(stateFilePath, `# GSD State
+      writeFileSync(stateFilePath, `# Hammer State
 
 **Active Milestone:** None
 **Active Slice:** None

@@ -59,7 +59,7 @@ None.
 - [ ] M001: Headless Proof — Create a test file to prove the agent loop works
 `;
 
-const FIXTURE_STATE_MD = `# GSD State
+const FIXTURE_STATE_MD = `# Hammer State
 
 **Active Milestone:** M001 — Headless Proof
 **Active Slice:** S01 — Create Test File

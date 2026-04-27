@@ -1,12 +1,14 @@
 # Answer Injection
 
+> Hammer/IAM awareness: injected answers preserve provenance and no-degradation blocking without exposing secret values.
+
 Pre-supply answers and secrets to eliminate interactive prompts during headless execution.
 
 ## Usage
 
 ```bash
-gsd headless --answers answers.json auto
-gsd headless --answers answers.json new-milestone --context spec.md --auto
+hammer headless --answers answers.json auto
+hammer headless --answers answers.json new-milestone --context spec.md --auto
 ```
 
 The `--answers` flag takes a path to a JSON file containing pre-supplied answers and secrets.
@@ -39,10 +41,10 @@ The `--answers` flag takes a path to a JSON file containing pre-supplied answers
 
 ## How Secrets Work
 
-Secrets are injected as environment variables into the GSD child process:
+Secrets are injected as environment variables into the Hammer child process:
 
 1. The orchestrator passes the answer file via `--answers`
-2. GSD reads the file and sets secret values as env vars in the child process
+2. Hammer reads the file and sets secret values as env vars in the child process
 3. When `secure_env_collect` runs inside the agent, it finds the keys already in `process.env`
 4. The tool skips the interactive prompt and reports the keys as "already configured"
 
@@ -52,7 +54,7 @@ Secrets are never logged or included in event streams.
 
 Two-phase correlation:
 
-1. **Observe** — GSD monitors `tool_execution_start` events for `ask_user_questions` to extract question metadata (ID, options, allowMultiple)
+1. **Observe** — Hammer monitors `tool_execution_start` events for `ask_user_questions` to extract question metadata (ID, options, allowMultiple)
 2. **Match** — Subsequent `extension_ui_request` events are correlated to the metadata and responded to with the pre-supplied answer
 
 Handles out-of-order events (extension_ui_request can arrive before tool_execution_start) via a deferred processing queue with 500ms timeout.
@@ -111,9 +113,9 @@ cat > answers.json << 'EOF'
 EOF
 
 # Run with pre-supplied answers
-gsd headless --answers answers.json --output-format json auto 2>/dev/null
+hammer headless --answers answers.json --output-format json auto 2>/dev/null
 
 # Parse result
-RESULT=$(gsd headless --answers answers.json --output-format json next 2>/dev/null)
+RESULT=$(hammer headless --answers answers.json --output-format json next 2>/dev/null)
 echo "$RESULT" | jq '{status: .status, cost: .cost.total}'
 ```

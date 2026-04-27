@@ -57,7 +57,7 @@ describe("guided-flow STATE.md rebuild (#3475)", () => {
 
     // Write a STALE STATE.md pointing to wrong milestone
     writeFile(base, "STATE.md", [
-      "# GSD State",
+      "# Hammer State",
       "",
       "**Active Milestone:** M008: Old Queued",
       "**Active Slice:** None",
@@ -80,6 +80,7 @@ describe("guided-flow STATE.md rebuild (#3475)", () => {
     const rebuilt = readFileSync(statePath, "utf-8");
 
     // Should contain M010, NOT M008
+    assert.ok(rebuilt.startsWith("# Hammer State"), "Rebuilt STATE.md should use Hammer header");
     assert.ok(rebuilt.includes("M010"), "Rebuilt STATE.md should reference M010");
     assert.ok(!rebuilt.includes("M008"), "Rebuilt STATE.md should NOT reference stale M008");
   });
@@ -97,6 +98,7 @@ describe("guided-flow STATE.md rebuild (#3475)", () => {
     const state = await deriveState(base);
     const md = buildStateMarkdown(state);
 
+    assert.ok(md.startsWith("# Hammer State"), "State markdown should use Hammer header");
     assert.ok(md.includes("M070"), "State markdown should include active milestone M070");
     assert.ok(md.includes("Current Work") || md.includes("M070"), "State markdown should include milestone title or ID");
   });

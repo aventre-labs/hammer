@@ -1,10 +1,12 @@
-# GSD Commands Reference
+# Hammer Commands Reference
 
-All commands run as subprocesses via `gsd headless [flags] [command] [args...]`.
+> Hammer/IAM awareness: use these commands with provenance checks and no-degradation remediation when blockers appear.
+
+All commands run as subprocesses via `hammer headless [flags] [command] [args...]`.
 
 ## Global Flags
 
-These flags apply to any `gsd headless` invocation:
+These flags apply to any `hammer headless` invocation:
 
 | Flag | Description |
 |------|-------------|
@@ -36,7 +38,7 @@ These flags apply to any `gsd headless` invocation:
 Autonomous mode — loop through all pending units until milestone complete or blocked.
 
 ```bash
-gsd headless --output-format json auto
+hammer headless --output-format json auto
 ```
 
 ### `next`
@@ -44,7 +46,7 @@ gsd headless --output-format json auto
 Step mode — execute exactly one unit (task/slice/milestone step), then exit. Recommended for orchestrators that need decision points between steps.
 
 ```bash
-gsd headless --output-format json next
+hammer headless --output-format json next
 ```
 
 ### `new-milestone`
@@ -52,10 +54,10 @@ gsd headless --output-format json next
 Create a milestone from a specification document.
 
 ```bash
-gsd headless new-milestone --context spec.md
-gsd headless new-milestone --context spec.md --auto
-gsd headless new-milestone --context-text "Build a REST API" --auto
-cat spec.md | gsd headless new-milestone --context - --auto
+hammer headless new-milestone --context spec.md
+hammer headless new-milestone --context spec.md --auto
+hammer headless new-milestone --context-text "Build a REST API" --auto
+cat spec.md | hammer headless new-milestone --context - --auto
 ```
 
 Extra flags:
@@ -68,13 +70,13 @@ Extra flags:
 Force-route to a specific phase, bypassing normal state-machine routing.
 
 ```bash
-gsd headless dispatch research
-gsd headless dispatch plan
-gsd headless dispatch execute
-gsd headless dispatch complete
-gsd headless dispatch reassess
-gsd headless dispatch uat
-gsd headless dispatch replan
+hammer headless dispatch research
+hammer headless dispatch plan
+hammer headless dispatch execute
+hammer headless dispatch complete
+hammer headless dispatch reassess
+hammer headless dispatch uat
+hammer headless dispatch replan
 ```
 
 ### `discuss`
@@ -82,7 +84,7 @@ gsd headless dispatch replan
 Start guided milestone/slice discussion.
 
 ```bash
-gsd headless discuss
+hammer headless discuss
 ```
 
 ### `stop`
@@ -90,7 +92,7 @@ gsd headless discuss
 Stop auto-mode gracefully.
 
 ```bash
-gsd headless stop
+hammer headless stop
 ```
 
 ### `pause`
@@ -98,7 +100,7 @@ gsd headless stop
 Pause auto-mode (preserves state, resumable).
 
 ```bash
-gsd headless pause
+hammer headless pause
 ```
 
 ## State Inspection
@@ -108,10 +110,10 @@ gsd headless pause
 **Instant JSON snapshot** — state, next dispatch, parallel costs. No LLM, ~50ms. The recommended way for orchestrators to inspect state.
 
 ```bash
-gsd headless query
-gsd headless query | jq '.state.phase'
-gsd headless query | jq '.next'
-gsd headless query | jq '.cost.total'
+hammer headless query
+hammer headless query | jq '.state.phase'
+hammer headless query | jq '.next'
+hammer headless query | jq '.cost.total'
 ```
 
 ### `status`
@@ -119,7 +121,7 @@ gsd headless query | jq '.cost.total'
 Progress dashboard (TUI overlay — useful interactively, not for parsing).
 
 ```bash
-gsd headless status
+hammer headless status
 ```
 
 ### `history`
@@ -127,7 +129,7 @@ gsd headless status
 Execution history. Supports `--cost`, `--phase`, `--model`, and `limit` arguments.
 
 ```bash
-gsd headless history
+hammer headless history
 ```
 
 ## Unit Control
@@ -137,7 +139,7 @@ gsd headless history
 Prevent a unit from auto-mode dispatch.
 
 ```bash
-gsd headless skip
+hammer headless skip
 ```
 
 ### `undo`
@@ -145,8 +147,8 @@ gsd headless skip
 Revert last completed unit. Use `--force` to bypass confirmation.
 
 ```bash
-gsd headless undo
-gsd headless undo --force
+hammer headless undo
+hammer headless undo --force
 ```
 
 ### `steer <description>`
@@ -154,7 +156,7 @@ gsd headless undo --force
 Hard-steer plan documents during execution. Useful for mid-course corrections.
 
 ```bash
-gsd headless steer "Skip the blocked dependency, use mock instead"
+hammer headless steer "Skip the blocked dependency, use mock instead"
 ```
 
 ### `queue`
@@ -162,7 +164,7 @@ gsd headless steer "Skip the blocked dependency, use mock instead"
 Queue and reorder future milestones.
 
 ```bash
-gsd headless queue
+hammer headless queue
 ```
 
 ## Configuration & Health
@@ -172,7 +174,7 @@ gsd headless queue
 Runtime health checks with auto-fix.
 
 ```bash
-gsd headless doctor
+hammer headless doctor
 ```
 
 ### `prefs`
@@ -180,7 +182,7 @@ gsd headless doctor
 Manage preferences (global/project/status/wizard/setup).
 
 ```bash
-gsd headless prefs
+hammer headless prefs
 ```
 
 ### `knowledge <rule|pattern|lesson>`
@@ -188,12 +190,12 @@ gsd headless prefs
 Add persistent project knowledge.
 
 ```bash
-gsd headless knowledge "Always use UTC timestamps in API responses"
+hammer headless knowledge "Always use UTC timestamps in API responses"
 ```
 
 ## Phases
 
-GSD workflows progress through these phases:
+Hammer workflows progress through these phases:
 
 ```
 pre-planning → needs-discussion → discussing → researching → planning →

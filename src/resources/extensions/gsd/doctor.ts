@@ -91,7 +91,7 @@ function validatePreferenceShape(preferences: GSDPreferences): string[] {
 /** Build STATE.md content from derived state. Exported for guided-flow pre-dispatch rebuild (#3475). */
 export function buildStateMarkdown(state: Awaited<ReturnType<typeof deriveState>>): string {
   const lines: string[] = [];
-  lines.push("# GSD State", "");
+  lines.push("# Hammer State", "");
 
   const activeMilestone = state.activeMilestone
     ? `${state.activeMilestone.id}: ${state.activeMilestone.title}`

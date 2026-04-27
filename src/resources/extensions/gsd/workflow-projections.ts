@@ -175,6 +175,52 @@ export function renderRoadmapProjection(basePath: string, milestoneId: string): 
  *   complete-task, these are passed directly. When called from projection
  *   regeneration, they are queried from the DB by renderSummaryProjection.
  */
+function yamlList(values: readonly string[] | null | undefined, placeholder = "(none)"): string {
+  if (values && values.length > 0) {
+    return values.map(value => `  - ${value}`).join("\n");
+  }
+  return `  - ${placeholder}`;
+}
+
+function formatTaskDiagnostics(taskRow: TaskRow, evidenceCount: number): string {
+  const files = taskRow.key_files && taskRow.key_files.length > 0
+    ? taskRow.key_files.map(f => `\`${f}\``).join(", ")
+    : "No files recorded.";
+  const decisions = taskRow.key_decisions && taskRow.key_decisions.length > 0
+    ? taskRow.key_decisions.join("; ")
+    : "No decisions recorded.";
+
+  return [
+    "- **Hammer/IAM inspection path:** read this SUMMARY.md, its Verification Evidence table, and the referenced task plan before re-dispatching downstream work.",
+    `- **IAM provenance:** ${evidenceCount > 0 ? `${evidenceCount} verification evidence row(s) were recorded for this task.` : "No verification evidence rows were recorded; treat this as an unproven no-degradation boundary until verified."}`,
+    `- **Files under continuity:** ${files}`,
+    `- **Decision trace:** ${decisions}`,
+  ].join("\n");
+}
+
+function formatTaskContinuityNotes(taskRow: TaskRow): string {
+  const provenance = taskRow.key_files && taskRow.key_files.length > 0
+    ? `Implementation provenance is anchored in ${taskRow.key_files.map(f => `\`${f}\``).join(", ")}.`
+    : "Implementation provenance is not file-specific in the DB row; inspect the task plan and verification output before changing behavior.";
+  const boundary = taskRow.blocker_discovered
+    ? "A blocker was recorded; downstream work must stop and replan rather than silently degrading."
+    : "Preserve Hammer/IAM generated-artifact language and fail visibly if awareness/provenance evidence is missing.";
+  return [
+    `- **IAM provenance:** ${provenance}`,
+    `- **No-degradation boundary:** ${boundary}`,
+    "- **Trinity/VOLVOX continuity:** Preserve generated summary/state continuity signals so future agents can reconstruct lifecycle context from artifacts alone.",
+  ].join("\n");
+}
+
+/**
+ * Render SUMMARY.md content from a task row.
+ * Single source of truth for summary rendering — used both at completion
+ * time and at projection regeneration time (#2720).
+ *
+ * @param evidence - Optional verification evidence rows. When called from
+ *   complete-task, these are passed directly. When called from projection
+ *   regeneration, they are queried from the DB by renderSummaryProjection.
+ */
 export function renderSummaryContent(
   taskRow: TaskRow,
   sliceId: string,
@@ -190,19 +236,15 @@ export function renderSummaryContent(
   }
 
   // ── Frontmatter (YAML list format, matches parseSummary() expectations) ──
-  const keyFilesYaml = taskRow.key_files && taskRow.key_files.length > 0
-    ? taskRow.key_files.map(f => `  - ${f}`).join("\n")
-    : "  - (none)";
-  const keyDecisionsYaml = taskRow.key_decisions && taskRow.key_decisions.length > 0
-    ? taskRow.key_decisions.map(d => `  - ${d}`).join("\n")
-    : "  - (none)";
+  const keyFilesYaml = yamlList(taskRow.key_files);
+  const keyDecisionsYaml = yamlList(taskRow.key_decisions);
 
   // Derive verification_result from evidence if available
   const evidenceList = evidence ?? [];
   const allPassed = evidenceList.length > 0 &&
     evidenceList.every(e => {
       const code = e.exitCode ?? e.exit_code ?? -1;
-      return code === 0 || e.verdict.includes("\u2705") || e.verdict.toLowerCase().includes("pass");
+      return code === 0 || e.verdict.includes("✅") || e.verdict.toLowerCase().includes("pass");
     });
   const verificationResult = taskRow.verification_result
     ? (allPassed ? "passed" : (evidenceList.length === 0 ? "untested" : "mixed"))
@@ -217,10 +259,12 @@ export function renderSummaryContent(
       evidenceTable += `| ${i + 1} | \`${e.command}\` | ${code} | ${e.verdict} | ${dur}ms |\n`;
     });
   } else {
-    evidenceTable += "| \u2014 | No verification commands discovered | \u2014 | \u2014 | \u2014 |\n";
+    evidenceTable += "| — | No verification commands discovered | — | — | — |\n";
   }
 
   const title = taskRow.one_liner || taskRow.title || taskRow.id;
+  const diagnostics = formatTaskDiagnostics(taskRow, evidenceList.length);
+  const continuityNotes = formatTaskContinuityNotes(taskRow);
 
   return `---
 id: ${taskRow.id}
@@ -240,6 +284,10 @@ blocker_discovered: ${taskRow.blocker_discovered ? "true" : "false"}
 
 **${taskRow.one_liner || ""}**
 
+## Hammer Awareness Handoff
+
+This task summary is a Hammer continuity artifact. Preserve IAM provenance for the files changed, commands run, and evidence gathered; if awareness, provenance, or no-degradation evidence is missing, treat it as a named remediation rather than a silent success.
+
 ## What Happened
 
 ${taskRow.narrative || "No summary recorded."}
@@ -251,6 +299,14 @@ ${taskRow.verification_result || "No verification recorded."}
 ## Verification Evidence
 
 ${evidenceTable}
+## Diagnostics
+
+${diagnostics}
+
+## Continuity Notes
+
+${continuityNotes}
+
 ## Deviations
 
 ${taskRow.deviations || "None."}
@@ -290,7 +346,7 @@ export function renderSummaryProjection(basePath: string, milestoneId: string, s
  */
 export function renderStateContent(state: GSDState): string {
   const lines: string[] = [];
-  lines.push("# GSD State", "");
+  lines.push("# Hammer State", "");
 
   const activeSlice = state.activeSlice
     ? `${state.activeSlice.id}: ${stripIdPrefix(state.activeSlice.title, state.activeSlice.id)}`

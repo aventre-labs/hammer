@@ -152,6 +152,10 @@ test('#2630 renderStateContent: active milestone title with pre-existing ID pref
   const content = renderStateContent(state);
 
   assert.ok(
+    content.startsWith('# Hammer State'),
+    `expected Hammer STATE.md header, got: ${content.split('\n')[0]}`,
+  );
+  assert.ok(
     !content.includes('M001: M001:'),
     `found double prefix in STATE.md: ${content}`,
   );
