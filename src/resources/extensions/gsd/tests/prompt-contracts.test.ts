@@ -337,3 +337,63 @@ test("reactive-execute prompt references tool calls instead of checkbox updates"
   assert.doesNotMatch(prompt, /checkbox edits/);
   assert.match(prompt, /completion tool calls/);
 });
+
+// ─── S06: research prompts require native Omega phase contracts ────────
+
+const RESEARCH_OMEGA_PROMPTS = [
+  {
+    name: "research-milestone",
+    expectedUnitType: "research-milestone",
+    expectedUnitIdPattern: /unitId`:\s*`"\{\{milestoneId\}\}"`|`unitId`:\s*`"\{\{milestoneId\}\}"|unitId`: `"\{\{milestoneId\}\}"/,
+  },
+  {
+    name: "research-slice",
+    expectedUnitType: "research-slice",
+    expectedUnitIdPattern: /unitId`:\s*`"\{\{milestoneId\}\}\/\{\{sliceId\}\}"`|unitId`: `"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/,
+  },
+  {
+    name: "guided-research-slice",
+    expectedUnitType: "research-slice",
+    expectedUnitIdPattern: /unitId:\s*"\{\{milestoneId\}\}\/\{\{sliceId\}\}"/,
+  },
+] as const;
+
+for (const contract of RESEARCH_OMEGA_PROMPTS) {
+  test(`${contract.name} prompt requires native canonical Omega phase contract`, () => {
+    const prompt = readPrompt(contract.name);
+    assert.match(prompt, /## Omega Phase Contract/);
+    assert.match(prompt, /hammer_canonical_spiral/);
+    assert.match(prompt, new RegExp(`unitType\`?:\\s*\`?"${contract.expectedUnitType}"`));
+    assert.match(prompt, contract.expectedUnitIdPattern);
+    assert.match(prompt, /targetArtifactPath/);
+    assert.match(prompt, /before `gsd_summary_save`/i);
+    assert.match(prompt, /runId/);
+    assert.match(prompt, /manifestPath/);
+    assert.match(prompt, /artifactDir/);
+    assert.match(prompt, /stageCount`? of `?10/i);
+    assert.match(prompt, /synthesis(?:Path| reference)/i);
+    assert.match(prompt, /IAM error/i);
+    assert.match(prompt, /Do not call `gsd_summary_save` as if .* research completed successfully/i);
+    assert.doesNotMatch(prompt, /scriptorium/i);
+  });
+}
+
+test("parallel-research-slices prompt requires per-slice Omega manifests", () => {
+  const prompt = readPrompt("parallel-research-slices");
+  assert.match(prompt, /## Omega Phase Contract/);
+  assert.match(prompt, /hammer_canonical_spiral/);
+  assert.match(prompt, /unitType:\s*"research-slice"/);
+  assert.match(prompt, /unitId:\s*"\{\{mid\}\}\/S##"/);
+  assert.match(prompt, /targetArtifactPath/);
+  assert.match(prompt, /per-slice Omega phase manifest/i);
+  assert.match(prompt, /Do not accept one milestone-level Omega placeholder/i);
+  assert.match(prompt, /research artifact path and Omega manifest path for every completed slice/i);
+  assert.match(prompt, /runId/);
+  assert.match(prompt, /manifestPath/);
+  assert.match(prompt, /artifactDir/);
+  assert.match(prompt, /stageCount`? of `?10/i);
+  assert.match(prompt, /synthesis(?:Path| reference)/i);
+  assert.match(prompt, /IAM error/i);
+  assert.doesNotMatch(prompt, /scriptorium/i);
+});
+

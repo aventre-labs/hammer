@@ -38,6 +38,21 @@ Read the slice title, the roadmap excerpt, and any milestone research above. Ask
 
 An honest "this is straightforward, here's the pattern to follow" is more valuable than invented complexity.
 
+## Omega Phase Contract
+
+Before final research persistence, you must complete Hammer's native Omega phase contract for this governed research unit.
+
+1. Run `hammer_canonical_spiral` after you have enough research context and before `gsd_summary_save`, using:
+   - `query`: a concise research synthesis question for slice `{{milestoneId}}/{{sliceId}}` and the evidence you gathered.
+   - `unitType`: `"research-slice"`
+   - `unitId`: `"{{milestoneId}}/{{sliceId}}"`
+   - `targetArtifactPath`: `"{{outputPath}}"`
+   - `persona`: `"engineer"` unless a loaded skill gives a stronger reason otherwise.
+2. Treat the tool result as mandatory phase evidence. The response must include a `runId`, `manifestPath`, `artifactDir`, `stageCount` of `10`, and a synthesis reference (`synthesisPath` or returned synthesis). If any value is missing or malformed, the Omega phase contract is unsatisfied.
+3. Include an `## Omega Phase Contract` section in the RESEARCH markdown citing the returned `runId`, `manifestPath`, `artifactDir`, `stageCount`, target artifact path, and synthesis reference.
+4. If `hammer_canonical_spiral` returns an IAM error, times out, or cannot provide complete artifacts, stop and report the IAM error/remediation in your output. Do not call `gsd_summary_save` as if slice research completed successfully.
+5. Do not replace the native Omega run with prose guidance or defer it to a later phase; this research prompt is not complete without the run and citation.
+
 ## Steps
 
 Research what this slice needs. Narrate key findings and surprises as you go — what exists, what's missing, what constrains the approach.
