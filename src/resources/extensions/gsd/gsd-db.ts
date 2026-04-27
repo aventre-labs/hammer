@@ -180,7 +180,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 function indexExists(db: DbAdapter, name: string): boolean {
   return !!db.prepare(
@@ -612,6 +612,31 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       )
     `);
 
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS omega_phase_artifacts (
+        unit_type TEXT NOT NULL,
+        unit_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        target_artifact_path TEXT NOT NULL,
+        manifest_path TEXT NOT NULL,
+        artifact_dir TEXT NOT NULL,
+        run_manifest_path TEXT NOT NULL,
+        synthesis_path TEXT,
+        stage_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'running',
+        diagnostics_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT,
+        PRIMARY KEY (unit_type, unit_id),
+        FOREIGN KEY (run_id) REFERENCES omega_runs(id)
+      )
+    `);
+
+    db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_unit ON omega_phase_artifacts(unit_type, unit_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_run ON omega_phase_artifacts(run_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_status ON omega_phase_artifacts(status)");
+
     db.exec("CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)");
 
     db.exec("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone ON replan_history(milestone_id, created_at)");
@@ -651,6 +676,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_layer ON memories(trinity_layer)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memories_trinity_validation ON memories(trinity_validation_state)");
       createVolvoxIndexes(db);
+      ensureOmegaPhaseArtifactsSchema(db);
 
       db.prepare(
         "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
@@ -837,6 +863,32 @@ function normalizeVolvoxStoredState(db: DbAdapter): void {
         END,
         volvox_propagation_eligible = CASE WHEN COALESCE(volvox_propagation_eligible, 0) = 1 THEN 1 ELSE 0 END
   `);
+}
+
+function ensureOmegaPhaseArtifactsSchema(db: DbAdapter): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS omega_phase_artifacts (
+      unit_type TEXT NOT NULL,
+      unit_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      target_artifact_path TEXT NOT NULL,
+      manifest_path TEXT NOT NULL,
+      artifact_dir TEXT NOT NULL,
+      run_manifest_path TEXT NOT NULL,
+      synthesis_path TEXT,
+      stage_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'running',
+      diagnostics_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      PRIMARY KEY (unit_type, unit_id),
+      FOREIGN KEY (run_id) REFERENCES omega_runs(id)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_unit ON omega_phase_artifacts(unit_type, unit_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_run ON omega_phase_artifacts(run_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_omega_phase_artifacts_status ON omega_phase_artifacts(status)");
 }
 
 function migrateSchema(db: DbAdapter): void {
@@ -1482,6 +1534,15 @@ function migrateSchema(db: DbAdapter): void {
       ensureVolvoxSchema(db);
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 25,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 26) {
+      // v26 — phase-scoped Omega run mappings and compact manifests.
+      ensureOmegaPhaseArtifactsSchema(db);
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 26,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -4338,6 +4399,128 @@ export function getOmegaRun(id: string): OmegaRunRow | null {
     `SELECT * FROM omega_runs WHERE id = :id`,
   ).get({ ":id": id });
   return (row as unknown as OmegaRunRow) ?? null;
+}
+
+export interface OmegaPhaseArtifactRow {
+  unit_type: string;
+  unit_id: string;
+  run_id: string;
+  target_artifact_path: string;
+  manifest_path: string;
+  artifact_dir: string;
+  run_manifest_path: string;
+  synthesis_path: string | null;
+  stage_count: number;
+  status: string;
+  diagnostics_json: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface OmegaPhaseArtifactRecord {
+  unitType: string;
+  unitId: string;
+  runId: string;
+  targetArtifactPath: string;
+  manifestPath: string;
+  artifactDir: string;
+  runManifestPath: string;
+  synthesisPath: string | null;
+  stageCount: number;
+  status: string;
+  diagnostics: string[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+function parseStringArrayJson(raw: unknown): string[] {
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function rowToOmegaPhaseArtifact(row: Record<string, unknown>): OmegaPhaseArtifactRecord {
+  return {
+    unitType: row["unit_type"] as string,
+    unitId: row["unit_id"] as string,
+    runId: row["run_id"] as string,
+    targetArtifactPath: row["target_artifact_path"] as string,
+    manifestPath: row["manifest_path"] as string,
+    artifactDir: row["artifact_dir"] as string,
+    runManifestPath: row["run_manifest_path"] as string,
+    synthesisPath: (row["synthesis_path"] as string | null) ?? null,
+    stageCount: typeof row["stage_count"] === "number" ? row["stage_count"] : Number(row["stage_count"] ?? 0),
+    status: row["status"] as string,
+    diagnostics: parseStringArrayJson(row["diagnostics_json"]),
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
+    completedAt: (row["completed_at"] as string | null) ?? null,
+  };
+}
+
+export function upsertOmegaPhaseArtifact(row: OmegaPhaseArtifactRecord): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `INSERT INTO omega_phase_artifacts (
+       unit_type, unit_id, run_id, target_artifact_path, manifest_path,
+       artifact_dir, run_manifest_path, synthesis_path, stage_count, status,
+       diagnostics_json, created_at, updated_at, completed_at
+     ) VALUES (
+       :unit_type, :unit_id, :run_id, :target_artifact_path, :manifest_path,
+       :artifact_dir, :run_manifest_path, :synthesis_path, :stage_count, :status,
+       :diagnostics_json, :created_at, :updated_at, :completed_at
+     )
+     ON CONFLICT(unit_type, unit_id) DO UPDATE SET
+       run_id = excluded.run_id,
+       target_artifact_path = excluded.target_artifact_path,
+       manifest_path = excluded.manifest_path,
+       artifact_dir = excluded.artifact_dir,
+       run_manifest_path = excluded.run_manifest_path,
+       synthesis_path = excluded.synthesis_path,
+       stage_count = excluded.stage_count,
+       status = excluded.status,
+       diagnostics_json = excluded.diagnostics_json,
+       created_at = excluded.created_at,
+       updated_at = excluded.updated_at,
+       completed_at = excluded.completed_at`,
+  ).run({
+    ":unit_type": row.unitType,
+    ":unit_id": row.unitId,
+    ":run_id": row.runId,
+    ":target_artifact_path": row.targetArtifactPath,
+    ":manifest_path": row.manifestPath,
+    ":artifact_dir": row.artifactDir,
+    ":run_manifest_path": row.runManifestPath,
+    ":synthesis_path": row.synthesisPath,
+    ":stage_count": row.stageCount,
+    ":status": row.status,
+    ":diagnostics_json": JSON.stringify(Array.isArray(row.diagnostics) ? row.diagnostics : []),
+    ":created_at": row.createdAt,
+    ":updated_at": row.updatedAt,
+    ":completed_at": row.completedAt,
+  });
+}
+
+export function getOmegaPhaseArtifact(unitType: string, unitId: string): OmegaPhaseArtifactRecord | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM omega_phase_artifacts WHERE unit_type = :unit_type AND unit_id = :unit_id`,
+  ).get({ ":unit_type": unitType, ":unit_id": unitId });
+  return row ? rowToOmegaPhaseArtifact(row) : null;
+}
+
+export function getOmegaPhaseArtifactByRunId(runId: string): OmegaPhaseArtifactRecord | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM omega_phase_artifacts WHERE run_id = :run_id`,
+  ).get({ ":run_id": runId });
+  return row ? rowToOmegaPhaseArtifact(row) : null;
 }
 
 export interface SavesuccessResultRow {

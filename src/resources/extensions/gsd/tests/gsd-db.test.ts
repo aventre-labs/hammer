@@ -20,6 +20,10 @@ import {
   transaction,
   readTransaction,
   isInTransaction,
+  insertOmegaRun,
+  upsertOmegaPhaseArtifact,
+  getOmegaPhaseArtifact,
+  getOmegaPhaseArtifactByRunId,
   _getAdapter,
   _resetProvider,
   insertMilestone,
@@ -182,6 +186,98 @@ describe('gsd-db', () => {
     assert.equal(row?.['volvox_activation_rate'], 0);
     assert.equal(row?.['volvox_lifecycle_phase'], 'embryonic');
     assert.equal(row?.['volvox_propagation_eligible'], 0);
+
+    closeDatabase();
+  });
+
+  test('gsd-db: fresh DB includes Omega phase artifact v26 mapping schema', () => {
+    openDatabase(':memory:');
+    const adapter = _getAdapter()!;
+
+    assert.equal(SCHEMA_VERSION, 26);
+
+    const table = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'omega_phase_artifacts'",
+    ).get();
+    assert.equal(table?.['name'], 'omega_phase_artifacts');
+
+    const columns = adapter.prepare('PRAGMA table_info(omega_phase_artifacts)').all().map((row) => row['name']);
+    for (const col of [
+      'unit_type',
+      'unit_id',
+      'run_id',
+      'target_artifact_path',
+      'manifest_path',
+      'artifact_dir',
+      'run_manifest_path',
+      'synthesis_path',
+      'stage_count',
+      'status',
+      'diagnostics_json',
+      'created_at',
+      'updated_at',
+      'completed_at',
+    ]) {
+      assert.ok(columns.includes(col), `omega_phase_artifacts.${col} should exist`);
+    }
+
+    for (const indexName of [
+      'idx_omega_phase_artifacts_unit',
+      'idx_omega_phase_artifacts_run',
+      'idx_omega_phase_artifacts_status',
+    ]) {
+      const row = adapter.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+      ).get(indexName);
+      assert.equal(row?.['name'], indexName, `${indexName} should exist`);
+    }
+
+    closeDatabase();
+  });
+
+  test('gsd-db: upsert/get Omega phase artifact mapping normalizes diagnostics', () => {
+    openDatabase(':memory:');
+
+    insertOmegaRun({
+      id: 'run-phase-001',
+      query: 'phase query',
+      persona: null,
+      runes_applied: '[]',
+      stages_requested: '["materiality"]',
+      stage_count: 1,
+      status: 'complete',
+      artifact_dir: '/tmp/run-phase-001',
+      created_at: '2026-04-27T00:00:00.000Z',
+      completed_at: '2026-04-27T00:01:00.000Z',
+      error_message: null,
+    });
+
+    upsertOmegaPhaseArtifact({
+      unitType: 'research-milestone',
+      unitId: 'M001',
+      runId: 'run-phase-001',
+      targetArtifactPath: '/tmp/M001-RESEARCH.md',
+      manifestPath: '/tmp/phase-manifest.json',
+      artifactDir: '/tmp/run-phase-001',
+      runManifestPath: '/tmp/run-manifest.json',
+      synthesisPath: '/tmp/synthesis.md',
+      stageCount: 10,
+      status: 'complete',
+      diagnostics: ['ok'],
+      createdAt: '2026-04-27T00:00:00.000Z',
+      updatedAt: '2026-04-27T00:01:00.000Z',
+      completedAt: '2026-04-27T00:01:00.000Z',
+    });
+
+    const byUnit = getOmegaPhaseArtifact('research-milestone', 'M001');
+    assert.ok(byUnit, 'phase artifact row should be found by unit');
+    assert.equal(byUnit.runId, 'run-phase-001');
+    assert.deepEqual(byUnit.diagnostics, ['ok']);
+
+    const byRun = getOmegaPhaseArtifactByRunId('run-phase-001');
+    assert.ok(byRun, 'phase artifact row should be found by run id');
+    assert.equal(byRun.unitType, 'research-milestone');
+    assert.equal(byRun.stageCount, 10);
 
     closeDatabase();
   });
