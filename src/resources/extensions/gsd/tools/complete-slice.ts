@@ -389,8 +389,7 @@ export async function handleCompleteSlice(
     const staleSummaryPath = sliceDir
       ? join(sliceDir, `${params.sliceId}-SUMMARY.md`)
       : join(
-          basePath,
-          ".gsd",
+          gsdRoot(basePath),
           "milestones",
           params.milestoneId,
           "slices",

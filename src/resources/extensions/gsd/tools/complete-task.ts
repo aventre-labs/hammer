@@ -278,8 +278,7 @@ export async function handleCompleteTask(
     const staleSummaryPath = tasksDir
       ? join(tasksDir, `${params.taskId}-SUMMARY.md`)
       : join(
-          basePath,
-          ".gsd",
+          gsdRoot(basePath),
           "milestones",
           params.milestoneId,
           "slices",
