@@ -235,6 +235,7 @@ export function validateRuneNames(names: string[]): IAMResult<RuneName[]> {
       ok: false,
       error: {
         iamErrorKind: "unknown-rune",
+        persistenceStatus: "not-attempted",
         remediation: `The following rune names are not recognised: ${unknown.join(", ")}. Valid rune names are: ${Array.from(validNames).join(", ")}.`,
       },
     };
@@ -246,6 +247,7 @@ export function validateRuneNames(names: string[]): IAMResult<RuneName[]> {
       ok: false,
       error: {
         iamErrorKind: "rune-validation-failed",
+        persistenceStatus: "not-attempted",
         remediation:
           "A maximum of 3 rune names may be provided per validation call. Split into batches of 3 or fewer to process more runes.",
       },

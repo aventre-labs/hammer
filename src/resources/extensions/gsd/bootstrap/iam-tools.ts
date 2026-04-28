@@ -13,6 +13,7 @@ import {
   persistPhaseOmegaRun,
 } from "../omega-phase-artifacts.js";
 import { atomicWriteSync } from "../atomic-write.js";
+import { gsdRoot } from "../paths.js";
 import {
   queryMemoriesRanked,
   getActiveMemoriesRanked,
@@ -149,7 +150,7 @@ function buildAdapters(dbAvailable: boolean, options: IAMToolRuntimeOptions = {}
   };
 }
 
-const OMEGA_RUN_DIR = ".gsd/omega/tools";
+const OMEGA_RUN_DIR = "omega/tools";
 
 function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -248,7 +249,7 @@ function omegaSynthesisPath(artifactDir: string): string | undefined {
 }
 
 function omegaToolBaseDir(basePath: string): string {
-  return join(basePath, OMEGA_RUN_DIR);
+  return join(gsdRoot(basePath), OMEGA_RUN_DIR);
 }
 
 async function runNativeOmega(params: IAMOmegaRunOptions, options: IAMToolRuntimeOptions) {
@@ -514,7 +515,7 @@ const trinityMetadataSchema = Type.Object({
 }, { description: "Optional Trinity metadata payload. Unknown vector keys and malformed values are normalized by IAM." });
 
 export function registerIAMTools(pi: ExtensionAPI): void {
-  const runtimeOptions: IAMToolRuntimeOptions = { ctx: pi as unknown as ExtensionContext, basePath: process.cwd() };
+  const ctx = pi as unknown as ExtensionContext;
   const recallTool = {
     name: "hammer_recall",
     label: "IAM Recall",
@@ -530,8 +531,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRecall, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMRecall, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(recallTool);
@@ -549,8 +551,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMQuick, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMQuick, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(quickTool);
@@ -568,8 +571,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       lens: Type.String({ description: "Lens to apply to recalled memory content" }),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRefract, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMRefract, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(refractTool);
@@ -588,8 +592,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...omegaRuntimeParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMSpiral, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMSpiral, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(spiralTool);
@@ -607,8 +612,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...omegaRuntimeParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCanonicalSpiral, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMCanonicalSpiral, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(canonicalSpiralTool);
@@ -627,8 +633,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMExplore, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMExplore, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(exploreTool);
@@ -647,8 +654,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       k: Type.Optional(Type.Number({ description: "Max results per query (default 10)" })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMBridge, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMBridge, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(bridgeTool);
@@ -667,8 +675,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       k: Type.Optional(Type.Number({ description: "Max results per query (default 10)" })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCompare, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMCompare, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(compareTool);
@@ -689,8 +698,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCluster, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMCluster, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(clusterTool);
@@ -709,8 +719,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMLandscape, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMLandscape, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(landscapeTool);
@@ -731,8 +742,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMTension, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMTension, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(tensionTool);
@@ -749,7 +761,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       runeName: Type.String({ description: "Rune name to inspect" }),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMRune, buildAdapters(false, runtimeOptions), params);
+      return runIAMTool(executeIAMRune, buildAdapters(false, { ctx, basePath: process.cwd() }), params);
     },
   };
   pi.registerTool(runeTool);
@@ -766,7 +778,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       runeNames: Type.Array(Type.String({ description: "Rune name" }), { description: "Rune names to validate" }),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMValidate, buildAdapters(false, runtimeOptions), params);
+      return runIAMTool(executeIAMValidate, buildAdapters(false, { ctx, basePath: process.cwd() }), params);
     },
   };
   pi.registerTool(validateTool);
@@ -784,7 +796,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       target: Type.Optional(Type.String({ description: "Optional target or intended outcome" })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMAssess, buildAdapters(false, runtimeOptions), params);
+      return runIAMTool(executeIAMAssess, buildAdapters(false, { ctx, basePath: process.cwd() }), params);
     },
   };
   pi.registerTool(assessTool);
@@ -799,7 +811,7 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_compile to retrieve the canonical IAM rune catalog."],
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      return runIAMTool(executeIAMCompile, buildAdapters(false, runtimeOptions), params);
+      return runIAMTool(executeIAMCompile, buildAdapters(false, { ctx, basePath: process.cwd() }), params);
     },
   };
   pi.registerTool(compileTool);
@@ -819,8 +831,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMHarvest, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMHarvest, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(harvestTool);
@@ -848,8 +861,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       trinityValidationScore: Type.Optional(Type.Number({ description: "Optional validation score (0–1).", minimum: 0, maximum: 1 })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMRemember, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMRemember, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(rememberTool);
@@ -868,8 +882,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       ...volvoxQueryParameters,
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMProvenance, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMProvenance, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(provenanceTool);
@@ -888,8 +903,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       thresholds: Type.Optional(volvoxThresholdsSchema),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxEpoch, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMVolvoxEpoch, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(volvoxEpochTool);
@@ -904,8 +920,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_volvox_status to inspect latest epoch state without dumping raw audit JSON."],
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxStatus, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMVolvoxStatus, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(volvoxStatusTool);
@@ -923,8 +940,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
       includeInfo: Type.Optional(Type.Boolean({ description: "Include informational diagnostics; default false." })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMVolvoxDiagnose, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMVolvoxDiagnose, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(volvoxDiagnoseTool);
@@ -939,8 +957,9 @@ export function registerIAMTools(pi: ExtensionAPI): void {
     promptGuidelines: ["Use hammer_check to verify the native IAM awareness tool surface is registered."],
     parameters: Type.Object({}),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
-      const dbAvailable = await ensureDbOpen();
-      return runIAMTool(executeIAMCheck, buildAdapters(!!dbAvailable, runtimeOptions), params);
+      const basePath = process.cwd();
+      const dbAvailable = await ensureDbOpen(basePath);
+      return runIAMTool(executeIAMCheck, buildAdapters(!!dbAvailable, { ctx, basePath }), params);
     },
   };
   pi.registerTool(checkTool);

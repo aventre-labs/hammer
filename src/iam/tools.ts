@@ -1187,6 +1187,7 @@ export async function executeIAMRune(
       ok: false,
       error: {
         iamErrorKind: "unknown-rune",
+        persistenceStatus: "not-attempted",
         runeName: params.runeName as RuneName,
         remediation: `Valid rune names: ${Array.from(validNames).join(", ")}`,
       },
