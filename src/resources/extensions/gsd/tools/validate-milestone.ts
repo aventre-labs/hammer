@@ -17,7 +17,7 @@ import {
   deleteAssessmentByScope,
   getMilestoneSlices,
 } from "../gsd-db.js";
-import { resolveMilestonePath, clearPathCache } from "../paths.js";
+import { resolveMilestonePath, clearPathCache, gsdRoot } from "../paths.js";
 import { resolveCanonicalMilestoneRoot } from "../worktree-manager.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
@@ -113,8 +113,8 @@ export async function handleValidateMilestone(
   if (milestoneDir) {
     validationPath = join(milestoneDir, `${params.milestoneId}-VALIDATION.md`);
   } else {
-    const gsdDir = join(canonicalBase, ".gsd");
-    const manualDir = join(gsdDir, "milestones", params.milestoneId);
+    const stateRoot = gsdRoot(canonicalBase);
+    const manualDir = join(stateRoot, "milestones", params.milestoneId);
     validationPath = join(manualDir, `${params.milestoneId}-VALIDATION.md`);
   }
 

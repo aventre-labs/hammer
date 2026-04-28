@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@gsd/pi-coding-agent";
 
 import { DEFAULT_BASH_TIMEOUT_SECS } from "../constants.js";
+import { gsdRoot } from "../paths.js";
 import { setLogBasePath, logWarning } from "../workflow-logger.js";
 
 /**
@@ -72,16 +73,18 @@ export function resolveProjectRootDbPath(basePath: string): string {
   }
 
 
-  return join(basePath, ".gsd", "gsd.db");
+  return join(gsdRoot(basePath), "gsd.db");
 }
 
 export async function ensureDbOpen(basePath: string = process.cwd()): Promise<boolean> {
   try {
     const db = await import("../gsd-db.js");
     const dbPath = resolveProjectRootDbPath(basePath);
-    const gsdDir = join(basePath, ".gsd");
+    const stateRoot = gsdRoot(basePath);
 
-    // Derive the project root from the DB path (strip .gsd/gsd.db)
+    // Derive the project root from the DB path. Worktree/external-state bridges
+    // intentionally resolve outside the selected state root, so preserve the
+    // legacy project-root derivation for those compatibility layouts.
     const projectRoot = join(dbPath, "..", "..");
 
     // Open existing DB file (may be at project root for worktrees)
@@ -91,11 +94,11 @@ export async function ensureDbOpen(basePath: string = process.cwd()): Promise<bo
       return opened;
     }
 
-    // No DB file — create + migrate from Markdown if .gsd/ has content
-    if (existsSync(gsdDir)) {
-      const hasDecisions = existsSync(join(gsdDir, "DECISIONS.md"));
-      const hasRequirements = existsSync(join(gsdDir, "REQUIREMENTS.md"));
-      const hasMilestones = existsSync(join(gsdDir, "milestones"));
+    // No DB file — create + migrate from Markdown if the selected state root has content
+    if (existsSync(stateRoot)) {
+      const hasDecisions = existsSync(join(stateRoot, "DECISIONS.md"));
+      const hasRequirements = existsSync(join(stateRoot, "REQUIREMENTS.md"));
+      const hasMilestones = existsSync(join(stateRoot, "milestones"));
       if (hasDecisions || hasRequirements || hasMilestones) {
         const opened = db.openDatabase(dbPath);
         if (opened) {
@@ -110,13 +113,15 @@ export async function ensureDbOpen(basePath: string = process.cwd()): Promise<bo
         return opened;
       }
 
-      // .gsd/ exists but has no Markdown content (fresh project) — create empty DB
+      // Selected state root exists but has no Markdown content (fresh project) — create empty DB
       const opened = db.openDatabase(dbPath);
       if (opened) setLogBasePath(projectRoot);
       return opened;
     }
 
-    logWarning("bootstrap", "ensureDbOpen failed — no .gsd directory found");
+    logWarning("bootstrap", "ensureDbOpen failed — no state directory found", {
+      stateRoot,
+    });
     return false;
   } catch (err) {
     logWarning("bootstrap", `ensureDbOpen failed: ${(err as Error).message ?? String(err)}`);

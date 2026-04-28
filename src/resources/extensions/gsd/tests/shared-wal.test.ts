@@ -46,8 +46,8 @@ describe('shared-wal', async () => {
   {
     const projectRoot = '/home/user/myproject';
     const result = resolveProjectRootDbPath(projectRoot);
-    assert.deepStrictEqual(result, join(projectRoot, '.gsd', 'gsd.db'),
-      'project root path stays at project root DB');
+    assert.deepStrictEqual(result, join(projectRoot, '.hammer', 'gsd.db'),
+      'project root path defaults to canonical Hammer DB');
   }
 
   // ─── Test (c): resolve nested worktree subdir ──────────────────────────

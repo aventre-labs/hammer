@@ -25,7 +25,7 @@ import {
   getPendingGatesForTurn,
 } from "../gsd-db.js";
 import { getGatesForTurn } from "../gate-registry.js";
-import { resolveSliceFile, resolveSlicePath, clearPathCache } from "../paths.js";
+import { resolveSliceFile, resolveSlicePath, clearPathCache, gsdRoot } from "../paths.js";
 import { checkOwnership, sliceUnitKey } from "../unit-ownership.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
@@ -425,8 +425,8 @@ export async function handleCompleteSlice(
     summaryPath = join(sliceDir, `${params.sliceId}-SUMMARY.md`);
   } else {
     // Slice dir doesn't exist on disk yet — build path manually and ensure dirs
-    const gsdDir = join(basePath, ".gsd");
-    const manualSliceDir = join(gsdDir, "milestones", params.milestoneId, "slices", params.sliceId);
+    const stateRoot = gsdRoot(basePath);
+    const manualSliceDir = join(stateRoot, "milestones", params.milestoneId, "slices", params.sliceId);
     mkdirSync(manualSliceDir, { recursive: true });
     summaryPath = join(manualSliceDir, `${params.sliceId}-SUMMARY.md`);
   }

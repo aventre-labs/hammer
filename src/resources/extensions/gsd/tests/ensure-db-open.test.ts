@@ -389,7 +389,7 @@ describe('ensure-db-open', () => {
       assert.ok(db, 'adapter should be available after ensureDbOpen');
       assert.equal(
         db.prepare('SELECT MAX(version) as version FROM schema_version').get()?.version,
-        22,
+        26,
         'legacy DB should migrate to current schema version',
       );
 
@@ -416,7 +416,7 @@ describe('ensure-db-open', () => {
   // ensureDbOpen returns false when no .gsd/ exists
   // ═══════════════════════════════════════════════════════════════════════════
 
-  test('ensureDbOpen: no .gsd/ returns false', async () => {
+  test('ensureDbOpen: no state directory returns false', async () => {
     const tmpDir = makeTmpDir();
     // No .gsd/ directory at all
 
@@ -427,7 +427,7 @@ describe('ensure-db-open', () => {
     try {
       const { ensureDbOpen } = await import('../bootstrap/dynamic-tools.ts');
       const result = await ensureDbOpen();
-      assert.ok(result === false, 'ensureDbOpen should return false when no .gsd/ exists');
+      assert.ok(result === false, 'ensureDbOpen should return false when no state directory exists');
       assert.ok(!isDbAvailable(), 'DB should not be available');
     } finally {
       process.cwd = origCwd;
@@ -470,6 +470,75 @@ describe('ensure-db-open', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // ensureDbOpen returns false for empty .gsd/ (no Markdown, no DB)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  test('ensureDbOpen: empty .hammer/ creates empty DB without .gsd (#2510)', async () => {
+    const tmpDir = makeTmpDir();
+    const hammerDir = path.join(tmpDir, '.hammer');
+    fs.mkdirSync(hammerDir, { recursive: true });
+
+    try { closeDatabase(); } catch { /* ok */ }
+
+    try {
+      const { ensureDbOpen } = await import('../bootstrap/dynamic-tools.ts');
+      const result = await ensureDbOpen(tmpDir);
+      assert.ok(result === true, 'ensureDbOpen should create empty DB for fresh .hammer/');
+      assert.ok(fs.existsSync(path.join(hammerDir, 'gsd.db')), 'DB file should be created in .hammer');
+      assert.ok(!fs.existsSync(path.join(tmpDir, '.gsd')), 'fresh .hammer bootstrap should not create .gsd');
+      assert.ok(isDbAvailable(), 'DB should be available');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('ensureDbOpen: .hammer with Markdown creates DB without .gsd', async () => {
+    const tmpDir = makeTmpDir();
+    const hammerDir = path.join(tmpDir, '.hammer');
+    fs.mkdirSync(hammerDir, { recursive: true });
+    fs.writeFileSync(path.join(hammerDir, 'DECISIONS.md'), `# Decisions
+
+| # | When | Scope | Decision | Choice | Rationale | Revisable |
+|---|------|-------|----------|--------|-----------|-----------|
+| D888 | M001 | architecture | Use Hammer state root | .hammer | Avoid .gsd degradation | Yes |
+`);
+
+    try { closeDatabase(); } catch { /* ok */ }
+
+    try {
+      const { ensureDbOpen } = await import('../bootstrap/dynamic-tools.ts');
+      const result = await ensureDbOpen(tmpDir);
+      assert.ok(result === true, 'ensureDbOpen should open Markdown-bearing .hammer/');
+      assert.ok(fs.existsSync(path.join(hammerDir, 'gsd.db')), 'DB file should be created in .hammer');
+      assert.ok(!fs.existsSync(path.join(tmpDir, '.gsd')), 'Markdown-bearing .hammer bootstrap should not create .gsd');
+      assert.ok(isDbAvailable(), 'DB should be available');
+      assert.ok(getDecisionById('D888') !== null, 'Hammer DECISIONS.md should be migrated');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('ensureDbOpen: .hammer wins over legacy .gsd when both exist', async () => {
+    const tmpDir = makeTmpDir();
+    const hammerDir = path.join(tmpDir, '.hammer');
+    const gsdDir = path.join(tmpDir, '.gsd');
+    fs.mkdirSync(hammerDir, { recursive: true });
+    fs.mkdirSync(gsdDir, { recursive: true });
+
+    try { closeDatabase(); } catch { /* ok */ }
+
+    try {
+      const { ensureDbOpen, resolveProjectRootDbPath } = await import('../bootstrap/dynamic-tools.ts');
+      assert.equal(resolveProjectRootDbPath(tmpDir), path.join(hammerDir, 'gsd.db'));
+      const result = await ensureDbOpen(tmpDir);
+      assert.ok(result === true, 'ensureDbOpen should open canonical .hammer when both state dirs exist');
+      assert.ok(fs.existsSync(path.join(hammerDir, 'gsd.db')), 'DB file should be created in .hammer');
+      assert.ok(!fs.existsSync(path.join(gsdDir, 'gsd.db')), 'legacy .gsd should not receive DB when .hammer exists');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
 
   test('ensureDbOpen: empty .gsd/ creates empty DB (#2510)', async () => {
     const tmpDir = makeTmpDir();

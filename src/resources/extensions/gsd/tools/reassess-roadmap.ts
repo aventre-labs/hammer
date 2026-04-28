@@ -16,6 +16,7 @@ import {
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapFromDb, renderAssessmentFromDb } from "../markdown-renderer.js";
+import { gsdRoot } from "../paths.js";
 import { renderAllProjections } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
 import { appendEvent } from "../workflow-events.js";
@@ -247,7 +248,7 @@ export async function handleReassessRoadmap(
 
     if (hasStructuralChanges) {
       const validationFile = join(
-        basePath, ".gsd", "milestones", params.milestoneId,
+        gsdRoot(basePath), "milestones", params.milestoneId,
         `${params.milestoneId}-VALIDATION.md`,
       );
       try {

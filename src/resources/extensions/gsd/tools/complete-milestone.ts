@@ -16,7 +16,7 @@ import {
   getSliceTasks,
   updateMilestoneStatus,
 } from "../gsd-db.js";
-import { resolveMilestonePath, clearPathCache } from "../paths.js";
+import { resolveMilestonePath, clearPathCache, gsdRoot } from "../paths.js";
 import { isClosedStatus } from "../status-guards.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
@@ -262,8 +262,8 @@ export async function handleCompleteMilestone(
   if (milestoneDir) {
     summaryPath = join(milestoneDir, `${params.milestoneId}-SUMMARY.md`);
   } else {
-    const gsdDir = join(basePath, ".gsd");
-    const manualDir = join(gsdDir, "milestones", params.milestoneId);
+    const stateRoot = gsdRoot(basePath);
+    const manualDir = join(stateRoot, "milestones", params.milestoneId);
     mkdirSync(manualDir, { recursive: true });
     summaryPath = join(manualDir, `${params.milestoneId}-SUMMARY.md`);
   }

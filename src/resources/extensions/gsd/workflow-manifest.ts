@@ -10,6 +10,7 @@ import type { Decision } from "./types.js";
 import { atomicWriteSync } from "./atomic-write.js";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { gsdRoot } from "./paths.js";
 
 // ─── Manifest Types ──────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ export function snapshotState(): StateManifest {
 export function writeManifest(basePath: string): void {
   const manifest = snapshotState();
   const json = JSON.stringify(manifest, null, 2);
-  const dir = join(basePath, ".gsd");
+  const dir = gsdRoot(basePath);
   mkdirSync(dir, { recursive: true });
   atomicWriteSync(join(dir, "state-manifest.json"), json);
 }
@@ -223,7 +224,7 @@ export function writeManifest(basePath: string): void {
  * Read state-manifest.json and return parsed manifest, or null if not found.
  */
 export function readManifest(basePath: string): StateManifest | null {
-  const manifestPath = join(basePath, ".gsd", "state-manifest.json");
+  const manifestPath = join(gsdRoot(basePath), "state-manifest.json");
 
   if (!existsSync(manifestPath)) {
     return null;

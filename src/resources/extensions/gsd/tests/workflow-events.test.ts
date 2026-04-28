@@ -28,11 +28,13 @@ function makeEvent(cmd: string, params: Record<string, unknown> = {}): Omit<Work
 
 // ─── appendEvent ─────────────────────────────────────────────────────────
 
-test('workflow-events: appendEvent creates .gsd dir and event-log.jsonl', () => {
+test('workflow-events: appendEvent creates selected state dir and event-log.jsonl', () => {
   const base = tempDir();
   try {
+    fs.mkdirSync(path.join(base, '.hammer'), { recursive: true });
     appendEvent(base, makeEvent('complete-task', { milestoneId: 'M001', taskId: 'T01' }));
-    assert.ok(fs.existsSync(path.join(base, '.gsd', 'event-log.jsonl')));
+    assert.ok(fs.existsSync(path.join(base, '.hammer', 'event-log.jsonl')));
+    assert.ok(!fs.existsSync(path.join(base, '.gsd')), 'appendEvent should not create .gsd for .hammer projects');
   } finally {
     cleanupDir(base);
   }
@@ -42,7 +44,7 @@ test('workflow-events: appendEvent writes valid JSON line', () => {
   const base = tempDir();
   try {
     appendEvent(base, makeEvent('complete-task', { milestoneId: 'M001', taskId: 'T01' }));
-    const content = fs.readFileSync(path.join(base, '.gsd', 'event-log.jsonl'), 'utf-8');
+    const content = fs.readFileSync(path.join(base, '.hammer', 'event-log.jsonl'), 'utf-8');
     const lines = content.trim().split('\n');
     assert.strictEqual(lines.length, 1);
     const parsed = JSON.parse(lines[0]!) as WorkflowEvent;
@@ -60,7 +62,7 @@ test('workflow-events: appendEvent appends multiple events', () => {
   try {
     appendEvent(base, makeEvent('complete-task', { taskId: 'T01' }));
     appendEvent(base, makeEvent('complete-slice', { sliceId: 'S01' }));
-    const events = readEvents(path.join(base, '.gsd', 'event-log.jsonl'));
+    const events = readEvents(path.join(base, '.hammer', 'event-log.jsonl'));
     assert.strictEqual(events.length, 2);
     assert.strictEqual(events[0]!.cmd, 'complete-task');
     assert.strictEqual(events[1]!.cmd, 'complete-slice');
@@ -74,7 +76,7 @@ test('workflow-events: same cmd+params → same hash (deterministic)', () => {
   try {
     appendEvent(base, makeEvent('plan-task', { milestoneId: 'M001', sliceId: 'S01' }));
     appendEvent(base, makeEvent('plan-task', { milestoneId: 'M001', sliceId: 'S01' }));
-    const events = readEvents(path.join(base, '.gsd', 'event-log.jsonl'));
+    const events = readEvents(path.join(base, '.hammer', 'event-log.jsonl'));
     assert.strictEqual(events[0]!.hash, events[1]!.hash, 'identical cmd+params produce identical hash');
   } finally {
     cleanupDir(base);
@@ -86,7 +88,7 @@ test('workflow-events: different params → different hash', () => {
   try {
     appendEvent(base, makeEvent('complete-task', { taskId: 'T01' }));
     appendEvent(base, makeEvent('complete-task', { taskId: 'T02' }));
-    const events = readEvents(path.join(base, '.gsd', 'event-log.jsonl'));
+    const events = readEvents(path.join(base, '.hammer', 'event-log.jsonl'));
     assert.notStrictEqual(events[0]!.hash, events[1]!.hash, 'different params produce different hash');
   } finally {
     cleanupDir(base);
@@ -103,8 +105,8 @@ test('workflow-events: readEvents returns [] for non-existent file', () => {
 test('workflow-events: readEvents skips corrupted lines', () => {
   const base = tempDir();
   try {
-    fs.mkdirSync(path.join(base, '.gsd'), { recursive: true });
-    const logPath = path.join(base, '.gsd', 'event-log.jsonl');
+    fs.mkdirSync(path.join(base, '.hammer'), { recursive: true });
+    const logPath = path.join(base, '.hammer', 'event-log.jsonl');
     // Write a valid line, a corrupted line, and another valid line
     fs.writeFileSync(logPath,
       '{"cmd":"complete-task","params":{},"ts":"2026-01-01T00:00:00Z","hash":"abcd1234abcd1234","actor":"agent"}\n' +
@@ -178,13 +180,13 @@ test('workflow-events: compactMilestoneEvents archives milestone events', () => 
     assert.strictEqual(result.archived, 2, 'should archive 2 M001 events');
 
     // Archive file should exist
-    const archivePath = path.join(base, '.gsd', 'event-log-M001.jsonl.archived');
+    const archivePath = path.join(base, '.hammer', 'event-log-M001.jsonl.archived');
     assert.ok(fs.existsSync(archivePath), 'archive file should exist');
     const archived = readEvents(archivePath);
     assert.strictEqual(archived.length, 2, 'archive file should have 2 events');
 
     // Active log should retain only M002 event
-    const active = readEvents(path.join(base, '.gsd', 'event-log.jsonl'));
+    const active = readEvents(path.join(base, '.hammer', 'event-log.jsonl'));
     assert.strictEqual(active.length, 1, 'active log should have 1 remaining event');
     assert.strictEqual((active[0]!.params as { milestoneId?: string }).milestoneId, 'M002');
   } finally {
@@ -197,7 +199,7 @@ test('workflow-events: compactMilestoneEvents empties active log when all events
   try {
     appendEvent(base, makeEvent('complete-task', { milestoneId: 'M001', taskId: 'T01' }));
     compactMilestoneEvents(base, 'M001');
-    const active = readEvents(path.join(base, '.gsd', 'event-log.jsonl'));
+    const active = readEvents(path.join(base, '.hammer', 'event-log.jsonl'));
     assert.strictEqual(active.length, 0, 'active log should be empty after full compact');
   } finally {
     cleanupDir(base);

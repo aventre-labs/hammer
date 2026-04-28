@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteSync } from "./atomic-write.js";
+import { gsdRoot } from "./paths.js";
 import { withFileLockSync } from "./file-lock.js";
 import { logWarning } from "./workflow-logger.js";
 
@@ -53,7 +54,7 @@ export function appendEvent(
     hash,
     session_id: ENGINE_SESSION_ID,
   };
-  const dir = join(basePath, ".gsd");
+  const dir = gsdRoot(basePath);
   mkdirSync(dir, { recursive: true });
   appendFileSync(join(dir, "event-log.jsonl"), JSON.stringify(fullEvent) + "\n", "utf-8");
 }
@@ -125,8 +126,9 @@ export function compactMilestoneEvents(
   basePath: string,
   milestoneId: string,
 ): { archived: number } {
-  const logPath = join(basePath, ".gsd", "event-log.jsonl");
-  const archivePath = join(basePath, ".gsd", `event-log-${milestoneId}.jsonl.archived`);
+  const root = gsdRoot(basePath);
+  const logPath = join(root, "event-log.jsonl");
+  const archivePath = join(root, `event-log-${milestoneId}.jsonl.archived`);
 
   return withFileLockSync(logPath, () => {
     const allEvents = readEvents(logPath);
