@@ -64,6 +64,9 @@ import {
   supportsStructuredQuestions,
 } from "../workflow-mcp.js";
 import { runPhaseSpiral, type RunPhaseSpiralResult } from "./run-phase-spiral.js";
+import { dispatchRecovery } from "./recovery.js";
+import { evaluateRecoveryTrigger, RECOVERY_FAILURE_CAP } from "./recovery-dispatch-rule.js";
+import { readSessionLockData } from "../session-lock.js";
 import {
   assertPhaseEnvelopePresent,
   deriveDispatchPhaseEnvelope,
@@ -1625,8 +1628,65 @@ export async function runUnitPhase(
         failingStage: governedSpiralResult.failingStage,
         missingArtifacts: governedSpiralResult.missingArtifacts,
       });
+      // M002/S03/T04: recovery-agent dispatched when counter < 3; human
+      // required at cap. Build a synthetic IAMError-shaped failure from the
+      // governed-spiral result and consult `evaluateRecoveryTrigger` for the
+      // canonical skip checklist (no lock, cap reached, anti-recursion,
+      // terminal). When the checklist allows recovery, dispatch a single
+      // recovery subagent and break to let the loop re-derive state on the
+      // next iteration. Only fall through to `pauseAuto` when the counter is
+      // already at the cap.
+      const lockSnapshot = readSessionLockData(s.basePath);
+      const recoveryDecision = evaluateRecoveryTrigger({
+        lock: lockSnapshot
+          ? { consecutiveRecoveryFailures: lockSnapshot.consecutiveRecoveryFailures }
+          : null,
+        parentUnitType: unitType,
+        parentUnitId: unitId,
+        parentCompleted: false,
+        failure: {
+          iamErrorKind: "omega-stage-failed",
+          remediation: governedSpiralResult.remediation,
+        },
+      });
+      if (!recoveryDecision.skip) {
+        try {
+          await dispatchRecovery(ctx, pi, s, recoveryDecision.trigger);
+          debugLog("autoLoop", {
+            phase: "recovery-dispatched",
+            unitType,
+            unitId,
+            attemptNumber: recoveryDecision.trigger.attemptNumber,
+            cap: RECOVERY_FAILURE_CAP,
+          });
+          // Break the current iteration so the loop re-derives state on the
+          // next pass. Whether the next pass enters the same governed phase
+          // depends on whether the recovery agent's `fix-applied` outcome
+          // produced the missing artifact.
+          return { action: "break", reason: "phase-spiral-recovery-dispatched" };
+        } catch (recoveryErr) {
+          // Best-effort: recovery dispatch itself failed (e.g. lock contention).
+          // Fall through to pause so the operator sees the original spiral
+          // failure rather than an opaque dispatch error.
+          debugLog("autoLoop", {
+            phase: "recovery-dispatch-failed",
+            unitType,
+            unitId,
+            error: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+          });
+        }
+      } else {
+        debugLog("autoLoop", {
+          phase: "recovery-cap-reached",
+          unitType,
+          unitId,
+          skipReason: recoveryDecision.reason,
+          cap: RECOVERY_FAILURE_CAP,
+        });
+      }
       // Pause auto-mode rather than continue/retry — fail-closed remediation
-      // requires human or recovery-agent (S03) action, not silent retry.
+      // requires human action when the recovery cap has been reached or the
+      // failure is structurally terminal.
       await deps.pauseAuto(ctx, pi);
       return { action: "break", reason: "phase-spiral-blocked" };
     }

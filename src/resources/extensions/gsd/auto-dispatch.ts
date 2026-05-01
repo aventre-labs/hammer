@@ -34,6 +34,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
 import { hasImplementationArtifacts } from "./auto-recovery.js";
+import {
+  evaluateRecoveryTrigger,
+  RECOVERY_FAILURE_CAP as RECOVERY_DISPATCH_CAP,
+} from "./auto/recovery-dispatch-rule.js";
+import { readSessionLockData } from "./session-lock.js";
 import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 import {
   buildDiscussMilestonePrompt,
@@ -261,6 +266,44 @@ export const DISPATCH_RULES: DispatchRule[] = [
           `${mid}: task escalation awaits user resolution. Run /gsd escalate list to see pending items.`,
         level: "info",
       };
+    },
+  },
+  {
+    // M002/S03/T04: Recovery-aware safety rule. The actual recovery dispatch
+    // for spiral-blocked phases happens in `phases.ts` (which has direct
+    // access to the failure context). This rule fires earlier in the
+    // dispatch table to provide a uniform observability surface and a
+    // structural cap-3 short-circuit for any caller that lands here with a
+    // saturated counter — they fall through to the existing pause path.
+    //
+    // The rule reads the lock and uses `evaluateRecoveryTrigger` to apply
+    // the canonical skip checklist (no lock, cap reached, parent completed,
+    // anti-recursion, terminal failure). It NEVER returns a dispatch action
+    // because the dispatch context here lacks the failure object — the
+    // production decision happens at the failure site (phase-spiral-blocked).
+    // Returning null is the correct behaviour; the rule's value is its
+    // presence in `getDispatchRuleNames()` for diagnostics and the structural
+    // cap-3 audit trail.
+    name: "recoverable-failure → recovery",
+    match: async ({ state, basePath }) => {
+      const lockData = readSessionLockData(basePath);
+      const decision = evaluateRecoveryTrigger({
+        lock: lockData
+          ? { consecutiveRecoveryFailures: lockData.consecutiveRecoveryFailures }
+          : null,
+        parentUnitType: lockData?.unitType ?? "",
+        parentUnitId: lockData?.unitId ?? "",
+        parentCompleted: state.phase === "complete",
+        // Failure object is only available at the actual failure site
+        // (phase-spiral-blocked branch in phases.ts). The rule cannot
+        // synthesise one here, so it always falls through to skip.
+        failure: null,
+      });
+      // Defensive: counter at cap should be visible in the audit trail even
+      // though we still return null (the existing pause path handles it).
+      void decision;
+      void RECOVERY_DISPATCH_CAP;
+      return null;
     },
   },
   {

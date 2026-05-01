@@ -34,6 +34,8 @@ import { resolveEngine } from "../engine-resolver.js";
 import { logWarning } from "../workflow-logger.js";
 import { gsdRoot } from "../paths.js";
 import { atomicWriteSync } from "../atomic-write.js";
+import { readSessionLockData, updateSessionLockFields } from "../session-lock.js";
+import { shouldResetRecoveryCounter, RECOVERY_FAILURE_CAP } from "./recovery-dispatch-rule.js";
 import { resolveUokFlags } from "../uok/flags.js";
 import { scheduleSidecarQueue } from "../uok/execution-graph.js";
 import { ExecutionGraphScheduler } from "../uok/execution-graph.js";
@@ -553,6 +555,15 @@ export async function autoLoop(
         consecutiveErrors = 0;
         consecutiveCooldowns = 0;
         recentErrorMessages.length = 0;
+        // M002/S03/T04 (R030): zero the persistent recovery counter when a
+        // non-recovery unit completes successfully. Recovery's own success
+        // never zeroes the counter (only parent-unit progress does).
+        if (shouldResetRecoveryCounter(iterData.unitType, "completed")) {
+          updateSessionLockFields(s.basePath, {
+            consecutiveRecoveryFailures: 0,
+            lastRecoveryVerdict: undefined,
+          });
+        }
         deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
         saveStuckState(s.basePath, loopState); // persist across session restarts (#3704)
         debugLog("autoLoop", { phase: "iteration-complete", iteration });
@@ -691,6 +702,15 @@ export async function autoLoop(
       consecutiveErrors = 0; // Iteration completed successfully
       consecutiveCooldowns = 0;
       recentErrorMessages.length = 0;
+      // M002/S03/T04 (R030): zero the persistent recovery counter when a
+      // non-recovery unit completes successfully. Mirrors the same reset
+      // performed at the engine-reconcile success path above.
+      if (shouldResetRecoveryCounter(iterData.unitType, "completed")) {
+        updateSessionLockFields(s.basePath, {
+          consecutiveRecoveryFailures: 0,
+          lastRecoveryVerdict: undefined,
+        });
+      }
       deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
       saveStuckState(s.basePath, loopState); // persist across session restarts (#4382)
       debugLog("autoLoop", { phase: "iteration-complete", iteration });
@@ -851,6 +871,24 @@ export async function autoLoop(
       } else {
         // 1st error: log and retry — transient failures happen
         ctx.ui.notify(`Iteration error: ${msg}. Retrying.`, "warning");
+      }
+
+      // M002/S03/T04: cap-approaching warning that mirrors the
+      // consecutiveErrors === 2 shape above for the recovery counter.
+      // Operators see the cap one iteration before the recovery dispatcher
+      // pauses auto-mode at RECOVERY_FAILURE_CAP. Best-effort lock read —
+      // missing lock simply skips the warning.
+      try {
+        const lockNow = readSessionLockData(s.basePath);
+        const recCounter = lockNow?.consecutiveRecoveryFailures ?? 0;
+        if (recCounter === RECOVERY_FAILURE_CAP - 1) {
+          ctx.ui.notify(
+            `Recovery counter at ${recCounter}/${RECOVERY_FAILURE_CAP} — one more failure will pause auto-mode.`,
+            "warning",
+          );
+        }
+      } catch {
+        // Best-effort observability — never crash the loop on lock read.
       }
       finishTurn("retry", "execution", msg);
     }
