@@ -18,6 +18,7 @@ export const IAM_SUBAGENT_ROLE_NAMES = [
   "validation-reviewer",
   "workflow-worker",
   "orchestrator-worker",
+  "recovery",
 ] as const;
 
 export type IAMSubagentRoleName = (typeof IAM_SUBAGENT_ROLE_NAMES)[number];
@@ -382,6 +383,20 @@ export const IAM_SUBAGENT_ROLE_CONTRACTS = {
     allowMemoryMutation: false,
     requiredEnvelopeFields: DEFAULT_REQUIRED_FIELDS,
     remediation: "Declare orchestration outputs and require child workers to receive their own role-specific envelopes.",
+  },
+  "recovery": {
+    role: "recovery",
+    contractId: "iam-subagent-role/recovery/v1",
+    summary: "Bounded fix-or-give-up actor invoked when auto-mode hits a recoverable failure; declares the fix applied or files a blocker.",
+    requiredContext: false,
+    allowedContextArtifactKinds: ["plan", "slice-plan", "task-plan", "summary", "uok-audit", "decision", "requirement"],
+    expectedArtifactKinds: ["diagnostic", "audit-event", "tool-call"],
+    provenancePermissions: ["read-uok-audit", "write-provenance"],
+    mutationBoundaries: ["tool-call", "artifact-only"],
+    allowGraphMutation: false,
+    allowMemoryMutation: false,
+    requiredEnvelopeFields: DEFAULT_REQUIRED_FIELDS,
+    remediation: "Recovery subagent must declare the fix it applied or the blocker filed; bounded to tool-call mutations only.",
   },
 } satisfies Record<IAMSubagentRoleName, IAMSubagentRoleContract>;
 

@@ -27,6 +27,7 @@ const allRoleNames: IAMSubagentRoleName[] = [
   "validation-reviewer",
   "workflow-worker",
   "orchestrator-worker",
+  "recovery",
 ];
 
 function validContextArtifact(overrides: Partial<IAMContextArtifactReference> = {}): IAMContextArtifactReference {

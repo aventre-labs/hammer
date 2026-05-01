@@ -33,6 +33,19 @@ export interface SessionLockData {
   unitId: string;
   unitStartedAt: string;
   sessionFile?: string;
+  /**
+   * Count of consecutive recovery-subagent failures since the last successful unit completion.
+   * Defaults to 0 on lock create. Reset to 0 by any successful unit completion. The recovery
+   * dispatcher pauses auto-mode when this reaches 3 (the cap). Persistent across crash and
+   * stop+restart because the lock file survives both.
+   */
+  consecutiveRecoveryFailures: number;
+  /** Diagnostic: the most recent recovery unit id that ran. */
+  lastRecoveryUnitId?: string;
+  /** Diagnostic: the verdict the most recent recovery dispatch returned. */
+  lastRecoveryVerdict?: "fix-applied" | "blocker-filed" | "give-up" | "malformed";
+  /** Diagnostic: ISO timestamp when the most recent recovery dispatch finished. */
+  lastRecoveryAt?: string;
 }
 
 export type SessionLockResult =
@@ -288,6 +301,7 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
     unitType: "starting",
     unitId: "bootstrap",
     unitStartedAt: new Date().toISOString(),
+    consecutiveRecoveryFailures: 0,
   };
 
   let lockfile: ProperLockfileApi;
@@ -415,6 +429,10 @@ function acquireFallbackLock(
 /**
  * Update the lock file metadata (called on each unit dispatch).
  * Does NOT re-acquire the OS lock — just updates the JSON content.
+ *
+ * Preserves recovery diagnostic fields (consecutiveRecoveryFailures,
+ * lastRecoveryUnitId, lastRecoveryVerdict, lastRecoveryAt) by reading
+ * the existing lock file and shallow-merging into the new metadata.
  */
 export function updateSessionLock(
   basePath: string,
@@ -426,15 +444,50 @@ export function updateSessionLock(
 
   const lp = lockPath(basePath);
   try {
+    const existing = readExistingLockData(lp);
     const data: SessionLockData = {
       pid: process.pid,
-      startedAt: new Date().toISOString(),
+      startedAt: existing?.startedAt ?? new Date().toISOString(),
       unitType,
       unitId,
       unitStartedAt: new Date().toISOString(),
       sessionFile,
+      consecutiveRecoveryFailures: existing?.consecutiveRecoveryFailures ?? 0,
+      ...(existing?.lastRecoveryUnitId !== undefined ? { lastRecoveryUnitId: existing.lastRecoveryUnitId } : {}),
+      ...(existing?.lastRecoveryVerdict !== undefined ? { lastRecoveryVerdict: existing.lastRecoveryVerdict } : {}),
+      ...(existing?.lastRecoveryAt !== undefined ? { lastRecoveryAt: existing.lastRecoveryAt } : {}),
     };
     atomicWriteSync(lp, JSON.stringify(data, null, 2));
+  } catch {
+    // Non-fatal: lock update failure
+  }
+}
+
+/**
+ * Update specific fields on the session lock file by shallow-merging the partial
+ * into the existing JSON. Used by the recovery dispatcher to record the recovery
+ * counter and last-recovery diagnostics without rewriting unit metadata.
+ *
+ * If the lock file is missing or unreadable, this is a no-op (best-effort).
+ */
+export function updateSessionLockFields(
+  basePath: string,
+  partial: Partial<SessionLockData>,
+): void {
+  if (_lockedPath !== basePath && _lockedPath !== null) return;
+
+  const lp = lockPath(basePath);
+  try {
+    const existing = readExistingLockData(lp);
+    if (!existing) return;
+    const merged: SessionLockData = {
+      ...existing,
+      ...partial,
+      // Never let the partial overwrite the owning pid — recovery dispatcher
+      // runs in the same process and pid must continue to match.
+      pid: existing.pid,
+    };
+    atomicWriteSync(lp, JSON.stringify(merged, null, 2));
   } catch {
     // Non-fatal: lock update failure
   }
@@ -589,6 +642,9 @@ export function releaseSessionLock(basePath: string): void {
 export function readSessionLockData(basePath: string): SessionLockData | null {
   return readExistingLockData(lockPath(basePath));
 }
+
+/** Alias of {@link readSessionLockData}. Convenience for recovery diagnostics. */
+export const readSessionLock = readSessionLockData;
 
 /**
  * Check if the process that wrote the lock is still alive.
