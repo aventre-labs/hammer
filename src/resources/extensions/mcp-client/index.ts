@@ -202,6 +202,10 @@ async function getOrConnect(name: string, signal?: AbortSignal, ctx?: ExtensionC
 	}
 }
 
+// Test-only export — production code never imports this.
+// See tests/no-trust-prompt.test.ts (post-deletion connect-path regression).
+export { connectServer as _connectServerForTest };
+
 async function connectServer(config: McpServerConfig, signal?: AbortSignal, _ctx?: ExtensionContext): Promise<Client> {
 	const client = new Client({ name: "gsd", version: "1.0.0" });
 	let transport: StdioClientTransport | StreamableHTTPClientTransport;
