@@ -7,6 +7,18 @@ export { transformToGSD } from './transformer.js';
 export { writeGSDDirectory } from './writer.js';
 export type { WrittenFiles, MigrationPreview } from './writer.js';
 export { generatePreview } from './preview.js';
+export {
+  liftLegacyLayoutsToHammer,
+  detectLegacyLayouts,
+  LiftError,
+} from './lift.js';
+export type {
+  LiftLayout,
+  LiftStage,
+  LiftResult,
+  LiftOptions,
+  LegacyLayoutDetection,
+} from './lift.js';
 export type {
   // Input types (old .planning format)
   PlanningProject,
