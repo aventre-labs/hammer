@@ -23,6 +23,16 @@ export interface PhaseAnchor {
   decisions: string[];
   blockers: string[];
   nextSteps: string[];
+  /**
+   * S01 governed-phase Omega provenance. Populated when the dispatch was
+   * gated by `runPhaseSpiral` and the canonical 10-stage spiral completed
+   * successfully. Downstream phases inherit the synthesis via these links.
+   */
+  omegaRunId?: string;
+  /** Path to the gating phase-manifest.json. */
+  omegaManifestPath?: string;
+  /** Path to the aggregate artifact (e.g. S01-PLAN.md) carrying spiral frontmatter. */
+  omegaAggregatePath?: string;
 }
 
 export interface OmegaPhasePromptReference {

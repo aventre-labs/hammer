@@ -63,6 +63,8 @@ import {
   getRequiredWorkflowToolsForAutoUnit,
   supportsStructuredQuestions,
 } from "../workflow-mcp.js";
+import { runPhaseSpiral, type RunPhaseSpiralResult } from "./run-phase-spiral.js";
+import { buildOmegaExecutor } from "../bootstrap/iam-tools.js";
 
 // ─── Session timeout auto-resume state ────────────────────────────────────────
 
@@ -113,6 +115,211 @@ const PLAN_V2_GATE_PHASES: ReadonlySet<Phase> = new Set([
 
 function shouldRunPlanV2Gate(phase: Phase): boolean {
   return PLAN_V2_GATE_PHASES.has(phase);
+}
+
+// ─── Governed Omega phase spiral gate (M002/S01) ──────────────────────────────
+//
+// Per D011 / D012 / D013 / R031 / R037, the six governed dispatch phase entries
+// must run a canonical 10-stage Omega spiral before any prompt-emitting work,
+// and structurally block when the spiral cannot complete.
+//
+// The mapping below is the dispatch-side "phase entry" set. Each unitType maps
+// to a `PhaseSpiralPhase` and to an aggregate artifact target on disk. The six
+// `runPhaseSpiral` call sites live in `runGovernedPhaseSpiralForUnit` below —
+// one explicit call per governed phase (no parallel implementations, no
+// abbreviation flag, no skip-on-trivial heuristic).
+
+/** The six governed dispatch unitTypes that require a per-phase canonical Omega spiral. */
+const GOVERNED_PHASE_UNIT_TYPES: ReadonlySet<string> = new Set<string>([
+  "discuss-milestone",
+  "plan-milestone",
+  "plan-slice",
+  "replan-slice",
+  "reassess-roadmap",
+  "validate-milestone",
+]);
+
+/**
+ * Resolve the aggregate artifact path that `runPhaseSpiral` will stamp with
+ * spiral provenance frontmatter. Conventions follow the existing on-disk
+ * layout (`.gsd/milestones/<mid>/...`), accepting both bare (`M001`) and
+ * unique-suffixed (`M001-r5jzab`) milestone ids.
+ */
+function targetArtifactPathForGovernedPhase(
+  basePath: string,
+  unitType: string,
+  unitId: string,
+): string | null {
+  const { milestone: mid, slice: sid } = parseUnitId(unitId);
+  if (!mid) return null;
+  const msDir = join(basePath, ".gsd", "milestones", mid);
+  switch (unitType) {
+    case "discuss-milestone":
+      return join(msDir, `${mid}-DISCUSS.md`);
+    case "plan-milestone":
+      return join(msDir, `${mid}-ROADMAP.md`);
+    case "plan-slice":
+      return sid ? join(msDir, "slices", sid, `${sid}-PLAN.md`) : null;
+    case "replan-slice":
+      return sid ? join(msDir, "slices", sid, `${sid}-PLAN.md`) : null;
+    case "reassess-roadmap":
+      return join(msDir, `${mid}-ROADMAP.md`);
+    case "validate-milestone":
+      return join(msDir, `${mid}-VALIDATION.md`);
+    default:
+      return null;
+  }
+}
+
+interface GovernedPhaseSpiralOpts {
+  ctx: ExtensionContext;
+  basePath: string;
+  unitType: string;
+  unitId: string;
+  flowId: string;
+}
+
+/**
+ * Run the canonical Omega spiral for a governed dispatch phase. Returns
+ * `null` when `unitType` is not one of the six governed phases (the caller
+ * should proceed without gating). Otherwise returns the structured spiral
+ * result from `runPhaseSpiral` — the caller MUST short-circuit on
+ * `{ok: false}` and pass `{ok: true}` provenance to the post-unit phase
+ * anchor write.
+ *
+ * Six explicit `runPhaseSpiral` call sites live below — one per governed
+ * phase — to satisfy the slice-plan structural-presence verification and to
+ * make each phase's spiral wiring grep-discoverable from this file.
+ */
+async function runGovernedPhaseSpiralForUnit(
+  opts: GovernedPhaseSpiralOpts,
+): Promise<RunPhaseSpiralResult | null> {
+  const { ctx, basePath, unitType, unitId, flowId } = opts;
+  if (!GOVERNED_PHASE_UNIT_TYPES.has(unitType)) return null;
+
+  const { milestone: milestoneId, slice: sliceId } = parseUnitId(unitId);
+  if (!milestoneId) return null;
+
+  const targetArtifactPath = targetArtifactPathForGovernedPhase(basePath, unitType, unitId);
+  if (!targetArtifactPath) return null;
+
+  // Test injection seam — mirrors the `omegaExecutor` injection seam used by
+  // `buildOmegaExecutor`. When set, the override receives the same option
+  // shape `runPhaseSpiral` would and must return a `RunPhaseSpiralResult`.
+  // Production code paths never set this; only mock tests do.
+  const override = (
+    ctx as unknown as {
+      runPhaseSpiralOverride?: (args: {
+        unitType: string;
+        unitId: string;
+        milestoneId: string;
+        sliceId?: string;
+        basePath: string;
+        targetArtifactPath: string;
+        flowId: string;
+      }) => Promise<RunPhaseSpiralResult>;
+    }
+  )?.runPhaseSpiralOverride;
+  if (typeof override === "function") {
+    return await override({
+      unitType,
+      unitId,
+      milestoneId,
+      ...(sliceId ? { sliceId } : {}),
+      basePath,
+      targetArtifactPath,
+      flowId,
+    });
+  }
+
+  // Build a fail-closed Omega executor. When no model/key is configured the
+  // dispatch is structurally blocked rather than silently degraded (R037).
+  const executorResult = await buildOmegaExecutor(ctx);
+  if (!executorResult.ok) {
+    return {
+      ok: false,
+      phase: "milestone-discuss",
+      unitType,
+      unitId: sliceId ? `${milestoneId}/${sliceId}` : milestoneId,
+      failingStage: "executor",
+      missingArtifacts: [],
+      remediation: executorResult.error.remediation,
+      durationMs: 0,
+      iamError: executorResult.error,
+    };
+  }
+
+  const executor = executorResult.executor;
+  const baseQuery = `Govern dispatch phase "${unitType}" for milestone ${milestoneId}${sliceId ? ` slice ${sliceId}` : ""}: synthesize a complete canonical Omega spiral so the phase entry can produce its target artifact (${targetArtifactPath}).`;
+
+  switch (unitType) {
+    case "discuss-milestone":
+      return runPhaseSpiral({
+        phase: "milestone-discuss",
+        milestoneId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    case "plan-milestone":
+      return runPhaseSpiral({
+        phase: "milestone-planning",
+        milestoneId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    case "plan-slice":
+      if (!sliceId) return null;
+      return runPhaseSpiral({
+        phase: "slice-planning",
+        milestoneId,
+        sliceId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    case "replan-slice":
+      if (!sliceId) return null;
+      return runPhaseSpiral({
+        phase: "replanning",
+        milestoneId,
+        sliceId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    case "reassess-roadmap":
+      return runPhaseSpiral({
+        phase: "roadmap-reassess",
+        milestoneId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    case "validate-milestone":
+      return runPhaseSpiral({
+        phase: "verification",
+        milestoneId,
+        query: baseQuery,
+        executor,
+        basePath,
+        targetArtifactPath,
+        flowId,
+      });
+    default:
+      return null;
+  }
 }
 
 /**
@@ -1353,6 +1560,45 @@ export async function runUnitPhase(
     unitId,
   });
 
+  // ── Governed Omega phase spiral gate (M002/S01: D011, D012, D013, R031, R037) ──
+  // Six governed dispatch phase entries — milestone-discuss, milestone-planning,
+  // slice-planning, replanning, roadmap-reassess, verification — must run a
+  // canonical 10-stage Omega spiral before any prompt-emitting work, and
+  // structurally block when the spiral cannot complete. The spiral's runId /
+  // manifest path / aggregate path are captured here and threaded into the
+  // post-unit `writePhaseAnchor` call below so downstream phases inherit the
+  // synthesis without re-deriving cause.
+  let governedSpiralResult: RunPhaseSpiralResult | null = null;
+  if (GOVERNED_PHASE_UNIT_TYPES.has(unitType)) {
+    governedSpiralResult = await runGovernedPhaseSpiralForUnit({
+      ctx,
+      basePath: s.basePath,
+      unitType,
+      unitId,
+      flowId: ic.flowId,
+    });
+    if (governedSpiralResult && !governedSpiralResult.ok) {
+      const remediation = governedSpiralResult.remediation;
+      // `runPhaseSpiral` already emitted a `phase-spiral-failed` journal
+      // entry; the dispatch-side block is what auto-mode forensics sees.
+      ctx.ui.notify(
+        `Phase ${unitType} ${unitId} blocked by Omega governance (${governedSpiralResult.failingStage}): ${remediation}`,
+        "warning",
+      );
+      debugLog("autoLoop", {
+        phase: "phase-spiral-blocked",
+        unitType,
+        unitId,
+        failingStage: governedSpiralResult.failingStage,
+        missingArtifacts: governedSpiralResult.missingArtifacts,
+      });
+      // Pause auto-mode rather than continue/retry — fail-closed remediation
+      // requires human or recovery-agent (S03) action, not silent retry.
+      await deps.pauseAuto(ctx, pi);
+      return { action: "break", reason: "phase-spiral-blocked" };
+    }
+  }
+
   // ── Worktree health check (#1833, #1843) ────────────────────────────
   // Verify the working directory is a valid git checkout with project
   // files before dispatching work. A broken worktree causes agents to
@@ -1882,8 +2128,19 @@ export async function runUnitPhase(
     s.unitRecoveryCount.delete(`${unitType}/${unitId}`);
   }
 
-  // Write phase handoff anchor after successful research/planning completion
-  const anchorPhases = new Set(["research-milestone", "research-slice", "plan-milestone", "plan-slice"]);
+  // Write phase handoff anchor after successful research/planning/governed-phase completion.
+  // M002/S01: governed phases (discuss/replan/reassess-roadmap/validate) now also
+  // anchor with Omega spiral provenance so downstream phases inherit synthesis.
+  const anchorPhases = new Set([
+    "research-milestone",
+    "research-slice",
+    "plan-milestone",
+    "plan-slice",
+    "discuss-milestone",
+    "replan-slice",
+    "reassess-roadmap",
+    "validate-milestone",
+  ]);
   if (artifactVerified && mid && anchorPhases.has(unitType)) {
     try {
       const { writePhaseAnchor } = await import("../phase-anchor.js");
@@ -1895,6 +2152,13 @@ export async function runUnitPhase(
         decisions: [],
         blockers: [],
         nextSteps: [],
+        ...(governedSpiralResult && governedSpiralResult.ok
+          ? {
+              omegaRunId: governedSpiralResult.runId,
+              omegaManifestPath: governedSpiralResult.manifestPath,
+              omegaAggregatePath: governedSpiralResult.aggregateArtifactPath,
+            }
+          : {}),
       });
     } catch (err) { /* non-fatal — anchor is advisory */
       logWarning("engine", `phase anchor failed: ${err instanceof Error ? err.message : String(err)}`);

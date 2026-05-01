@@ -80,6 +80,32 @@ function makeMockCtx() {
   return {
     ui: { notify: () => {} },
     model: { id: "test-model" },
+    omegaExecutor: async () => "stub stage output for test\n",
+    // Test injection seam — bypass the canonical Omega spiral persistence
+    // path (which requires a live DB + filesystem) for behavioral lifecycle
+    // tests. Production code paths never set this. Returns a synthetic
+    // success payload so the dispatch gate proceeds.
+    runPhaseSpiralOverride: async (args: {
+      unitType: string;
+      unitId: string;
+      milestoneId: string;
+      sliceId?: string;
+      basePath: string;
+      targetArtifactPath: string;
+      flowId: string;
+    }) => ({
+      ok: true as const,
+      phase: "slice-planning" as const,
+      unitType: args.unitType as any,
+      unitId: args.unitId,
+      runId: "test-run-id",
+      manifestPath: `${args.basePath}/.gsd/omega-runs/${args.unitType}/${args.unitId.replace("/", "-")}/test-run-id/phase-manifest.json`,
+      artifactDir: `${args.basePath}/.gsd/omega-runs/${args.unitType}/${args.unitId.replace("/", "-")}/test-run-id`,
+      aggregateArtifactPath: args.targetArtifactPath,
+      stageCount: 10,
+      manifest: {} as any,
+      durationMs: 1,
+    }),
   } as any;
 }
 

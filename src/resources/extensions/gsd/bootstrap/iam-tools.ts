@@ -176,7 +176,7 @@ function selectOmegaModel(ctx: ExtensionContext | undefined): Model<Api> | null 
   }
 }
 
-async function buildOmegaExecutor(ctx: ExtensionContext | undefined): Promise<{ ok: true; executor: (prompt: string) => Promise<string> } | { ok: false; error: IAMError }> {
+export async function buildOmegaExecutor(ctx: ExtensionContext | undefined): Promise<{ ok: true; executor: (prompt: string) => Promise<string> } | { ok: false; error: IAMError }> {
   const injectedExecutor = (ctx as { omegaExecutor?: unknown } | undefined)?.omegaExecutor;
   if (typeof injectedExecutor === "function") {
     return {
