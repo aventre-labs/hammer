@@ -58,6 +58,9 @@ test("uok gate runner retries timeout failures using deterministic matrix", asyn
 });
 
 test("uok gate runner returns manual-attention for unknown gate id", async () => {
+  // Per M002/S02 R033 fail-closed hardening (T01-AUDIT §3.3), an unknown
+  // gate id with no IAM provenance record reclassifies failureClass from
+  // the legacy `unknown` to `policy`. Outcome stays `manual-attention`.
   const runner = new UokGateRunner();
   const result = await runner.run("missing-gate", {
     basePath: process.cwd(),
@@ -66,7 +69,7 @@ test("uok gate runner returns manual-attention for unknown gate id", async () =>
   });
 
   assert.equal(result.outcome, "manual-attention");
-  assert.equal(result.failureClass, "unknown");
+  assert.equal(result.failureClass, "policy");
 });
 
 // Regression tests for #4950
