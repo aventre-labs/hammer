@@ -64,7 +64,12 @@ export type JournalEventType =
   // M002/S01 — phase Omega spiral lifecycle
   | "phase-spiral-started"
   | "phase-spiral-completed"
-  | "phase-spiral-failed";
+  | "phase-spiral-failed"
+  // M002/S04 — per-question-round Omega spiral lifecycle (discuss surfaces)
+  | "question-round-spiral-started"
+  | "question-round-spiral-completed"
+  | "question-round-spiral-failed"
+  | "question-round-bypass-blocked";
 
 /** A single structured event in the journal. */
 export interface JournalEntry {

@@ -54,7 +54,8 @@ export type OmegaPhaseUnitType =
   | "replan-slice"
   | "discuss-milestone"
   | "reassess-roadmap"
-  | "validate-milestone";
+  | "validate-milestone"
+  | "discuss-question-round";
 
 export type OmegaPhaseManifestStatus = "running" | "complete" | "failed" | "partial";
 
@@ -124,6 +125,7 @@ const OMEGA_PHASE_UNIT_TYPES: readonly OmegaPhaseUnitType[] = [
   "discuss-milestone",
   "reassess-roadmap",
   "validate-milestone",
+  "discuss-question-round",
 ] as const;
 
 const SLICE_SCOPED_UNIT_TYPES: ReadonlySet<OmegaPhaseUnitType> = new Set([
@@ -158,6 +160,19 @@ export function validateOmegaPhaseUnit(unitType: string, unitId: string): IAMRes
 
   const milestonePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?$/;
   const slicePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?\/S\d{2}(?:-[A-Za-z0-9]+)?$/;
+  // Round-scoped unitId: <MID>/round-<N> or <MID>/<SID>/round-<N>
+  const roundPattern = /^M\d{3}(?:-[A-Za-z0-9]+)?(?:\/S\d{2}(?:-[A-Za-z0-9]+)?)?\/round-\d+$/;
+
+  if (unitType === "discuss-question-round") {
+    if (!roundPattern.test(unitId)) {
+      return failure("persistence-failed", `Malformed Omega phase unit id "${unitId}" for ${unitType}.`, {
+        remediation: "Use a round-scoped unit id such as M001/round-1 (milestone-discuss) or M001/S01/round-1 (slice-discuss).",
+        persistenceStatus: "not-attempted",
+      });
+    }
+    return { ok: true, value: unitType };
+  }
+
   const sliceScoped = SLICE_SCOPED_UNIT_TYPES.has(unitType);
   const pattern = sliceScoped ? slicePattern : milestonePattern;
   if (!pattern.test(unitId)) {
@@ -177,7 +192,35 @@ export function omegaPhaseArtifactsRoot(basePath: string): string {
 }
 
 export function omegaPhaseUnitDir(basePath: string, unitType: OmegaPhaseUnitType, unitId: string): string {
+  if (unitType === "discuss-question-round") {
+    // Per-round discuss artifacts live under the milestone (or slice) tree, not the
+    // generic omega/phases/<unitType>/<unitId> root. This routes the canonical
+    // 10-stage Omega artifacts produced by persistPhaseOmegaRun to the path the
+    // T03 fail-closed gate enumerates: <gsdRoot>/milestones/<MID>/discuss/round-<N>/omega/
+    // (milestone-scoped) or <gsdRoot>/milestones/<MID>/slices/<SID>/discuss/round-<N>/omega/
+    // (slice-scoped). The runId becomes the final directory segment, mirroring the
+    // generic layout: omegaPhaseArtifactDir appends `/<runId>` to whatever this returns.
+    return resolveDiscussQuestionRoundUnitDir(basePath, unitId);
+  }
   return join(omegaPhaseArtifactsRoot(basePath), unitType, sanitizePathSegment(unitId));
+}
+
+function resolveDiscussQuestionRoundUnitDir(basePath: string, unitId: string): string {
+  const segments = unitId.split("/");
+  // Patterns enforced by validateOmegaPhaseUnit:
+  //   ["M001", "round-1"]                — milestone-discuss
+  //   ["M001", "S01", "round-1"]         — slice-discuss
+  if (segments.length === 2) {
+    const [milestoneId, roundSeg] = segments;
+    return join(gsdRoot(basePath), "milestones", milestoneId, "discuss", roundSeg, "omega");
+  }
+  if (segments.length === 3) {
+    const [milestoneId, sliceId, roundSeg] = segments;
+    return join(gsdRoot(basePath), "milestones", milestoneId, "slices", sliceId, "discuss", roundSeg, "omega");
+  }
+  // Defensive fallback (should be unreachable given the regex gate). Falls back to
+  // the generic layout so persistence does not silently land in the wrong tree.
+  return join(omegaPhaseArtifactsRoot(basePath), "discuss-question-round", sanitizePathSegment(unitId));
 }
 
 export function omegaPhaseRunBaseDir(basePath: string, unitType: OmegaPhaseUnitType, unitId: string): string {
