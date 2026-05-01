@@ -26,13 +26,18 @@ Do **not** go deep — just enough that your questions reflect what's actually t
 
 **Never fabricate or simulate user input.** Never generate fake transcript markers like `[User]`, `[Human]`, or `User:`. Ask one question round, then wait for the user's actual response before continuing.
 
-**If `{{structuredQuestionsAvailable}}` is `true`:** Ask **1–3 questions per round** using `ask_user_questions`. **Call `ask_user_questions` exactly once per turn — never make multiple calls with the same or overlapping questions. Wait for the user's response before asking the next round.**
-**If `{{structuredQuestionsAvailable}}` is `false`:** Ask **1–3 questions per round** in plain text. Number them and wait for the user's response before asking the next round.
+**Before each question round, call the `gsd_question_round_spiral` tool with current conversation state** (concise markdown summarizing what the user has said so far, what is still unknown, and what the next round is targeting). The tool returns a `synthesisPath` whose synthesis derives the questions for this round. **Do NOT pick a question count heuristically** — derive every question and the count itself from the spiral synthesis. The fail-closed gate inside `ask_user_questions` will reject any round whose per-round Omega manifest is missing or stale.
+
+**If `{{structuredQuestionsAvailable}}` is `true`:** Ask the questions from the per-round Omega synthesis using `ask_user_questions`. **Call `gsd_question_round_spiral` first, then `ask_user_questions` exactly once per turn — never make multiple calls with the same or overlapping questions. Wait for the user's response before asking the next round.**
+**If `{{structuredQuestionsAvailable}}` is `false`:** Ask the questions from the per-round Omega synthesis in plain text. Number them and wait for the user's response before asking the next round.
 Keep each question focused on one of:
 - **UX and user-facing behaviour** — what does the user see, click, trigger, or experience?
 - **Edge cases and failure states** — what happens when things go wrong or are in unusual states?
 - **Scope boundaries** — what is explicitly in vs out for this slice? What deferred to later?
 - **Feel and experience** — tone, responsiveness, feedback, transitions, what "done" feels like to the user
+
+**Anti-pattern — never do this:**
+- Picking a question count heuristically without consulting the per-round Omega synthesis.
 
 After the user answers, investigate further if any answer opens a new unknown, then ask the next round.
 

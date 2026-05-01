@@ -19,6 +19,10 @@ import {
 	type QuestionOption,
 	type RoundResult,
 } from "./shared/tui.js";
+import {
+	emitDiscussRoundBypassBlocked,
+	evaluateDiscussRoundGate,
+} from "./gsd/discuss-round-gate.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,7 +89,7 @@ const AskUserQuestionsParams = Type.Object({
 // question, options, allowMultiple) — not just IDs — so that calls with the
 // same IDs but different text/options are treated as distinct.
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 interface CachedResult {
 	content: { type: "text"; text: string }[];
@@ -245,6 +249,22 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 						params.questions,
 					);
 				}
+			}
+
+			// ── Fail-closed gate: discuss-* unitType requires fresh per-round Omega manifest ──
+			// When invoked under a discuss-milestone or discuss-slice unit-runtime
+			// record, refuse to route to the local UI / remote channel until the
+			// per-round Omega spiral has produced a complete manifest at the
+			// canonical per-round artifact path. Non-discuss callers (clarification
+			// prompts in execution flows, etc.) see no behavioral change.
+			//
+			// IMPORTANT: errorResult() bypasses turnCache, so a follow-up call after
+			// a successful gsd_question_round_spiral run is not poisoned by the
+			// failed gate result.
+			const gate = evaluateDiscussRoundGate(ctx.cwd);
+			if (!gate.proceed) {
+				emitDiscussRoundBypassBlocked(ctx.cwd, gate, randomUUID());
+				return errorResult(gate.errorMessage, params.questions);
 			}
 
 			// ── Routing: race remote + local, remote-only, or local-only ────────
