@@ -30,6 +30,7 @@ import {
 import { getGatesForTurn } from "../gate-registry.js";
 import { resolveSliceFile, resolveTasksDir, clearPathCache, gsdRoot } from "../paths.js";
 import { checkOwnership, taskUnitKey } from "../unit-ownership.js";
+import { assertCompletionEvidence } from "./completion-evidence.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
 import { renderPlanCheckboxes } from "../markdown-renderer.js";
@@ -163,6 +164,20 @@ export async function handleCompleteTask(
   );
   if (ownershipErr) {
     return { error: ownershipErr };
+  }
+
+  // ── R033 fail-closed: completion-evidence assertion (T01-AUDIT §3b) ────
+  // No DB row is written without provenance: verification text, summary
+  // narrative, slice plan anchor on disk, and zero pending execute-task
+  // gates. Pure read-only assertion; runs before transaction(...).
+  const evidenceResult = assertCompletionEvidence(params, basePath, "task");
+  if (!evidenceResult.ok) {
+    return {
+      error:
+        `complete-task fail-closed (${evidenceResult.failingStage}): ` +
+        `${evidenceResult.remediation} ` +
+        `[missingArtifacts: ${evidenceResult.missingArtifacts.join(", ")}]`,
+    };
   }
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───

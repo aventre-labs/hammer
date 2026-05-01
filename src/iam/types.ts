@@ -185,7 +185,10 @@ export interface IAMError {
     | "invalid-stage-sequence"
     | "unknown-rune"
     | "executor-not-wired"
-    | "context-envelope-invalid";
+    | "context-envelope-invalid"
+    | "completion-evidence-missing"
+    | "audit-fail-closed"
+    | "gate-policy-missing";
   stage?: OmegaStageName;
   runeName?: RuneName;
   target?: string;

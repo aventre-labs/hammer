@@ -17,6 +17,7 @@ import {
   updateMilestoneStatus,
 } from "../gsd-db.js";
 import { resolveMilestonePath, clearPathCache, gsdRoot } from "../paths.js";
+import { assertCompletionEvidence } from "./completion-evidence.js";
 import { isClosedStatus } from "../status-guards.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
@@ -203,6 +204,21 @@ export async function handleCompleteMilestone(
   // ── Verify that verification passed ─────────────────────────────────────
   if (params.verificationPassed !== true) {
     return { error: "verification did not pass — milestone completion blocked. verificationPassed must be explicitly set to true after all verification steps succeed" };
+  }
+
+  // ── R033 fail-closed: completion-evidence assertion (T01-AUDIT §3b) ────
+  // No DB row is written without provenance: verificationPassed + summary
+  // narrative, roadmap anchor on disk, every child slice closed, and a
+  // validate-milestone Omega phase artifact. Pure read-only assertion;
+  // runs before transaction(...).
+  const evidenceResult = assertCompletionEvidence(params, basePath, "milestone");
+  if (!evidenceResult.ok) {
+    return {
+      error:
+        `complete-milestone fail-closed (${evidenceResult.failingStage}): ` +
+        `${evidenceResult.remediation} ` +
+        `[missingArtifacts: ${evidenceResult.missingArtifacts.join(", ")}]`,
+    };
   }
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───

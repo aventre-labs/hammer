@@ -27,6 +27,7 @@ import {
 import { getGatesForTurn } from "../gate-registry.js";
 import { resolveSliceFile, resolveSlicePath, clearPathCache, gsdRoot } from "../paths.js";
 import { checkOwnership, sliceUnitKey } from "../unit-ownership.js";
+import { assertCompletionEvidence } from "./completion-evidence.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapCheckboxes } from "../markdown-renderer.js";
@@ -335,6 +336,22 @@ export async function handleCompleteSlice(
   const BLOCKED_SIGNALS = /\b(status:\s*blocked|verification_result:\s*failed|slice is blocked|cannot complete|verification failed)\b/i;
   if (BLOCKED_SIGNALS.test(params.verification || "") || BLOCKED_SIGNALS.test(params.uatContent || "")) {
     return { error: `slice verification indicates blocked/failed state — do not complete a slice that has not passed verification. Address the blockers and re-verify first.` };
+  }
+
+  // ── R033 fail-closed: completion-evidence assertion (T01-AUDIT §3b) ────
+  // No DB row is written without provenance: verification + uatContent
+  // narratives, slice plan anchor, all child tasks closed, and zero
+  // pending complete-slice gates. Placed AFTER BLOCKED_SIGNALS so the
+  // existing #3580 verification-gate test continues to short-circuit on
+  // its known-error path. Pure read-only assertion before transaction.
+  const evidenceResult = assertCompletionEvidence(params, basePath, "slice");
+  if (!evidenceResult.ok) {
+    return {
+      error:
+        `complete-slice fail-closed (${evidenceResult.failingStage}): ` +
+        `${evidenceResult.remediation} ` +
+        `[missingArtifacts: ${evidenceResult.missingArtifacts.join(", ")}]`,
+    };
   }
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
