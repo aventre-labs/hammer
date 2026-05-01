@@ -64,6 +64,10 @@ import {
   supportsStructuredQuestions,
 } from "../workflow-mcp.js";
 import { runPhaseSpiral, type RunPhaseSpiralResult } from "./run-phase-spiral.js";
+import {
+  assertPhaseEnvelopePresent,
+  deriveDispatchPhaseEnvelope,
+} from "./phase-envelope.js";
 import { buildOmegaExecutor } from "../bootstrap/iam-tools.js";
 
 // ─── Session timeout auto-resume state ────────────────────────────────────────
@@ -487,6 +491,35 @@ async function failClosedOnFinalizeTimeout(
 
   await deps.pauseAuto(ctx, pi);
   s.currentUnit = null;
+  // ── IAM phase-envelope fail-closed gate (M002/S02 R033, T01-AUDIT §1) ──
+  // Assert envelope before clearing global phase state on the timeout path.
+  // The synthesis is provenance-grade (flowId + dispatched unitId); a
+  // missing envelope here would indicate a structural caller bug.
+  {
+    const clearPhaseEnvelope = deriveDispatchPhaseEnvelope({
+      flowId: ic.flowId,
+      unitType,
+      unitId,
+      isGovernedPhase: false,
+    });
+    const clearPhaseAssertion = assertPhaseEnvelopePresent(unitType, clearPhaseEnvelope);
+    if (!clearPhaseAssertion.ok) {
+      ctx.ui.notify(
+        `Phase clear for ${unitType} ${unitId} blocked by envelope assertion (${clearPhaseAssertion.failingStage}): ${clearPhaseAssertion.remediation}`,
+        "warning",
+      );
+      debugLog("autoLoop", {
+        phase: "phase-envelope-blocked",
+        site: "clearCurrentPhase-finalize-timeout",
+        unitType,
+        unitId,
+        failingStage: clearPhaseAssertion.failingStage,
+        missingArtifacts: clearPhaseAssertion.missingArtifacts,
+      });
+      drainLogs();
+      return { action: "break", reason: "envelope-missing" };
+    }
+  }
   clearCurrentPhase();
   drainLogs();
   return { action: "break", reason: progressKind };
@@ -1659,6 +1692,39 @@ export async function runUnitPhase(
   s.currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
   s.lastGitActionFailure = null;
   s.lastGitActionStatus = null;
+  // ── IAM phase-envelope fail-closed gate (M002/S02 R033, T01-AUDIT §1) ──
+  // Assert that an IAM_SUBAGENT_CONTRACT envelope is present BEFORE flipping
+  // the global gsd-phase-state. Governed phase types already validated their
+  // provenance via `runGovernedPhaseSpiralForUnit` above; this assertion adds
+  // envelope coverage for non-governed unit types so phase state can never be
+  // mutated without IAM provenance. On `{ok: false}` short-circuit with the
+  // dispatcher's `{action: "break"}` shape (matches S01's
+  // `runGovernedPhaseSpiralForUnit` failure handling).
+  {
+    const setPhaseEnvelope = deriveDispatchPhaseEnvelope({
+      flowId: ic.flowId,
+      unitType,
+      unitId,
+      isGovernedPhase: GOVERNED_PHASE_UNIT_TYPES.has(unitType),
+    });
+    const setPhaseAssertion = assertPhaseEnvelopePresent(unitType, setPhaseEnvelope);
+    if (!setPhaseAssertion.ok) {
+      ctx.ui.notify(
+        `Phase transition ${unitType} ${unitId} blocked by envelope assertion (${setPhaseAssertion.failingStage}): ${setPhaseAssertion.remediation}`,
+        "warning",
+      );
+      debugLog("autoLoop", {
+        phase: "phase-envelope-blocked",
+        site: "setCurrentPhase",
+        unitType,
+        unitId,
+        failingStage: setPhaseAssertion.failingStage,
+        missingArtifacts: setPhaseAssertion.missingArtifacts,
+      });
+      await deps.pauseAuto(ctx, pi);
+      return { action: "break", reason: "envelope-missing" };
+    }
+  }
   setCurrentPhase(unitType);
   s.lastToolInvocationError = null; // #2883: clear stale error from previous unit
   const unitStartSeq = ic.nextSeq();
@@ -2371,6 +2437,34 @@ export async function runFinalize(
   // Both pre and post verification completed without timeout — reset counter
   loopState.consecutiveFinalizeTimeouts = 0;
   s.currentUnit = null;
+  // ── IAM phase-envelope fail-closed gate (M002/S02 R033, T01-AUDIT §1) ──
+  // Assert envelope before clearing global phase state on the post-verification
+  // finalization path. Synthesis uses iteration flowId + the just-finalized
+  // unitId so a missing-envelope condition surfaces a caller bug.
+  {
+    const clearPhaseEnvelope = deriveDispatchPhaseEnvelope({
+      flowId: ic.flowId,
+      unitType: iterData.unitType,
+      unitId: iterData.unitId,
+      isGovernedPhase: false,
+    });
+    const clearPhaseAssertion = assertPhaseEnvelopePresent(iterData.unitType, clearPhaseEnvelope);
+    if (!clearPhaseAssertion.ok) {
+      ctx.ui.notify(
+        `Phase clear for ${iterData.unitType} ${iterData.unitId} blocked by envelope assertion (${clearPhaseAssertion.failingStage}): ${clearPhaseAssertion.remediation}`,
+        "warning",
+      );
+      debugLog("autoLoop", {
+        phase: "phase-envelope-blocked",
+        site: "clearCurrentPhase-finalize",
+        unitType: iterData.unitType,
+        unitId: iterData.unitId,
+        failingStage: clearPhaseAssertion.failingStage,
+        missingArtifacts: clearPhaseAssertion.missingArtifacts,
+      });
+      return { action: "break", reason: "envelope-missing" };
+    }
+  }
   clearCurrentPhase();
 
   // Surface accumulated workflow-logger issues for this unit to the user.
