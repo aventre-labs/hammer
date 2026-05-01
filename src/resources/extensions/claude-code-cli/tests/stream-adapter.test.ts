@@ -947,16 +947,10 @@ describe("stream-adapter — session persistence (#2859)", () => {
 		}
 	});
 
-	test("pump enables MCP trust auto-approval around SDK query in headless/no-UI runs", () => {
+	test("pump no longer injects MCP trust auto-approval env shim around SDK query", () => {
 		const source = readFileSync(resolve(import.meta.dirname, "..", "stream-adapter.ts"), "utf-8");
-		const envSetIdx = source.indexOf('process.env.GSD_MCP_AUTO_APPROVE_TRUST = "1";');
-		const queryIdx = source.indexOf("const queryResult = sdk.query({");
-		const restoreIdx = source.indexOf("restoreSdkMcpAutoApproveEnv?.();", queryIdx);
-		assert.ok(envSetIdx > -1, "stream adapter should enable MCP trust auto-approval before SDK query");
-		assert.ok(queryIdx > -1, "stream adapter should call sdk.query");
-		assert.ok(restoreIdx > -1, "stream adapter should restore MCP trust auto-approval after SDK query settles");
-		assert.ok(envSetIdx < queryIdx, "MCP trust auto-approval must be set before sdk.query");
-		assert.ok(queryIdx < restoreIdx, "MCP trust auto-approval cleanup must run after sdk.query");
+		assert.equal(source.indexOf("GSD_MCP_AUTO_APPROVE_TRUST"), -1, "stream adapter must not reference GSD_MCP_AUTO_APPROVE_TRUST");
+		assert.equal(source.indexOf("restoreSdkMcpAutoApproveEnv"), -1, "stream adapter must not reference restoreSdkMcpAutoApproveEnv");
 	});
 });
 

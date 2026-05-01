@@ -1633,20 +1633,6 @@ async function pumpSdkMessages(
 		const canUseToolFallback = canUseToolHandler
 			?? (async (_toolName: string, _input: Record<string, unknown>, opts: CanUseToolOptions): Promise<CanUseToolPermissionResult> =>
 				({ behavior: "allow", toolUseID: opts.toolUseID }));
-		let restoreSdkMcpAutoApproveEnv: (() => void) | undefined;
-		if (process.env.GSD_HEADLESS === "1" || !uiContext) {
-			const sdkEnv = process.env as Record<string, string | undefined>;
-			const previousSdkMcpAutoApprove = sdkEnv.GSD_MCP_AUTO_APPROVE_TRUST;
-			const hadSdkMcpAutoApprove = Object.prototype.hasOwnProperty.call(sdkEnv, "GSD_MCP_AUTO_APPROVE_TRUST");
-			process.env.GSD_MCP_AUTO_APPROVE_TRUST = "1";
-			restoreSdkMcpAutoApproveEnv = () => {
-				if (hadSdkMcpAutoApprove) {
-					process.env.GSD_MCP_AUTO_APPROVE_TRUST = previousSdkMcpAutoApprove ?? "";
-				} else {
-					delete process.env.GSD_MCP_AUTO_APPROVE_TRUST;
-				}
-			};
-		}
 		const sdkOpts = buildSdkOptions(
 			modelId,
 			prompt,
@@ -1683,8 +1669,7 @@ async function pumpSdkMessages(
 		};
 		stream.push({ type: "start", partial: initialPartial });
 
-		try {
-			for await (const msg of queryResult as AsyncIterable<SDKMessage>) {
+		for await (const msg of queryResult as AsyncIterable<SDKMessage>) {
 			if (options?.signal?.aborted) {
 				// User-initiated cancel — emit an aborted error so the agent
 				// loop classifies this as a deliberate stop, not a transient
@@ -1833,9 +1818,6 @@ async function pumpSdkMessages(
 				default:
 					break;
 			}
-			}
-		} finally {
-			restoreSdkMcpAutoApproveEnv?.();
 		}
 
 		// Generator exhaustion without a terminal result is a stream interruption,

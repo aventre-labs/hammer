@@ -326,10 +326,10 @@ test('--tools still works', () => {
   assert.deepEqual(opts.tools, ['read', 'bash', 'mcp_call'])
 })
 
-test('headless child env enables MCP trust auto-approval', () => {
+test('headless child env no longer injects MCP trust auto-approval', () => {
   const source = readFileSync(join(import.meta.dirname, '..', 'headless.ts'), 'utf-8')
   assert.match(source, /GSD_HEADLESS:\s*'1'/)
-  assert.match(source, /GSD_MCP_AUTO_APPROVE_TRUST:\s*'1'/)
+  assert.doesNotMatch(source, /GSD_MCP_AUTO_APPROVE_TRUST/)
 })
 
 test('positional command parsing still works', () => {
