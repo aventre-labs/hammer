@@ -15,6 +15,7 @@ import { ensureGitignore, untrackRuntimeFiles } from "./gitignore.js";
 import { gsdRoot } from "./paths.js";
 import { assertSafeDirectory } from "./validate-directory.js";
 import type { ProjectDetection, ProjectSignals } from "./detection.js";
+import type { LegacyLayoutDetection } from "./migrate/lift.js";
 import { runSkillInstallStep } from "./skill-catalog.js";
 import { generateCodebaseMap, writeCodebaseMap } from "./codebase-generator.js";
 import { handlePrefsWizard, writePreferencesFile, DEFAULT_PREFERENCES_BODY } from "./commands-prefs-wizard.js";
@@ -344,43 +345,77 @@ export async function showProjectInit(
   return { completed: true, bootstrapped: true };
 }
 
-// ─── V1 Migration Offer ─────────────────────────────────────────────────────────
+// ─── Legacy-Layout Migration Offer ──────────────────────────────────────────────
 
 /**
- * Show migration offer when .planning/ is detected.
+ * Show migration offer when a legacy layout (`.planning/` or `.gsd/`) is
+ * detected at the project root. Layout-aware: the action label and summary
+ * vary based on which layouts are present.
+ *
+ * Both code paths through `/migrate` (this offer + `/hammer migrate`) call the
+ * same `liftLegacyLayoutsToHammer` core (slice S07 integration closure) — this
+ * function only chooses between proceeding with migration, starting fresh, or
+ * cancelling. The actual lift is performed by `handleMigrate`.
+ *
  * Returns 'migrate', 'fresh', or 'cancel'.
  */
 export async function offerMigration(
   ctx: ExtensionCommandContext,
-  v1: NonNullable<ProjectDetection["v1"]>,
+  layout: LegacyLayoutDetection,
+  v1?: NonNullable<ProjectDetection["v1"]>,
 ): Promise<"migrate" | "fresh" | "cancel"> {
-  const summary = [
-    "Found .planning/ directory (GSD v1 format)",
-  ];
-  if (v1.phaseCount > 0) {
-    summary.push(`${v1.phaseCount} phase${v1.phaseCount > 1 ? "s" : ""} detected`);
+  const both = layout.hasPlanning && layout.hasGsd;
+
+  // Build layout-aware summary text.
+  const summary: string[] = [];
+  if (both) {
+    summary.push("Two legacy layouts detected — `.planning/` (GSD v1) and `.gsd/` (GSD v2).");
+    summary.push("On migrate, `.gsd/` is treated as the current source of truth and is lifted to `.hammer/`.");
+    summary.push("`.planning/` is renamed (NOT re-migrated) so freshly-edited GSD-2 state is never overwritten.");
+  } else if (layout.hasGsd) {
+    summary.push("Found `.gsd/` directory (GSD v2 format).");
+    summary.push("On migrate, contents are copied to `.hammer/` and `.gsd/` is renamed in place.");
+  } else if (layout.hasPlanning) {
+    summary.push("Found `.planning/` directory (GSD v1 format).");
+    if (v1 && v1.phaseCount > 0) {
+      summary.push(`${v1.phaseCount} phase${v1.phaseCount > 1 ? "s" : ""} detected`);
+    }
+    if (v1?.hasRoadmap) summary.push("Has ROADMAP.md");
   }
-  if (v1.hasRoadmap) {
-    summary.push("Has ROADMAP.md");
+
+  // Build layout-aware action label.
+  let migrateLabel: string;
+  let migrateDescription: string;
+  if (both) {
+    migrateLabel = "Migrate to Hammer";
+    migrateDescription = "Lift `.gsd/` → `.hammer/`; rename `.planning/` in place";
+  } else if (layout.hasGsd) {
+    migrateLabel = "Migrate to Hammer";
+    migrateDescription = "Lift `.gsd/` → `.hammer/`";
+  } else {
+    // .planning/-only — explicitly call out the GSD-2 transform step so users
+    // understand the v1 → v2 → hammer pipeline (not a flat copy).
+    migrateLabel = "Migrate to Hammer (via GSD-2 transform)";
+    migrateDescription = "Convert `.planning/` to `.hammer/` via GSD-2 transform";
   }
 
   const choice = await showNextAction(ctx, {
-    title: "GSD — Legacy Project Detected",
+    title: "Hammer — Legacy Project Detected",
     summary,
     actions: [
       {
         id: "migrate",
-        label: "Migrate to GSD v2",
-        description: "Convert .planning/ to .gsd/ format",
+        label: migrateLabel,
+        description: migrateDescription,
         recommended: true,
       },
       {
         id: "fresh",
         label: "Start fresh",
-        description: "Ignore .planning/ and create new .gsd/",
+        description: "Ignore legacy state and create a new `.hammer/`",
       },
     ],
-    notYetMessage: "Run /gsd init when ready.",
+    notYetMessage: "Run /hammer init when ready.",
   });
 
   if (choice === "not_yet") return "cancel";

@@ -1,18 +1,21 @@
 /**
- * /gsd migrate — one-shot migration from .planning to .gsd
+ * /gsd migrate — lift legacy layouts (`.planning/`, `.gsd/`) to `.hammer/`.
  *
- * Thin UX orchestrator: resolves paths, runs the validate → parse → transform →
- * preview → write pipeline, and shows confirmation UI via showNextAction.
- * All business logic lives in the pipeline modules (S01–S03).
+ * Thin UX orchestrator: routes through `liftLegacyLayoutsToHammer` (the slice
+ * S07 core) to handle all three legacy-layout cases — `.planning/`-only,
+ * `.gsd/`-only, and both-present (per D014: lift `.gsd/`, rename `.planning/`
+ * without re-parsing). The lift core is shared with `init-wizard.ts:offerMigration`.
  *
- * After a successful write, offers an agent-driven review that audits the
- * output for GSD-2 standards compliance.
+ * For `.planning/`-only lifts we pre-compute the migration preview so the
+ * post-write GSD-2 review prompt has accurate stats. The review prompt is
+ * only dispatched when a `.planning/` lift actually occurred (not when
+ * `.planning/` is renamed-without-recopy in the both-present case, and not
+ * for `.gsd/`-only lifts where the on-disk format is already canonical).
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
-import { gsdRoot } from "../paths.js";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { showNextAction } from "../../shared/tui.js";
 import {
@@ -20,7 +23,9 @@ import {
   parsePlanningDirectory,
   transformToGSD,
   generatePreview,
-  writeGSDDirectory,
+  liftLegacyLayoutsToHammer,
+  detectLegacyLayouts,
+  LiftError,
 } from "./index.js";
 
 import type { MigrationPreview } from "./writer.js";
@@ -77,89 +82,129 @@ function dispatchReview(
 }
 
 export async function handleMigrate(
-  args: string,
+  _args: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
 ): Promise<void> {
-  // ── Resolve source path ────────────────────────────────────────────────────
-  // Default to cwd when no args given; expand ~ to HOME
-  let rawPath = args.trim() || ".";
-  if (rawPath.startsWith("~/")) {
-    rawPath = join(process.env.HOME ?? "~", rawPath.slice(2));
-  } else if (rawPath === "~") {
-    rawPath = process.env.HOME ?? "~";
-  }
+  const basePath = process.cwd();
 
-  let sourcePath = resolve(process.cwd(), rawPath);
-  if (!sourcePath.endsWith(".planning")) {
-    sourcePath = join(sourcePath, ".planning");
-  }
+  // ── Detect legacy layouts ──────────────────────────────────────────────────
+  const detection = detectLegacyLayouts(basePath);
 
-  if (!existsSync(sourcePath)) {
+  // No legacy state and no `.hammer/` either → nothing to migrate.
+  if (!detection.hasPlanning && !detection.hasGsd && !detection.hasHammer) {
     ctx.ui.notify(
-      `Directory not found: ${sourcePath}\n\n` +
-      'Migration converts a .planning/ directory (from older GSD versions) into .gsd/ format.\n' +
-      'If you are starting a new project, use /gsd:new-project instead.\n' +
-      'If migrating, ensure the path contains a .planning/ directory.',
+      "No legacy state detected.\n\n" +
+        "Migration lifts a `.planning/` (GSD v1) or `.gsd/` (GSD v2) directory into `.hammer/`.\n" +
+        "If you are starting a new project, use `/hammer init` instead.",
       "error",
     );
     return;
   }
 
-  // ── Validate ───────────────────────────────────────────────────────────────
-  const validation = await validatePlanningDirectory(sourcePath);
-
-  const warnings = validation.issues.filter((i) => i.severity === "warning");
-  const fatals = validation.issues.filter((i) => i.severity === "fatal");
-
-  for (const w of warnings) {
-    ctx.ui.notify(`⚠ ${w.message} (${w.file})`, "warning");
-  }
-  for (const f of fatals) {
-    ctx.ui.notify(`✖ ${f.message} (${f.file})`, "error");
-  }
-
-  if (!validation.valid) {
+  // `.hammer/` already exists with no un-renamed legacy sources → no-op (lift
+  // reports `already-migrated`). Tell the user up-front so we don't ask them
+  // to confirm a no-op.
+  if (
+    detection.hasHammer &&
+    !detection.hasPlanning &&
+    !detection.hasGsd
+  ) {
     ctx.ui.notify(
-      "Migration blocked — fix the fatal issues above before retrying.",
-      "error",
+      ".hammer/ already exists and no un-renamed legacy sources remain — nothing to migrate.",
+      "info",
     );
     return;
   }
 
-  // ── Parse → Transform → Preview ───────────────────────────────────────────
-  const parsed = await parsePlanningDirectory(sourcePath);
-  const project = transformToGSD(parsed);
-  const preview = generatePreview(project);
+  // ── Build layout-aware preview ─────────────────────────────────────────────
+  const both = detection.hasPlanning && detection.hasGsd;
+  const planningOnly = detection.hasPlanning && !detection.hasGsd;
 
-  // ── Build preview text ─────────────────────────────────────────────────────
-  const lines: string[] = [
-    `Milestones: ${preview.milestoneCount}`,
-    `Slices: ${preview.totalSlices} (${preview.doneSlices} done — ${preview.sliceCompletionPct}%)`,
-    `Tasks: ${preview.totalTasks} (${preview.doneTasks} done — ${preview.taskCompletionPct}%)`,
-  ];
+  // For `.planning/`-only we pre-compute the GSD-2 preview so dispatchReview
+  // has accurate stats. Lift will re-parse internally — duplicate work, but
+  // it keeps the unified `liftLegacyLayoutsToHammer` core as the single
+  // codepath (per slice S07 integration closure). For `.gsd/`-only and
+  // both-present cases we skip parse/preview entirely (no GSD-2 transform
+  // happens, and the review prompt is GSD-1 → GSD-2 specific).
+  let planningPreview: MigrationPreview | undefined;
+  if (planningOnly) {
+    const planningPath = join(basePath, ".planning");
+    const validation = await validatePlanningDirectory(planningPath);
 
-  if (preview.requirements.total > 0) {
-    lines.push(
-      `Requirements: ${preview.requirements.total} (${preview.requirements.validated} validated, ${preview.requirements.active} active, ${preview.requirements.deferred} deferred)`,
-    );
+    const warnings = validation.issues.filter((i) => i.severity === "warning");
+    const fatals = validation.issues.filter((i) => i.severity === "fatal");
+
+    for (const w of warnings) ctx.ui.notify(`⚠ ${w.message} (${w.file})`, "warning");
+    for (const f of fatals) ctx.ui.notify(`✖ ${f.message} (${f.file})`, "error");
+
+    if (!validation.valid) {
+      ctx.ui.notify(
+        "Migration blocked — fix the fatal issues above before retrying.",
+        "error",
+      );
+      return;
+    }
+
+    const parsed = await parsePlanningDirectory(planningPath);
+    const project = transformToGSD(parsed);
+    planningPreview = generatePreview(project);
   }
 
-  const targetGsdExists = existsSync(gsdRoot(process.cwd()));
-  if (targetGsdExists) {
-    lines.push("");
-    lines.push("⚠ A .gsd directory already exists in the current working directory — it will be overwritten.");
+  const summaryLines: string[] = [];
+  const renameNote = "(source renamed to `.{layout}.migrated-{timestamp}/`)";
+
+  if (both) {
+    summaryLines.push("Two legacy layouts detected:");
+    summaryLines.push("  • `.gsd/`  → `.hammer/` (recursive copy)");
+    summaryLines.push(
+      "  • `.planning/` → renamed in place (NOT re-parsed — `.gsd/` wins; D014)",
+    );
+    summaryLines.push(renameNote);
+  } else if (planningOnly && planningPreview) {
+    summaryLines.push("`.planning/` (GSD v1) → `.hammer/` via GSD-2 transform");
+    summaryLines.push(renameNote);
+    summaryLines.push("");
+    summaryLines.push(
+      `Milestones: ${planningPreview.milestoneCount}`,
+    );
+    summaryLines.push(
+      `Slices: ${planningPreview.totalSlices} (${planningPreview.doneSlices} done — ${planningPreview.sliceCompletionPct}%)`,
+    );
+    summaryLines.push(
+      `Tasks: ${planningPreview.totalTasks} (${planningPreview.doneTasks} done — ${planningPreview.taskCompletionPct}%)`,
+    );
+    if (planningPreview.requirements.total > 0) {
+      summaryLines.push(
+        `Requirements: ${planningPreview.requirements.total} (${planningPreview.requirements.validated} validated, ${planningPreview.requirements.active} active, ${planningPreview.requirements.deferred} deferred)`,
+      );
+    }
+  } else if (detection.hasGsd) {
+    summaryLines.push("`.gsd/` (GSD v2) → `.hammer/` (recursive copy)");
+    summaryLines.push(renameNote);
+  } else if (detection.hasHammer) {
+    // `.hammer/` exists AND a legacy source has not been renamed →
+    // partial-failure resume case. Tell the user we'll just finish the rename.
+    summaryLines.push(
+      "`.hammer/` is already populated, but a legacy source has not been renamed.",
+    );
+    summaryLines.push(
+      "This looks like a previous lift was interrupted — confirm to finish the rename.",
+    );
   }
 
   // ── Confirmation via showNextAction ────────────────────────────────────────
+  const confirmLabel = detection.hasHammer && !planningOnly && !both && !detection.hasGsd
+    ? "Finish interrupted lift"
+    : "Lift to .hammer/";
   const choice = await showNextAction(ctx, {
     title: "Migration preview",
-    summary: lines,
+    summary: summaryLines,
     actions: [
       {
         id: "confirm",
-        label: "Write .gsd directory",
-        description: `Migrate ${preview.milestoneCount} milestone(s) to ${process.cwd()}/.gsd`,
+        label: confirmLabel,
+        description: `Run lift in ${basePath}`,
         recommended: true,
       },
       {
@@ -168,7 +213,7 @@ export async function handleMigrate(
         description: "Exit without writing anything",
       },
     ],
-    notYetMessage: "Run /gsd migrate again when ready.",
+    notYetMessage: "Run /hammer migrate again when ready.",
   });
 
   if (choice !== "confirm") {
@@ -176,22 +221,84 @@ export async function handleMigrate(
     return;
   }
 
-  // ── Write ──────────────────────────────────────────────────────────────────
-  ctx.ui.notify("Writing .gsd directory…", "info");
+  // ── Lift ───────────────────────────────────────────────────────────────────
+  ctx.ui.notify("Lifting legacy state to .hammer/…", "info");
 
-  const result = await writeGSDDirectory(project, process.cwd());
-  const gsdPath = gsdRoot(process.cwd());
+  // Wire the lift's stage-tagged notify lines through ctx.ui.notify so the
+  // user sees [lift:detect], [lift:copy], [lift:rename-source], etc.
+  const notify: (msg: string, level?: "info" | "warning" | "error") => void = (
+    msg,
+    level,
+  ) => ctx.ui.notify(msg, level ?? "info");
 
+  let result;
+  try {
+    result = await liftLegacyLayoutsToHammer(basePath, { notify });
+  } catch (err) {
+    if (err instanceof LiftError) {
+      const layoutNote = err.layout ? ` for legacy layout \`${err.layout}\`` : "";
+      const pathNote = err.pathOnDisk ? ` at ${err.pathOnDisk}` : "";
+      ctx.ui.notify(
+        `Lift failed during stage \`${err.stage}\`${layoutNote}${pathNote} — ${err.message}\n` +
+          "Re-run /hammer migrate to resume from where it stopped.",
+        "error",
+      );
+      return;
+    }
+    throw err;
+  }
+
+  if (result.status === "already-migrated") {
+    ctx.ui.notify(
+      ".hammer/ already populated — no work needed. Previous renamed sources: " +
+        (result.layouts.length > 0 ? result.layouts.join(", ") : "(none recorded)"),
+      "info",
+    );
+    return;
+  }
+
+  if (result.status === "no-legacy") {
+    ctx.ui.notify(
+      "No legacy layouts present at lift time — nothing was changed.",
+      "info",
+    );
+    return;
+  }
+
+  const renamedLines = result.renamed.map(
+    (r) => `  • ${r.layout}: ${r.from} → ${r.to}`,
+  );
+  if (result.status === "resumed") {
+    ctx.ui.notify(
+      `✓ Lift resumed — finished pending source rename(s):\n${renamedLines.join("\n")}`,
+      "info",
+    );
+    return;
+  }
+
+  // status === 'lifted'
   ctx.ui.notify(
-    `✓ Migration complete — ${result.paths.length} file(s) written to .gsd/`,
+    `✓ Migration complete — lifted ${result.layouts.join(" + ")} → .hammer/.\n${renamedLines.join("\n")}`,
     "info",
   );
 
   // ── Post-write review offer ────────────────────────────────────────────────
+  // Only dispatch the GSD-1 → GSD-2 review when a `.planning/` lift actually
+  // happened. In the both-present case `.planning/` is renamed but its
+  // content was NOT re-parsed (D014), so the GSD-2 review prompt does not
+  // apply. In the `.gsd/`-only case the on-disk format was already canonical.
+  const planningWasLifted =
+    result.status === "lifted" &&
+    !detection.hasGsd &&
+    result.layouts.includes("planning") &&
+    planningPreview !== undefined;
+
+  if (!planningWasLifted) return;
+
   const reviewChoice = await showNextAction(ctx, {
     title: "Migration written",
     summary: [
-      `${result.paths.length} files written to .gsd/`,
+      "GSD v1 (.planning/) was transformed into GSD-2 (.hammer/).",
       "",
       "The agent can now review the migrated output against GSD-2 standards —",
       "checking structure, content quality, deriveState() round-trip, and",
@@ -201,7 +308,7 @@ export async function handleMigrate(
       {
         id: "review",
         label: "Review migration",
-        description: "Agent audits the .gsd output and reports PASS/FAIL per category",
+        description: "Agent audits the .hammer/ output and reports PASS/FAIL per category",
         recommended: true,
       },
       {
@@ -210,10 +317,14 @@ export async function handleMigrate(
         description: "Trust the migration output as-is",
       },
     ],
-    notYetMessage: "Run /gsd migrate again to re-migrate, or review .gsd manually.",
+    notYetMessage: "Run /hammer migrate again to re-migrate, or review .hammer/ manually.",
   });
 
   if (reviewChoice === "review") {
-    dispatchReview(pi, sourcePath, gsdPath, preview);
+    // Best-effort: source is the now-renamed .planning.migrated-<ts>/. Use the
+    // renamed entry so the review prompt's sourcePath matches what's on disk.
+    const renamedPlanning = result.renamed.find((r) => r.layout === "planning");
+    const sourcePath = renamedPlanning?.to ?? join(basePath, ".planning");
+    dispatchReview(pi, sourcePath, result.hammerPath, planningPreview!);
   }
 }

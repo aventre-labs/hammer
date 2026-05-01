@@ -41,6 +41,7 @@ import { resolveUokFlags } from "./uok/flags.js";
 import { ensurePlanV2Graph, isMissingFinalizedContextResult } from "./uok/plan-v2.js";
 import { detectProjectState, hasGsdBootstrapArtifacts } from "./detection.js";
 import { showProjectInit, offerMigration } from "./init-wizard.js";
+import { detectLegacyLayouts } from "./migrate/lift.js";
 import { validateDirectory } from "./validate-directory.js";
 import { showConfirm } from "../shared/tui.js";
 import { debugLog } from "./debug-logger.js";
@@ -1508,9 +1509,13 @@ export async function showSmartEntry(
   if (!hasBootstrapArtifacts) {
     const detection = detectProjectState(basePath);
 
-    // v1 .planning/ detected — offer migration before anything else
+    // Legacy layouts detected — offer layout-aware migration before anything else.
+    // Covers .planning/ (GSD v1) detected via detectProjectState.v1 AND any .gsd/
+    // (GSD v2) lingering at the project root. Both routes call the same
+    // liftLegacyLayoutsToHammer core via handleMigrate (slice S07 closure).
     if (detection.state === "v1-planning" && detection.v1) {
-      const migrationChoice = await offerMigration(ctx, detection.v1);
+      const layoutDetection = detectLegacyLayouts(basePath);
+      const migrationChoice = await offerMigration(ctx, layoutDetection, detection.v1);
       if (migrationChoice === "cancel") return;
       if (migrationChoice === "migrate") {
         const { handleMigrate } = await import("./migrate/command.js");
