@@ -5,8 +5,6 @@ import { join } from "node:path";
 
 import {
   _buildMcpChildEnvForTest,
-  _buildMcpTrustConfirmOptionsForTest,
-  _shouldAutoApproveMcpTrustForTest,
 } from "../../mcp-client/index.ts";
 
 // Note: four source-grep tests that scanned `mcp-client/index.ts` for
@@ -41,21 +39,11 @@ test("MCP stdio child env only includes safe inherited keys plus explicit config
   }
 });
 
-test("MCP stdio trust confirmation is abort-aware", () => {
-  const controller = new AbortController();
-  const options = _buildMcpTrustConfirmOptionsForTest(controller.signal);
-
-  assert.equal(options.timeout, 120_000);
-  assert.equal(options.signal, controller.signal);
-});
-
-test("MCP stdio trust prompt opts into confirm-on-timeout fallback", () => {
+test("MCP stdio connect path no longer references a trust prompt", () => {
   const source = readFileSync(join(import.meta.dirname, "..", "..", "mcp-client", "index.ts"), "utf-8");
-  assert.match(source, /confirmOnTimeout:\s*true/);
-});
-
-test("MCP stdio trust auto-approval is enabled for autoloop/headless env", () => {
-  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_MCP_AUTO_APPROVE_TRUST: "1" } as NodeJS.ProcessEnv), true);
-  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_HEADLESS: "1" } as NodeJS.ProcessEnv), true);
-  assert.equal(_shouldAutoApproveMcpTrustForTest({ GSD_MCP_AUTO_APPROVE_TRUST: "0" } as NodeJS.ProcessEnv), false);
+  assert.doesNotMatch(source, /assertTrustedStdioServer/);
+  assert.doesNotMatch(source, /trustedStdioServers/);
+  assert.doesNotMatch(source, /stdioTrustKey/);
+  assert.doesNotMatch(source, /GSD_MCP_AUTO_APPROVE_TRUST/);
+  assert.doesNotMatch(source, /confirmOnTimeout/);
 });

@@ -62,7 +62,6 @@ const connections = new Map<string, ManagedConnection>();
 const pendingConnections = new Map<string, Promise<Client>>();
 let configCache: McpServerConfig[] | null = null;
 const toolCache = new Map<string, McpToolSchema[]>();
-const trustedStdioServers = new Set<string>();
 
 const CHILD_ENV_ALLOWLIST = new Set([
 	"PATH",
@@ -82,17 +81,6 @@ const CHILD_ENV_ALLOWLIST = new Set([
 	"XDG_CONFIG_HOME",
 	"XDG_CACHE_HOME",
 ]);
-
-function stdioTrustKey(config: McpServerConfig): string {
-	return JSON.stringify({
-		name: config.name,
-		sourcePath: config.sourcePath,
-		command: config.command,
-		args: config.args ?? [],
-		cwd: config.cwd,
-		env: config.env ?? {},
-	});
-}
 
 function readConfigs(): McpServerConfig[] {
 	if (configCache) return configCache;
@@ -167,47 +155,6 @@ export function _buildMcpChildEnvForTest(configEnv: Record<string, string> | und
 	};
 }
 
-export function _buildMcpTrustConfirmOptionsForTest(signal?: AbortSignal): { timeout: number; signal?: AbortSignal } {
-	return signal ? { timeout: 120_000, signal } : { timeout: 120_000 };
-}
-
-export function _shouldAutoApproveMcpTrustForTest(env: NodeJS.ProcessEnv = process.env): boolean {
-	return env.GSD_MCP_AUTO_APPROVE_TRUST === "1" || env.GSD_HEADLESS === "1";
-}
-
-async function assertTrustedStdioServer(
-	config: McpServerConfig,
-	ctx?: ExtensionContext,
-	signal?: AbortSignal,
-): Promise<string | undefined> {
-	if (config.transport !== "stdio") return undefined;
-	const trustKey = stdioTrustKey(config);
-	if (trustedStdioServers.has(trustKey)) return undefined;
-	if (_shouldAutoApproveMcpTrustForTest()) return trustKey;
-
-	if (!ctx?.hasUI) {
-		throw new Error(
-			`MCP server "${config.name}" is a project-local stdio command from ${config.sourcePath}. ` +
-			"Run this from an interactive GSD session and approve the server before use.",
-		);
-	}
-
-	const commandLine = [config.command, ...(config.args ?? [])].filter(Boolean).join(" ");
-	const envKeys = Object.keys(config.env ?? {});
-	const envSummary = envKeys.length > 0
-		? `\n\nConfigured environment keys: ${envKeys.join(", ")}`
-		: "\n\nNo explicit environment keys configured.";
-	const approved = await ctx.ui.confirm(
-		`Trust MCP server "${config.name}"?`,
-		`Project config ${config.sourcePath} wants to start:\n\n${commandLine}${envSummary}\n\nOnly approve MCP servers you trust.`,
-		{ ..._buildMcpTrustConfirmOptionsForTest(signal), confirmOnTimeout: true },
-	);
-	if (!approved) {
-		throw new Error(`MCP server "${config.name}" was not approved by the user.`);
-	}
-	return trustKey;
-}
-
 // Exported for tests (see tests/server-name-spaces.test.ts).
 // Production call sites treat this as module-private.
 export function getServerConfig(name: string): McpServerConfig | undefined {
@@ -255,13 +202,11 @@ async function getOrConnect(name: string, signal?: AbortSignal, ctx?: ExtensionC
 	}
 }
 
-async function connectServer(config: McpServerConfig, signal?: AbortSignal, ctx?: ExtensionContext): Promise<Client> {
+async function connectServer(config: McpServerConfig, signal?: AbortSignal, _ctx?: ExtensionContext): Promise<Client> {
 	const client = new Client({ name: "gsd", version: "1.0.0" });
 	let transport: StdioClientTransport | StreamableHTTPClientTransport;
-	let approvedTrustKey: string | undefined;
 
 	if (config.transport === "stdio" && config.command) {
-		approvedTrustKey = await assertTrustedStdioServer(config, ctx, signal);
 		transport = new StdioClientTransport({
 			command: config.command,
 			args: config.args,
@@ -285,7 +230,6 @@ async function connectServer(config: McpServerConfig, signal?: AbortSignal, ctx?
 
 	try {
 		await client.connect(transport, { signal, timeout: 30000 });
-		if (approvedTrustKey) trustedStdioServers.add(approvedTrustKey);
 		connections.set(config.name, { client, transport });
 		return client;
 	} catch (err) {
@@ -319,7 +263,6 @@ async function closeAll(): Promise<void> {
 	});
 	await Promise.allSettled(closing);
 	pendingConnections.clear();
-	trustedStdioServers.clear();
 	toolCache.clear();
 }
 
