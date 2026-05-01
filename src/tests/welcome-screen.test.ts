@@ -32,7 +32,7 @@ function strip(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, '')
 }
 
-test('renders GSD logo', () => {
+test('renders Hammer logo', () => {
   const out = strip(capture({ version: '1.0.0' }))
   assert.ok(out.includes('██'), 'logo block characters missing')
 })
@@ -40,13 +40,13 @@ test('renders GSD logo', () => {
 test('renders version', () => {
   const out = strip(capture({ version: '2.38.0' }))
   assert.ok(out.includes('v2.38.0'), 'version missing')
-  assert.ok(out.includes('Get Shit Done'), 'brand name missing')
+  assert.ok(out.includes('Hammer'), 'brand name missing')
 })
 
-test('renders GSD project state or fallback hint', (t) => {
+test('renders Hammer project state or fallback hint', (t) => {
   // Model/provider intentionally removed from the welcome screen — they live
   // in the persistent footer. Without .gsd/STATE.md present the welcome
-  // should surface the "No active GSD project" fallback instead.
+  // should surface the "No active Hammer project" fallback instead.
   // chdir into an empty tmp dir so the fallback path is actually exercised
   // regardless of what the repo we're running from has in .gsd/.
   const tmp = mkdtempSync(join(tmpdir(), 'gsd-welcome-fallback-'))
@@ -59,14 +59,14 @@ test('renders GSD project state or fallback hint', (t) => {
 
   const out = strip(capture({ version: '1.0.0', modelName: 'claude-opus-4-6', provider: 'Anthropic' }))
   assert.ok(
-    out.includes('No active GSD project') || /Active\s+M\d+/.test(out),
-    'welcome should show GSD state lines or the no-project fallback',
+    out.includes('No active Hammer project') || /Active\s+M\d+/.test(out),
+    'welcome should show Hammer state lines or the no-project fallback',
   )
 })
 
 test('renders cwd hint', () => {
   const out = strip(capture({ version: '1.0.0' }))
-  assert.ok(out.includes('/gsd to begin'), 'hint line missing')
+  assert.ok(out.includes('/hammer to begin'), 'hint line missing')
 })
 
 test('skips when not a TTY', (t) => {
