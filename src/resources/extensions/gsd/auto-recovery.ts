@@ -221,10 +221,43 @@ function getChangedFilesFromMilestoneTaggedCommits(
   basePath: string,
   milestoneId: string,
 ): { ok: boolean; matched: boolean; files: string[] } {
+  const pathScoped = collectChangedFilesFromMilestoneTaggedCommits(
+    basePath,
+    milestoneId,
+    ["HEAD", "--", `.gsd/milestones/${milestoneId}`],
+    true,
+    "path-scoped",
+  );
+  if (!pathScoped.ok || pathScoped.matched) return pathScoped;
+
+  // In newer Hammer/GSD projects, .gsd may be an untracked/externalized state
+  // directory. A retry that is already on the integration branch then has an
+  // empty branch diff, and path-scoped history cannot see implementation
+  // commits even when they carry explicit milestone trailers. Fall back to all
+  // history, but only accept trailers that name the milestone directly; generic
+  // Sxx/Tyy trailers stay path-scoped to avoid cross-milestone false positives.
+  const explicitMilestoneScoped = collectChangedFilesFromMilestoneTaggedCommits(
+    basePath,
+    milestoneId,
+    ["-n", "500", "HEAD"],
+    false,
+    "explicit-milestone",
+  );
+  if (!explicitMilestoneScoped.ok) return pathScoped;
+  return explicitMilestoneScoped.matched ? explicitMilestoneScoped : pathScoped;
+}
+
+function collectChangedFilesFromMilestoneTaggedCommits(
+  basePath: string,
+  milestoneId: string,
+  revArgs: string[],
+  allowArtifactScopedTaskTrailers: boolean,
+  scanLabel: string,
+): { ok: boolean; matched: boolean; files: string[] } {
   try {
     const logOutput = execFileSync(
       "git",
-      ["log", "--format=%H%x1f%B%x1e", "HEAD", "--", `.gsd/milestones/${milestoneId}`],
+      ["log", "--format=%H%x1f%B%x1e", ...revArgs],
       { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
     );
     const records = logOutput
@@ -245,7 +278,7 @@ function getChangedFilesFromMilestoneTaggedCommits(
       if (!commitMessageHasGsdTrailer(message)) continue;
 
       const commitFiles = getChangedFilesForCommit(basePath, hash);
-      if (!commitMatchesMilestone(message, milestoneId, commitFiles)) continue;
+      if (!commitMatchesMilestone(message, milestoneId, commitFiles, allowArtifactScopedTaskTrailers)) continue;
 
       matched = true;
       for (const file of commitFiles) {
@@ -255,7 +288,7 @@ function getChangedFilesFromMilestoneTaggedCommits(
 
     return { ok: true, matched, files: [...files] };
   } catch (e) {
-    logWarning("recovery", `milestone-tagged commit scan failed: ${(e as Error).message}`);
+    logWarning("recovery", `milestone-tagged commit scan failed (${scanLabel}): ${(e as Error).message}`);
     return { ok: false, matched: false, files: [] };
   }
 }
@@ -273,13 +306,18 @@ function commitMessageHasGsdTrailer(message: string): boolean {
   return /^GSD-(?:Task|Unit):\s*\S+/m.test(message);
 }
 
-function commitMatchesMilestone(message: string, milestoneId: string, files: readonly string[]): boolean {
+function commitMatchesMilestone(
+  message: string,
+  milestoneId: string,
+  files: readonly string[],
+  allowArtifactScopedTaskTrailers = true,
+): boolean {
   if (commitTrailerStartsWithMilestone(message, milestoneId)) return true;
 
   // Meaningful execute-task commits currently store task scope as Sxx/Tyy
   // rather than Mxx/Sxx/Tyy. Bind those commits back to the milestone only
   // when the commit also touched this milestone's artifacts.
-  if (/^GSD-Task:\s*S[^/\s]+\/T\S+/m.test(message)) {
+  if (allowArtifactScopedTaskTrailers && /^GSD-Task:\s*S[^/\s]+\/T\S+/m.test(message)) {
     return files.some((file) => isMilestoneArtifactPath(file, milestoneId));
   }
 

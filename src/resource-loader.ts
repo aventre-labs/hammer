@@ -581,6 +581,18 @@ export function initResources(agentDir: string, skillsDir: string = join(homedir
   syncResourceDir(join(resourcesDir, 'agents'), join(agentDir, 'agents'))
   syncResourceDir(join(resourcesDir, 'skills'), skillsDir)
 
+  // Sync IAM kernel to the position where extension imports resolve.
+  // Extensions are synced to agentDir/extensions/gsd/ and import from
+  // "../../../iam/" — a path that is correct in the dist tree (where the
+  // resources/ level exists: dist/resources/extensions/gsd/ → dist/iam/)
+  // but resolves one level above agentDir in the deployed layout (since
+  // initResources strips the resources/ directory level).
+  // Place IAM at dirname(agentDir)/iam/ so the three-level-up import lands.
+  const iamSrc = join(dirname(resourcesDir), 'iam')
+  if (existsSync(iamSrc)) {
+    syncResourceDir(iamSrc, join(dirname(agentDir), 'iam'))
+  }
+
   // Sync GSD-WORKFLOW.md to agentDir as a fallback for when GSD_WORKFLOW_PATH
   // env var is not set (e.g. fork/dev builds, alternative entry points).
   const workflowSrc = join(resourcesDir, 'GSD-WORKFLOW.md')

@@ -731,6 +731,51 @@ test("hasImplementationArtifacts uses milestone path history instead of rolling 
   }
 });
 
+test("hasImplementationArtifacts finds explicit milestone trailers when .gsd is untracked (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, "src"), { recursive: true });
+    writeFileSync(join(base, "src", "feature.ts"), "export function feature() {}");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: implementation from untracked state dir\n\nGSD-Unit: M001/S01/T01"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "present", "explicit milestone trailers should count even when .gsd artifacts are not in git");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("hasImplementationArtifacts ignores other milestones in explicit trailer fallback (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, "src"), { recursive: true });
+    writeFileSync(join(base, "src", "other.ts"), "export function other() {}");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: other milestone implementation\n\nGSD-Unit: M002/S01/T01"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "absent", "explicit trailer fallback must stay scoped to the requested milestone");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("hasImplementationArtifacts does not use ambiguous S/T trailers without milestone artifacts (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, "src"), { recursive: true });
+    writeFileSync(join(base, "src", "feature.ts"), "export function feature() {}");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: ambiguous task implementation\n\nGSD-Task: S01/T01"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "absent", "ambiguous S/T trailers require milestone artifact path evidence");
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("hasImplementationArtifacts returns true on non-git directory (fail-open)", () => {
   const base = join(tmpdir(), `gsd-test-nogit-${randomUUID()}`);
   mkdirSync(base, { recursive: true });

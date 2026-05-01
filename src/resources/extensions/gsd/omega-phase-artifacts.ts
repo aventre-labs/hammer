@@ -51,7 +51,10 @@ export type OmegaPhaseUnitType =
   | "research-slice"
   | "plan-slice"
   | "refine-slice"
-  | "replan-slice";
+  | "replan-slice"
+  | "discuss-milestone"
+  | "reassess-roadmap"
+  | "validate-milestone";
 
 export type OmegaPhaseManifestStatus = "running" | "complete" | "failed" | "partial";
 
@@ -118,7 +121,17 @@ const OMEGA_PHASE_UNIT_TYPES: readonly OmegaPhaseUnitType[] = [
   "plan-slice",
   "refine-slice",
   "replan-slice",
+  "discuss-milestone",
+  "reassess-roadmap",
+  "validate-milestone",
 ] as const;
+
+const SLICE_SCOPED_UNIT_TYPES: ReadonlySet<OmegaPhaseUnitType> = new Set([
+  "research-slice",
+  "plan-slice",
+  "refine-slice",
+  "replan-slice",
+]);
 
 function defaultAdapters(): OmegaPhasePersistenceAdapters {
   return {
@@ -138,19 +151,20 @@ export function isOmegaPhaseUnitType(value: string): value is OmegaPhaseUnitType
 export function validateOmegaPhaseUnit(unitType: string, unitId: string): IAMResult<OmegaPhaseUnitType> {
   if (!isOmegaPhaseUnitType(unitType)) {
     return failure("persistence-failed", `Unknown Omega phase unit type "${unitType}".`, {
-      remediation: "Use one of research-milestone, plan-milestone, research-slice, plan-slice, refine-slice, or replan-slice.",
+      remediation: `Use one of ${OMEGA_PHASE_UNIT_TYPES.join(", ")}.`,
       persistenceStatus: "not-attempted",
     });
   }
 
   const milestonePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?$/;
   const slicePattern = /^M\d{3}(?:-[A-Za-z0-9]+)?\/S\d{2}(?:-[A-Za-z0-9]+)?$/;
-  const pattern = unitType.endsWith("-milestone") ? milestonePattern : slicePattern;
+  const sliceScoped = SLICE_SCOPED_UNIT_TYPES.has(unitType);
+  const pattern = sliceScoped ? slicePattern : milestonePattern;
   if (!pattern.test(unitId)) {
     return failure("persistence-failed", `Malformed Omega phase unit id "${unitId}" for ${unitType}.`, {
-      remediation: unitType.endsWith("-milestone")
-        ? "Use a milestone unit id such as M001."
-        : "Use a slice unit id such as M001/S01.",
+      remediation: sliceScoped
+        ? "Use a slice unit id such as M001/S01."
+        : "Use a milestone unit id such as M001.",
       persistenceStatus: "not-attempted",
     });
   }

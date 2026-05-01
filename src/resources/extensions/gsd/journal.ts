@@ -60,7 +60,11 @@ export type JournalEventType =
   | "canonical-root-redirect"
   // #4765 — slice-cadence collapse
   | "slice-merged"
-  | "milestone-resquash";
+  | "milestone-resquash"
+  // M002/S01 — phase Omega spiral lifecycle
+  | "phase-spiral-started"
+  | "phase-spiral-completed"
+  | "phase-spiral-failed";
 
 /** A single structured event in the journal. */
 export interface JournalEntry {
