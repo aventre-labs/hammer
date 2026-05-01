@@ -101,7 +101,6 @@ export interface BootstrapDeps {
   registerSigtermHandler: (basePath: string) => void;
   lockBase: () => string;
   buildResolver: () => WorktreeResolver;
-  captureMcpTrustAutoApprove: () => void;
 }
 
 /**
@@ -738,9 +737,6 @@ export async function bootstrapAutoSession(
     // Notify shared phase state so subagent conflict checks can fire
     const { activateGSD: activateGSDPhaseState } = await import("../shared/gsd-phase-state.js");
     activateGSDPhaseState();
-    if (!requestedStepMode) {
-      deps.captureMcpTrustAutoApprove();
-    }
     s.active = true;
     s.stepMode = requestedStepMode;
     s.verbose = verboseMode;

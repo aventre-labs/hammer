@@ -323,30 +323,6 @@ function restoreMilestoneLockEnv(): void {
   s.milestoneLockEnvCaptured = false;
 }
 
-function captureMcpTrustAutoApproveEnv(): void {
-  if (!s.mcpTrustAutoApproveEnvCaptured) {
-    s.hadMcpTrustAutoApproveEnv = Object.prototype.hasOwnProperty.call(process.env, "GSD_MCP_AUTO_APPROVE_TRUST");
-    s.previousMcpTrustAutoApproveEnv = process.env.GSD_MCP_AUTO_APPROVE_TRUST ?? null;
-    s.mcpTrustAutoApproveEnvCaptured = true;
-  }
-
-  process.env.GSD_MCP_AUTO_APPROVE_TRUST = "1";
-}
-
-function restoreMcpTrustAutoApproveEnv(): void {
-  if (!s.mcpTrustAutoApproveEnvCaptured) return;
-
-  if (s.hadMcpTrustAutoApproveEnv && s.previousMcpTrustAutoApproveEnv !== null) {
-    process.env.GSD_MCP_AUTO_APPROVE_TRUST = s.previousMcpTrustAutoApproveEnv;
-  } else {
-    delete process.env.GSD_MCP_AUTO_APPROVE_TRUST;
-  }
-
-  s.previousMcpTrustAutoApproveEnv = null;
-  s.hadMcpTrustAutoApproveEnv = false;
-  s.mcpTrustAutoApproveEnvCaptured = false;
-}
-
 function normalizeSessionFilePath(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -487,10 +463,6 @@ function stopAutoCommandPolling(): void {
 }
 
 export { type AutoDashboardData } from "./auto-dashboard.js";
-
-export function enableMcpTrustAutoApproveForAutoMode(): void {
-  captureMcpTrustAutoApproveEnv();
-}
 
 export function getAutoDashboardData(): AutoDashboardData {
   const ledger = getLedger();
@@ -773,7 +745,6 @@ function handleLostSessionLock(
   stopAutoCommandPolling();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
-  restoreMcpTrustAutoApproveEnv();
   deregisterSigtermHandler();
   const base = lockBase();
   const lockFilePath = base ? join(gsdRoot(base), "auto.lock") : "unknown";
@@ -812,7 +783,6 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   stopAutoCommandPolling();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
-  restoreMcpTrustAutoApproveEnv();
 
   // Clear crash lock and release session lock so the next `/gsd next` does
   // not see a stale lock with the current PID and treat it as a "remote"
@@ -1145,7 +1115,6 @@ export async function stopAuto(
     if (ctx) initHealthWidget(ctx);
     restoreProjectRootEnv();
     restoreMilestoneLockEnv();
-    restoreMcpTrustAutoApproveEnv();
 
     // Drop the active-tool baseline so a subsequent /gsd auto run on the
     // same `pi` instance recaptures from the live tool set rather than
@@ -1247,7 +1216,6 @@ export async function pauseAuto(
   deactivateGSD();
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
-  restoreMcpTrustAutoApproveEnv();
   s.pendingVerificationRetry = null;
   s.verificationRetryCount.clear();
   ctx?.ui.setStatus("gsd-auto", "paused");
@@ -1785,7 +1753,6 @@ export async function startAuto(
     registerSigtermHandler,
     lockBase,
     buildResolver,
-    captureMcpTrustAutoApprove: enableMcpTrustAutoApproveForAutoMode,
   };
 
   const ready = await bootstrapAutoSession(
