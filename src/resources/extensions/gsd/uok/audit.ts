@@ -7,6 +7,10 @@ import { withFileLockSync } from "../file-lock.js";
 import { gsdRoot } from "../paths.js";
 import { isDbAvailable, insertAuditEvent } from "../gsd-db.js";
 import type { AuditEventEnvelope } from "./contracts.js";
+import {
+  AuditFailClosedError,
+  isIAMClassifiedEvent,
+} from "./audit-classification.js";
 
 function auditLogPath(basePath: string): string {
   return join(gsdRoot(basePath), "audit", "events.jsonl");
@@ -39,9 +43,9 @@ export function buildAuditEnvelope(args: {
 export function emitUokAuditEvent(basePath: string, event: AuditEventEnvelope): void {
   // Drop writes from a turn superseded by timeout recovery / cancellation.
   if (isStaleWrite("uok-audit")) return;
+  const path = auditLogPath(basePath);
   try {
     ensureAuditDir(basePath);
-    const path = auditLogPath(basePath);
     // proper-lockfile requires the target file to exist before locking.
     // Touch it via open(O_APPEND|O_CREAT) so the first writer wins the race
     // atomically at the kernel level.
@@ -56,14 +60,40 @@ export function emitUokAuditEvent(basePath: string, event: AuditEventEnvelope): 
       },
       { onLocked: "skip" },
     );
-  } catch {
-    // Best-effort: audit writes must never break orchestration.
+  } catch (err) {
+    // R033 surface 3d (T05): IAM-classified audit events MUST fail closed
+    // with structured remediation so a 3am operator inspecting
+    // .hammer/audit/events.jsonl sees the audit-write failure rather than
+    // a silent gap. Non-IAM events keep best-effort semantics — the
+    // orchestration-safety promise above remains intact for everything
+    // outside the IAM subagent surface.
+    if (isIAMClassifiedEvent(event)) {
+      throw new AuditFailClosedError({
+        failingStage: "audit-write",
+        missingArtifacts: [path],
+        remediation: `Audit log at ${path} is not writable; resolve filesystem permissions / disk space / lock contention before resuming the IAM subagent unit.`,
+        cause: err,
+      });
+    }
+    // Best-effort: non-IAM audit writes must never break orchestration.
   }
 
   if (!isDbAvailable()) return;
   try {
     insertAuditEvent(event);
-  } catch {
+  } catch (err) {
+    // Same fail-closed branch as the file-write path above: IAM-classified
+    // events must surface the DB-projection failure as a distinct
+    // failingStage so forensic readers can tell broken-disk from
+    // broken-DB-target apart.
+    if (isIAMClassifiedEvent(event)) {
+      throw new AuditFailClosedError({
+        failingStage: "audit-projection",
+        missingArtifacts: ["audit_events DB row for eventId=" + event.eventId],
+        remediation: `Audit DB projection failed for IAM-classified event ${event.type}; inspect gsd-db state and re-run insertAuditEvent before resuming the unit.`,
+        cause: err,
+      });
+    }
     // Projection failures are non-fatal while legacy readers are still active.
   }
 }

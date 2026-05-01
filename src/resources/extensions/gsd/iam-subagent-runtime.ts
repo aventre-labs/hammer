@@ -6,6 +6,7 @@ import type {
   IamSubagentAuditStatus,
 } from "./uok/contracts.js";
 import { buildAuditEnvelope, emitUokAuditEvent } from "./uok/audit.js";
+import { isAuditFailClosedError } from "./uok/audit-classification.js";
 import {
   extractIAMSubagentPromptEntries,
   isIAMSubagentTool,
@@ -238,7 +239,16 @@ function emitIamSubagentAuditEvent(
         payload: payload as unknown as Record<string, unknown>,
       }),
     );
-  } catch {
+  } catch (err) {
+    // R033 surface 3d (T05): IAM-classified audit events must propagate
+    // AuditFailClosedError upward to the caller (recordIAMSubagent*) and
+    // ultimately to the dispatcher's existing fail-closed surface in
+    // bootstrap/register-hooks.ts. Any other thrown error preserves today's
+    // best-effort observability semantics — audit emission must never block
+    // subagent execution for non-IAM-classified failures.
+    if (isAuditFailClosedError(err)) {
+      throw err;
+    }
     // Best-effort observability: audit emission must never block subagent execution.
   }
 }
