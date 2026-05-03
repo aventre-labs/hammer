@@ -1,6 +1,10 @@
-# Getting Started with GSD
+# Getting Started with Hammer
 
-GSD is an AI coding agent that handles planning, execution, verification, and shipping so you can focus on what to build. This guide walks you through installation on macOS, Windows, and Linux, then gets you running your first session.
+Hammer is an AI coding agent that handles planning, execution, verification, and shipping so you can focus on what to build. It is a fork of [GSD-2](https://github.com/gsd-build/GSD-2) with a deliberately different posture: **no permission prompts, no confirm-before-edit, no human checkpoints between phases**. The recover-and-resume loop (3-strike cap, `RECOVERY_VERDICT` parsing) is the only structural guardrail. This guide walks you through installation on macOS, Windows, and Linux, then gets you running your first session.
+
+> **Audience.** Hammer is built for experienced operators who want autonomous execution and treat the file system, shell, and git as cheap to fork or revert. If you want a coding agent that pauses before edits, you want a different tool. See [No-Guardrails Posture](#no-guardrails-posture) below before installing.
+
+> **Internal-implementation note.** The CLI binary is still `gsd`, the npm package is still `gsd-pi`, and project state still lives under `.gsd/` (with `.hammer/` for runtime artifacts). Filesystem paths, environment variables (`GSD_*`), and tool names (`gsd_*` / `hammer_*` aliases) are preserved verbatim from the GSD-2 fork point — only user-facing prose, slash commands (formerly `/gsd …`, now `/hammer …`), and the chat handle (formerly `@gsd`, now `@hammer`) are rebranded.
 
 ---
 
@@ -41,7 +45,7 @@ node --version   # should print v22.x or higher
 git --version    # should print 2.20+
 ```
 
-**Step 4 — Install GSD:**
+**Step 4 — Install Hammer:**
 
 ```bash
 npm install -g gsd-pi
@@ -66,7 +70,7 @@ source ~/.zshrc
 
 See [Provider Setup Guide](./providers.md) for all 20+ supported providers.
 
-**Step 6 — Launch GSD:**
+**Step 6 — Launch Hammer:**
 
 ```bash
 cd ~/my-project   # navigate to any project
@@ -113,7 +117,7 @@ node --version   # should print v22.x or higher
 git --version    # should print 2.20+
 ```
 
-**Step 4 — Install GSD:**
+**Step 4 — Install Hammer:**
 
 ```powershell
 npm install -g gsd-pi
@@ -137,7 +141,7 @@ To persist the key permanently, add it via System Settings > Environment Variabl
 
 See [Provider Setup Guide](./providers.md) for all 20+ supported providers.
 
-**Step 6 — Launch GSD:**
+**Step 6 — Launch Hammer:**
 
 ```powershell
 cd C:\Users\you\my-project   # navigate to any project
@@ -217,7 +221,7 @@ node --version   # should print v22.x or higher
 git --version    # should print 2.20+
 ```
 
-**Step 3 — Install GSD:**
+**Step 3 — Install Hammer:**
 
 ```bash
 npm install -g gsd-pi
@@ -242,7 +246,7 @@ source ~/.bashrc
 
 See [Provider Setup Guide](./providers.md) for all 20+ supported providers.
 
-**Step 5 — Launch GSD:**
+**Step 5 — Launch Hammer:**
 
 ```bash
 cd ~/my-project   # navigate to any project
@@ -272,11 +276,11 @@ Inside the session, type `/model` to confirm your LLM is connected.
 
 > **Downloads:** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
-Run GSD in an isolated sandbox without installing Node.js on your host.
+Run Hammer in an isolated sandbox without installing Node.js on your host.
 
 **Step 1 — Install Docker Desktop** (4.58+ required).
 
-**Step 2 — Clone the GSD repo:**
+**Step 2 — Clone the Hammer fork repo:**
 
 ```bash
 git clone https://github.com/gsd-build/gsd-2.git
@@ -290,7 +294,7 @@ docker sandbox create --template . --name gsd-sandbox
 docker sandbox exec -it gsd-sandbox bash
 ```
 
-**Step 4 — Set your API key and run GSD:**
+**Step 4 — Set your API key and run Hammer:**
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -305,7 +309,7 @@ See [Docker Sandbox docs](../../docker/README.md) for full configuration, resour
 
 ### Choose a Model
 
-GSD auto-selects a default model after provider setup. Switch anytime inside a session:
+Hammer auto-selects a default model after provider setup. Switch anytime inside a session:
 
 ```
 /model
@@ -317,9 +321,9 @@ Or configure per-phase models in preferences — see [Configuration](./configura
 
 ## Two Ways to Work
 
-### Step Mode — `/gsd`
+### Step Mode — `/hammer`
 
-Type `/gsd` inside a session. GSD executes one unit of work at a time, pausing between each with a wizard showing what completed and what's next.
+Type `/hammer` inside a session. Hammer executes one unit of work at a time, pausing between each with a wizard showing what completed and what's next.
 
 - **No `.gsd/` directory** — starts a discussion flow to capture your project vision
 - **Milestone exists, no roadmap** — discuss or research the milestone
@@ -328,15 +332,43 @@ Type `/gsd` inside a session. GSD executes one unit of work at a time, pausing b
 
 Step mode keeps you in the loop, reviewing output between each step.
 
-### Auto Mode — `/gsd auto`
+### Auto Mode — `/hammer auto`
 
-Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
+Type `/hammer auto` and walk away. Hammer autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
 
 ```
-/gsd auto
+/hammer auto
 ```
 
 See [Auto Mode](./auto-mode.md) for full details.
+
+---
+
+## No-Guardrails Posture
+
+Hammer is intentionally an **unsafe-mode-by-default** tool for experienced operators. Read this section before running `/hammer auto` against a tree you care about.
+
+**What "no-guardrails" means in practice:**
+
+- **No confirm-before-edit.** File writes happen without a permission prompt.
+- **No shell-command approval gate.** `bash`, `async_bash`, and `bg_shell` invocations execute directly.
+- **No per-phase human checkpoint.** Auto-mode advances from research → plan → execute → complete → reassess without pausing for review unless you explicitly enable `require_slice_discussion: true` in preferences.
+- **No "are you sure?" before destructive operations.** `git reset`, `rm -rf`, and dependency installs run when the agent decides to run them.
+
+**Why this is a deliberate product distinction.** Hammer is a fork of [GSD-2](https://github.com/gsd-build/GSD-2) with the permission-prompt surface deliberately removed. Operators should treat the file system, shell, and git as cheap to fork or revert — that is the cost of being able to walk away during long autonomous milestones. If you want a coding agent that pauses before edits, you want a different tool; "re-introducing permission prompts" is a non-goal for Hammer.
+
+**The only structural guardrail.** The recover-and-resume loop has a **3-strike cap**: if recovery itself fails three times in a row (parsed via the `RECOVERY_VERDICT` trailer and counted in `consecutiveRecoveryFailures` inside `.hammer/auto-MID.lock`), auto-mode pauses and surfaces the structured verdict for human inspection rather than spinning forever. There is no other built-in checkpoint between the operator and a sequence of agent edits.
+
+**IAM fail-closed contract.** Subagent dispatches return through an `IAM_SUBAGENT_CONTRACT` envelope with a marker chokepoint at `iam-subagent-policy.ts`. If a sub-step terminates with malformed or missing markers, the loop refuses to advance — silent advance is structurally impossible. See [Troubleshooting → IAM integration](./troubleshooting.md#iam-integration) for the structured remediation shape.
+
+**Recommended operator setup before running auto-mode:**
+
+1. **Use git isolation.** Hammer defaults to `git.isolation: worktree` so auto-mode commits land in `.gsd/worktrees/<MID>/` on a `milestone/<MID>` branch, not directly on your working branch. Keep this default unless you understand the trade-off.
+2. **Set a `budget_ceiling`.** Cap aggregate USD spend before walking away from a session.
+3. **Run in a sandbox if you do not trust the input.** The Docker sandbox at `docker/` runs Hammer as the `gsd-sandbox` container with limited host filesystem reach.
+4. **Watch the activity stream.** `Ctrl+Alt+G` or `/hammer status` shows the current unit, the recovery cap state, and the IAM verdict trailer of the most recent subagent return.
+
+If any of those four properties are not acceptable to you for the project at hand, do not enable auto-mode on this project.
 
 ---
 
@@ -348,23 +380,23 @@ Run auto mode in one terminal, steer from another.
 
 ```bash
 gsd
-/gsd auto
+/hammer auto
 ```
 
 **Terminal 2 — steer while it works:**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
-/gsd status     # check progress
-/gsd queue      # queue the next milestone
+/hammer discuss    # talk through architecture decisions
+/hammer status     # check progress
+/hammer queue      # queue the next milestone
 ```
 
 Both terminals read and write the same `.gsd/` files. Decisions in terminal 2 are picked up at the next phase boundary automatically.
 
 ---
 
-## How GSD Organizes Work
+## How Hammer Organizes Work
 
 ```
 Milestone  →  a shippable version (4-10 slices)
@@ -396,19 +428,19 @@ All state lives on disk in `.gsd/`:
 
 ## VS Code Extension
 
-GSD is also available as a VS Code extension. Install from the marketplace (publisher: FluxLabs) or search for "GSD" in VS Code extensions:
+Hammer is also available as a VS Code extension. Install from the marketplace (publisher: FluxLabs) or search for "Hammer" in VS Code extensions:
 
-- **`@gsd` chat participant** — talk to the agent in VS Code Chat
-- **Sidebar dashboard** — connection status, model info, token usage
+- **`@hammer` chat participant** — talk to the agent in VS Code Chat
+- **Sidebar dashboard** — connection status, model info, token usage, IAM verdicts, recover-and-resume cap state
 - **Full command palette** — start/stop agent, switch models, export sessions
 
-The CLI (`gsd-pi`) must be installed first — the extension connects to it via RPC.
+The CLI (`gsd-pi`) must be installed first — the extension connects to it via RPC. The npm package, binary name, and VS Code setting prefix (`gsd.*`) remain on the GSD identifier verbatim per the rebrand-window scoping rule.
 
 ---
 
 ## Web Interface
 
-GSD has a browser-based interface for visual project management:
+Hammer has a browser-based interface for visual project management:
 
 ```bash
 gsd --web
@@ -434,9 +466,9 @@ gsd sessions
 
 ---
 
-## Updating GSD
+## Updating Hammer
 
-GSD checks for updates every 24 hours and prompts at startup. You can also update manually:
+Hammer checks for updates every 24 hours and prompts at startup. You can also update manually:
 
 ```bash
 npm update -g gsd-pi
@@ -445,7 +477,7 @@ npm update -g gsd-pi
 Or from within a session:
 
 ```
-/gsd update
+/hammer update
 ```
 
 ---
