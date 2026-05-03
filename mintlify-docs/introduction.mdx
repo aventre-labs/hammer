@@ -1,15 +1,19 @@
 ---
-title: "GSD — Get Shit Done"
-description: "An autonomous coding agent that researches, plans, executes, and commits code while you focus on what matters."
+title: "Hammer — autonomous coding agent"
+description: "An autonomous coding agent (forked from GSD-2) with no human-in-the-loop guardrails, IAM-gated subagent dispatch, recover-and-resume, and Omega-driven phase synthesis."
 ---
 
-GSD is an autonomous coding agent. Describe what you want built, run `/gsd auto`, and walk away. Come back to working software with clean git history.
+<Note>
+**Hammer is a fork of GSD-2.** Same auto-mode loop, different posture: no phase-boundary confirmation prompts, IAM as the only structural guardrail, recover-and-resume after every interruption, and Omega-driven phase synthesis. Internal-implementation surface (CLI binary `gsd`, npm package `gsd-pi`, filesystem paths `.gsd/`, MCP tools `gsd_*`, env vars `GSD_*`) keeps its legacy names — only the product surface (slash commands, chat handle, docs) is rebranded.
+</Note>
 
-## What GSD does
+Hammer is an autonomous coding agent. Describe what you want built, run `/hammer auto`, and walk away. Come back to working software with clean git history.
+
+## What Hammer does
 
 <CardGroup cols={2}>
   <Card title="Autonomous execution" icon="robot">
-    A state machine reads your project state, dispatches work to an LLM in fresh context windows, and advances through research, planning, execution, and verification — all without manual intervention.
+    A state machine reads your project state, dispatches work to an LLM in fresh context windows, and advances through research, planning, execution, and verification — without phase-boundary confirmation prompts.
   </Card>
   <Card title="Clean git history" icon="code-branch">
     Every task produces a conventional commit. Milestones are squash-merged to main. Your `git log` reads like a changelog.
@@ -17,14 +21,14 @@ GSD is an autonomous coding agent. Describe what you want built, run `/gsd auto`
   <Card title="Cost control" icon="gauge">
     Budget ceilings, token profiles, and dynamic model routing keep costs in check. Use Haiku for simple tasks and Opus for architectural work — automatically.
   </Card>
-  <Card title="Crash recovery" icon="rotate">
-    Sessions recover from crashes, provider errors auto-retry, and headless mode auto-restarts with exponential backoff. Designed for overnight unattended execution.
+  <Card title="Recover-and-resume" icon="rotate">
+    Sessions recover from crashes via a recovery Omega manifest. Provider errors auto-retry. Headless mode auto-restarts with exponential backoff. Designed for overnight unattended execution.
   </Card>
 </CardGroup>
 
 ## How it works
 
-GSD organizes work into a hierarchy:
+Hammer organizes work into a hierarchy:
 
 ```
 Milestone  →  a shippable version (4-10 slices)
@@ -42,25 +46,39 @@ Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
                                                     Validate → Complete Milestone
 ```
 
-Every phase gets a fresh context window with pre-loaded context — no accumulated garbage, no degraded quality.
+Every phase gets a fresh context window with pre-loaded context — no accumulated garbage, no degraded quality. Every phase boundary is synthesized through an **Omega manifest**, gated by the **IAM** policy, and persisted so **recover-and-resume** can reconstruct in-flight work after any interruption.
+
+## What's different from GSD-2
+
+| Surface | GSD-2 | Hammer |
+|---------|-------|--------|
+| Phase boundaries | Confirmation prompts | Automatic, Omega-driven |
+| Subagent dispatch | Permissive | IAM fail-closed gate |
+| Crash recovery | Best-effort replay | Recover-and-resume with `RECOVERY_VERDICT` |
+| Question count | Heuristic | Per-round Omega synthesis |
+| Slash commands | `/gsd …` | `/hammer …` (with `/gsd …` legacy alias) |
+| Chat handle (VS Code) | `@gsd` | `@hammer` |
+| MCP tool names | `gsd_*` only | `hammer_*` canonical + `gsd_*` alias |
+| `.gsd/` directory | Yes | Yes (preserved for compatibility) |
+| `gsd-pi` npm package | Yes | Yes (preserved for compatibility) |
 
 ## Two ways to work
 
 <Tabs>
   <Tab title="Step mode">
-    Type `/gsd` inside a session. GSD executes one unit at a time, pausing between each so you can review.
+    Type `/hammer` (or `/gsd`) inside a session. Hammer executes one unit at a time, pausing between each so you can review.
 
     ```bash
     gsd
-    /gsd
+    /hammer
     ```
   </Tab>
   <Tab title="Auto mode">
-    Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, verifies, and commits until the milestone is complete.
+    Type `/hammer auto` and walk away. Hammer autonomously researches, plans, executes, verifies, and commits until the milestone is complete — no phase-boundary prompts.
 
     ```bash
     gsd
-    /gsd auto
+    /hammer auto
     ```
   </Tab>
 </Tabs>
@@ -71,29 +89,29 @@ The recommended workflow: auto mode in one terminal, steering from another.
 
 ```bash
 gsd
-/gsd auto
+/hammer auto
 ```
 
 **Terminal 2 — steer while it works:**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
-/gsd status     # check progress
-/gsd capture    # fire-and-forget thoughts
+/hammer discuss    # talk through architecture decisions
+/hammer status     # check progress
+/hammer capture    # fire-and-forget thoughts
 ```
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Install GSD" icon="download" href="/getting-started">
+  <Card title="Install Hammer" icon="download" href="/getting-started">
     Get up and running in under a minute.
   </Card>
   <Card title="Auto mode deep dive" icon="circle-play" href="/guides/auto-mode">
-    How the autonomous execution engine works.
+    Omega-driven phases, recover-and-resume, IAM-gated dispatch.
   </Card>
   <Card title="Commands reference" icon="terminal" href="/guides/commands">
-    Every command, shortcut, and CLI flag.
+    Every command, shortcut, CLI flag, and MCP tool alias.
   </Card>
   <Card title="Configuration" icon="gear" href="/guides/configuration">
     Models, budgets, timeouts, and preferences.

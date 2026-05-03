@@ -1,122 +1,150 @@
 ---
 title: "Commands reference"
-description: "Every GSD command, keyboard shortcut, and CLI flag."
+description: "Every Hammer command, keyboard shortcut, and CLI flag. Both /hammer and /gsd forms work; this page lists /hammer as canonical."
 ---
+
+<Note>
+**Hammer is a fork of GSD-2.** Slash commands are documented as `/hammer …` (canonical), but every command is also reachable as `/gsd …` (legacy alias). Both forms dispatch to the same handler — pick whichever you have in muscle memory. CLI binaries (`gsd`, `gsd-cli`), the npm package (`gsd-pi`), and filesystem paths (`.gsd/`) keep their legacy names for compatibility.
+</Note>
 
 ## Session commands
 
 | Command | Description |
 |---------|-------------|
-| `/gsd` | Step mode — execute one unit at a time, pause between each |
-| `/gsd next` | Explicit step mode (same as `/gsd`) |
-| `/gsd auto` | Autonomous mode — research, plan, execute, commit, repeat |
-| `/gsd quick` | Execute a quick task with GSD guarantees without full planning overhead |
-| `/gsd stop` | Stop auto mode gracefully |
-| `/gsd pause` | Pause auto mode (preserves state, `/gsd auto` to resume) |
-| `/gsd steer` | Hard-steer plan documents during execution |
-| `/gsd discuss` | Discuss architecture and decisions (works alongside auto mode) |
-| `/gsd rethink` | Conversational project reorganization |
-| `/gsd mcp` | MCP server status and connectivity |
-| `/gsd status` | Progress dashboard |
-| `/gsd widget` | Cycle dashboard widget: full / small / min / off |
-| `/gsd queue` | Queue and reorder future milestones (safe during auto mode) |
-| `/gsd capture` | Fire-and-forget thought capture (works during auto mode) |
-| `/gsd triage` | Manually trigger triage of pending captures |
-| `/gsd debug` | Create and inspect persistent /gsd debug sessions |
-| `/gsd debug list` | List persisted debug sessions |
-| `/gsd debug status <slug>` | Show status for one debug session slug |
-| `/gsd debug continue <slug>` | Resume an existing debug session slug |
-| `/gsd debug --diagnose` | Inspect malformed artifacts and session health (`--diagnose [<slug> | <issue text>]`) |
-| `/gsd dispatch` | Dispatch a specific phase directly |
-| `/gsd history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
-| `/gsd forensics` | Full-access debugger for auto-mode failures |
-| `/gsd cleanup` | Clean up GSD state files and stale worktrees |
-| `/gsd visualize` | Open workflow visualizer |
-| `/gsd export --html` | Generate self-contained HTML report |
-| `/gsd export --html --all` | Generate reports for all milestones |
-| `/gsd update` | Update GSD to the latest version in-session |
-| `/gsd knowledge` | Add persistent project knowledge |
-| `/gsd fast` | Toggle service tier for supported models |
-| `/gsd rate` | Rate last unit's model tier (over/ok/under) |
-| `/gsd changelog` | Show categorized release notes |
-| `/gsd logs` | Browse activity logs, debug logs, and metrics |
-| `/gsd remote` | Control remote auto-mode |
-| `/gsd help` | Categorized command reference |
+| `/hammer` | Step mode — execute one unit at a time, pause between each |
+| `/hammer next` | Explicit step mode (same as `/hammer`) |
+| `/hammer auto` | Autonomous mode — research, plan, execute, commit, repeat (no phase-boundary prompts) |
+| `/hammer quick` | Execute a quick task with Hammer guarantees without full planning overhead |
+| `/hammer stop` | Stop auto mode gracefully |
+| `/hammer pause` | Pause auto mode (preserves state, `/hammer auto` to resume) |
+| `/hammer steer` | Hard-steer plan documents during execution |
+| `/hammer discuss` | Discuss architecture and decisions (works alongside auto mode) |
+| `/hammer rethink` | Conversational project reorganization |
+| `/hammer mcp` | MCP server status and connectivity |
+| `/hammer status` | Progress dashboard |
+| `/hammer widget` | Cycle dashboard widget: full / small / min / off |
+| `/hammer queue` | Queue and reorder future milestones (safe during auto mode) |
+| `/hammer capture` | Fire-and-forget thought capture (works during auto mode) |
+| `/hammer triage` | Manually trigger triage of pending captures |
+| `/hammer debug` | Create and inspect persistent debug sessions |
+| `/hammer debug list` | List persisted debug sessions |
+| `/hammer debug status <slug>` | Show status for one debug session slug |
+| `/hammer debug continue <slug>` | Resume an existing debug session slug |
+| `/hammer debug --diagnose` | Inspect malformed artifacts and session health (`--diagnose [<slug> \| <issue text>]`) |
+| `/hammer dispatch` | Dispatch a specific phase directly |
+| `/hammer history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
+| `/hammer forensics` | Full-access debugger for auto-mode failures (reads recovery Omega manifests) |
+| `/hammer cleanup` | Clean up Hammer state files and stale worktrees |
+| `/hammer visualize` | Open workflow visualizer |
+| `/hammer export --html` | Generate self-contained HTML report |
+| `/hammer export --html --all` | Generate reports for all milestones |
+| `/hammer update` | Update Hammer to the latest version in-session |
+| `/hammer knowledge` | Add persistent project knowledge (durable memory store) |
+| `/hammer fast` | Toggle service tier for supported models |
+| `/hammer rate` | Rate last unit's model tier (over/ok/under) |
+| `/hammer changelog` | Show categorized release notes |
+| `/hammer logs` | Browse activity logs, debug logs, and metrics |
+| `/hammer remote` | Control remote auto-mode |
+| `/hammer escalate resolve <taskId> <choice>` | Resolve a paused mid-execution escalation |
+| `/hammer help` | Categorized command reference |
 
 ## Configuration and diagnostics
 
 | Command | Description |
 |---------|-------------|
-| `/gsd prefs` | Model selection, timeouts, budget ceiling |
-| `/gsd mode` | Switch workflow mode (solo/team) |
-| `/gsd config` | Re-run the provider setup wizard |
-| `/gsd keys` | API key manager — list, add, remove, test, rotate |
-| `/gsd doctor` | Runtime health checks with auto-fix |
-| `/gsd inspect` | Show SQLite DB diagnostics |
-| `/gsd init` | Project init wizard |
-| `/gsd setup` | Global setup status and configuration |
-| `/gsd skill-health` | Skill lifecycle dashboard |
-| `/gsd hooks` | Show configured post-unit and pre-dispatch hooks |
-| `/gsd run-hook` | Manually trigger a specific hook |
-| `/gsd migrate` | Migrate a v1 `.planning` directory to `.gsd` format |
+| `/hammer prefs` | Model selection, timeouts, budget ceiling |
+| `/hammer mode` | Switch workflow mode (solo/team) |
+| `/hammer config` | Re-run the provider setup wizard |
+| `/hammer keys` | API key manager — list, add, remove, test, rotate |
+| `/hammer doctor` | Runtime health checks with auto-fix |
+| `/hammer inspect` | Show SQLite DB diagnostics |
+| `/hammer init` | Project init wizard |
+| `/hammer setup` | Global setup status and configuration |
+| `/hammer skill-health` | Skill lifecycle dashboard |
+| `/hammer hooks` | Show configured post-unit and pre-dispatch hooks |
+| `/hammer run-hook` | Manually trigger a specific hook |
+| `/hammer migrate` | Migrate a v1 `.planning` directory to `.gsd` format |
 
 ## Milestone management
 
 | Command | Description |
 |---------|-------------|
-| `/gsd new-milestone` | Create a new milestone |
-| `/gsd skip` | Prevent a unit from auto-mode dispatch |
-| `/gsd undo` | Revert last completed unit |
-| `/gsd undo-task` | Reset a specific task's completion state |
-| `/gsd reset-slice` | Reset a slice and all its tasks |
-| `/gsd park` | Park a milestone — skip without deleting |
-| `/gsd unpark` | Reactivate a parked milestone |
+| `/hammer new-milestone` | Create a new milestone |
+| `/hammer skip` | Prevent a unit from auto-mode dispatch |
+| `/hammer undo` | Revert last completed unit |
+| `/hammer undo-task` | Reset a specific task's completion state |
+| `/hammer reset-slice` | Reset a slice and all its tasks |
+| `/hammer park` | Park a milestone — skip without deleting |
+| `/hammer unpark` | Reactivate a parked milestone |
 
 ## Parallel orchestration
 
 | Command | Description |
 |---------|-------------|
-| `/gsd parallel start` | Analyze eligibility, confirm, and start workers |
-| `/gsd parallel status` | Show all workers with state, progress, and cost |
-| `/gsd parallel stop [MID]` | Stop all workers or a specific one |
-| `/gsd parallel pause [MID]` | Pause all or a specific worker |
-| `/gsd parallel resume [MID]` | Resume paused workers |
-| `/gsd parallel merge [MID]` | Merge completed milestones to main |
+| `/hammer parallel start` | Analyze eligibility, confirm, and start workers |
+| `/hammer parallel status` | Show all workers with state, progress, and cost |
+| `/hammer parallel stop [MID]` | Stop all workers or a specific one |
+| `/hammer parallel pause [MID]` | Pause all or a specific worker |
+| `/hammer parallel resume [MID]` | Resume paused workers |
+| `/hammer parallel merge [MID]` | Merge completed milestones to main |
 
 ## Workflow templates
 
 | Command | Description |
 |---------|-------------|
-| `/gsd start` | Start a workflow template (bugfix, spike, feature, hotfix, refactor, etc.) |
-| `/gsd start resume` | Resume an in-progress workflow |
-| `/gsd templates` | List available workflow templates |
-| `/gsd templates info <name>` | Show detailed template info |
+| `/hammer start` | Start a workflow template (bugfix, spike, feature, hotfix, refactor, etc.) |
+| `/hammer start resume` | Resume an in-progress workflow |
+| `/hammer templates` | List available workflow templates |
+| `/hammer templates info <name>` | Show detailed template info |
 
 ## Custom workflows
 
 | Command | Description |
 |---------|-------------|
-| `/gsd workflow new` | Create a new workflow definition |
-| `/gsd workflow run <name>` | Create a run and start auto-mode |
-| `/gsd workflow list` | List workflow runs |
-| `/gsd workflow validate <name>` | Validate a workflow definition |
-| `/gsd workflow pause` | Pause custom workflow auto-mode |
-| `/gsd workflow resume` | Resume paused custom workflow auto-mode |
+| `/hammer workflow new` | Create a new workflow definition |
+| `/hammer workflow run <name>` | Create a run and start auto-mode |
+| `/hammer workflow list` | List workflow runs |
+| `/hammer workflow validate <name>` | Validate a workflow definition |
+| `/hammer workflow pause` | Pause custom workflow auto-mode |
+| `/hammer workflow resume` | Resume paused custom workflow auto-mode |
 
 ## Extensions
 
 | Command | Description |
 |---------|-------------|
-| `/gsd extensions list` | List all extensions and their status. User-installed entries show `[user]` plus the install source |
-| `/gsd extensions enable <id>` | Enable a disabled extension |
-| `/gsd extensions disable <id>` | Disable an extension |
-| `/gsd extensions info <id>` | Show extension details |
-| `/gsd extensions install <spec>` | Install a user extension. `<spec>` is an npm package, a git URL, or a local path. Restart GSD to activate. (v2.78) |
-| `/gsd extensions uninstall <id>` | Remove a user-installed extension. Warns if other extensions depend on it. (v2.78) |
-| `/gsd extensions update [id]` | Update a single user-installed npm extension to its latest version, or all of them when `id` is omitted. Git/local installs are skipped — reinstall to update. (v2.78) |
-| `/gsd extensions validate <path>` | Validate an extension package directory against the manifest schema before publishing or installing. (v2.78) |
+| `/hammer extensions list` | List all extensions and their status. User-installed entries show `[user]` plus the install source |
+| `/hammer extensions enable <id>` | Enable a disabled extension |
+| `/hammer extensions disable <id>` | Disable an extension |
+| `/hammer extensions info <id>` | Show extension details |
+| `/hammer extensions install <spec>` | Install a user extension. `<spec>` is an npm package, a git URL, or a local path. Restart Hammer to activate. (v2.78) |
+| `/hammer extensions uninstall <id>` | Remove a user-installed extension. Warns if other extensions depend on it. (v2.78) |
+| `/hammer extensions update [id]` | Update a single user-installed npm extension to its latest version, or all of them when `id` is omitted. Git/local installs are skipped — reinstall to update. (v2.78) |
+| `/hammer extensions validate <path>` | Validate an extension package directory against the manifest schema before publishing or installing. (v2.78) |
 
 Install sources are auto-detected: a `git`/`http(s)` URL or `.git` suffix triggers `git clone`; a path that exists on disk is copied locally; everything else is fetched via `npm pack`. Installed extensions land in `~/.gsd/extensions/<id>/` and the registry records the source so `update` can re-fetch.
+
+## MCP tool aliases
+
+When Hammer is run as an MCP server (or invoked from an external MCP client), every tool is dispatched under both a Hammer-canonical name and a GSD legacy alias. Both names route to the same handler — they are not two implementations.
+
+| Canonical (Hammer) | Legacy alias (GSD) | Purpose |
+|--------------------|--------------------|---------|
+| `hammer_complete_task` | `gsd_complete_task` | Record a completed task |
+| `hammer_complete_slice` | `gsd_complete_slice` | Record a completed slice |
+| `hammer_complete_milestone` | `gsd_complete_milestone` | Seal a milestone |
+| `hammer_validate_milestone` | `gsd_validate_milestone` | Run the validation gate |
+| `hammer_plan_milestone` | `gsd_plan_milestone` | Plan a milestone (DB write + roadmap render) |
+| `hammer_plan_slice` | `gsd_plan_slice` | Plan a slice (DB write + PLAN render) |
+| `hammer_plan_task` | `gsd_plan_task` | Plan a task |
+| `hammer_replan_slice` | `gsd_replan_slice` | Replan a slice with structural enforcement |
+| `hammer_reassess_roadmap` | `gsd_reassess_roadmap` | Reassess the roadmap |
+| `hammer_decision_save` | `gsd_decision_save` | Append a decision to `DECISIONS.md` |
+| `hammer_requirement_save` | `gsd_requirement_save` | Append a requirement to `REQUIREMENTS.md` |
+| `hammer_save_gate_result` | `gsd_save_gate_result` | Save a quality gate verdict |
+| `hammer_journal_query` | `gsd_journal_query` | Query the event journal |
+| `hammer_question_round_spiral` | `gsd_question_round_spiral` | Per-round Omega synthesis for question generation |
+
+The full alias table is documented in `packages/mcp-server/src/server.ts`. New tools are registered under both names by default — there is no version where only one form works.
 
 ## Keyboard shortcuts
 
@@ -149,11 +177,13 @@ In terminals without Kitty keyboard protocol support (macOS Terminal.app, JetBra
 | `gsd --version` (`-v`) | Print version and exit |
 | `gsd sessions` | Interactive session picker |
 | `gsd config` | Set up global API keys |
-| `gsd update` | Update GSD to the latest version |
+| `gsd update` | Update Hammer to the latest version |
+
+The binary names `gsd` and `gsd-cli` are preserved for compatibility with existing scripts, shebangs, and shell integrations.
 
 ## Headless mode
 
-`gsd headless` runs commands without a TUI — designed for CI, cron jobs, and scripted automation.
+`gsd headless` runs commands without a TUI — designed for CI, cron jobs, and scripted automation. Headless auto-mode pairs with Hammer's recover-and-resume layer to keep running across crashes.
 
 ```bash
 gsd headless              # run auto mode
@@ -190,4 +220,4 @@ gsd headless query | jq '.cost.total'        # total spend
 gsd --mode mcp
 ```
 
-Runs GSD as a Model Context Protocol server over stdin/stdout, exposing all tools to external AI clients (Claude Desktop, VS Code Copilot, etc.).
+Runs Hammer as a Model Context Protocol server over stdin/stdout, exposing all tools to external AI clients (Claude Desktop, VS Code Copilot, etc.). Every tool is registered under both `hammer_*` (canonical) and `gsd_*` (legacy alias) — see the [MCP tool aliases](#mcp-tool-aliases) table above.

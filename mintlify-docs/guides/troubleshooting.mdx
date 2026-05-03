@@ -1,14 +1,18 @@
 ---
 title: "Troubleshooting"
-description: "Common issues, /gsd doctor, /gsd forensics, and recovery procedures."
+description: "Common Hammer issues, IAM gate rejections, recover-and-resume failures, /hammer doctor, /hammer forensics, and recovery procedures."
 ---
 
-## `/gsd doctor`
+<Note>
+**Hammer is a fork of GSD-2.** Slash commands are documented as `/hammer …` (canonical); every command is also reachable as `/gsd …` (legacy alias). Internal-implementation surface — `.gsd/` paths, `gsd_*` MCP tool names, the `gsd` binary, the `gsd-pi` npm package, and runtime error strings like `"GSD database is not available"` — keeps its legacy names for compatibility with existing scripts, grep workflows, and external integrations.
+</Note>
+
+## `/hammer doctor`
 
 The built-in diagnostic tool validates `.gsd/` integrity:
 
 ```
-/gsd doctor
+/hammer doctor
 ```
 
 It checks file structure, referential integrity, completion state consistency, git worktree health, and stale lock files.
@@ -19,13 +23,13 @@ It checks file structure, referential integrity, completion state consistency, g
   <Accordion title="Auto mode loops on the same unit">
     **Cause:** Stale cache after a crash, or the LLM didn't produce the expected artifact.
 
-    **Fix:** Run `/gsd doctor` to repair state, then `/gsd auto`.
+    **Fix:** Run `/hammer doctor` to repair state, then `/hammer auto`. The recover-and-resume layer will pick up the unit with a fresh recovery verdict.
   </Accordion>
 
   <Accordion title="Auto mode stops with 'Loop detected'">
     **Cause:** A unit failed to produce its expected artifact twice in a row.
 
-    **Fix:** Check the task plan for clarity. Refine it manually, then `/gsd auto`.
+    **Fix:** Check the task plan for clarity. Refine it manually, then `/hammer auto`. If the loop reproduces, file a blocker with `/hammer forensics` rather than deleting the recovery verdict — see [recover-and-resume failures](#recover-and-resume-failures).
   </Accordion>
 
   <Accordion title="command not found: gsd">
@@ -48,7 +52,7 @@ It checks file structure, referential integrity, completion state consistency, g
     | Server error (500, 502, 503) | Yes | 30s |
     | Auth/billing | No | Manual resume |
 
-    For transient errors, configure fallback models:
+    Transient errors flow through recover-and-resume — the lock file is preserved and the next attempt picks up the same unit. For permanent errors, configure fallback models:
     ```yaml
     models:
       execution:
@@ -59,25 +63,29 @@ It checks file structure, referential integrity, completion state consistency, g
   </Accordion>
 
   <Accordion title="Budget ceiling reached">
-    Increase `budget_ceiling` in preferences, or switch to `budget` token profile. Resume with `/gsd auto`.
+    Increase `budget_ceiling` in preferences, or switch to `budget` token profile. Resume with `/hammer auto`.
   </Accordion>
 
   <Accordion title="Stale lock file">
-    GSD auto-detects stale locks. If automatic recovery fails:
+    Hammer auto-detects stale locks. If automatic recovery fails:
     ```bash
     rm -f .gsd/auto.lock
     rm -rf "$(dirname .gsd)/.gsd.lock"
     ```
+
+    <Note>
+    Manual lock removal **bypasses the recover-and-resume verdict.** Only do this when `/hammer doctor` has confirmed the lock is genuinely stale (no live process holds it). If recovery is rejecting a verdict, file a blocker via `/hammer forensics` instead — see [recover-and-resume failures](#recover-and-resume-failures).
+    </Note>
   </Accordion>
 
   <Accordion title="Git merge conflicts on .gsd/ files">
-    GSD auto-resolves conflicts on `.gsd/` runtime files. For code conflicts, the LLM attempts resolution. If that fails, resolve manually.
+    Hammer auto-resolves conflicts on `.gsd/` runtime files. For code conflicts, the LLM attempts resolution. If that fails, resolve manually.
   </Accordion>
 
   <Accordion title="EBUSY / EPERM / EACCES on Windows">
     **Cause:** Antivirus, indexers, or editors briefly locking files during atomic rename.
 
-    **Fix:** Re-run the operation. Close tools holding files open if the error persists. Run `/gsd doctor` to verify repo health.
+    **Fix:** Re-run the operation. Close tools holding files open if the error persists. Run `/hammer doctor` to verify repo health.
   </Accordion>
 
   <Accordion title="Worktree isolation stopped working after upgrade to v2.45+">
@@ -91,25 +99,103 @@ It checks file structure, referential integrity, completion state consistency, g
   </Accordion>
 
   <Accordion title="Node.js version or git not found at startup">
-    **Cause:** GSD v2.45+ checks for Node.js >= 22 and git availability at startup.
+    **Cause:** Hammer v2.45+ checks for Node.js >= 22 and git availability at startup.
 
     **Fix:** Install Node.js 22+ (24 LTS recommended) and ensure `git` is in your PATH.
   </Accordion>
+
+  <Accordion title='"GSD database is not available"'>
+    **Cause:** This is a runtime error string emitted by the SQLite layer (`packages/mcp-server/src/server.ts`). The string is preserved verbatim from GSD-2 so it remains greppable in operator logs and external integrations — Hammer did **not** rebrand this internal-implementation surface.
+
+    **Fix:** The DB lives at `.gsd/gsd.db`. If the file is missing, corrupt, or locked by another process:
+
+    ```bash
+    /hammer inspect       # SQLite diagnostics
+    /hammer doctor        # rebuild .gsd/ structural integrity
+    ls -la .gsd/gsd.db .gsd/gsd.db-wal .gsd/gsd.db-shm
+    ```
+
+    If the DB is corrupt and a checkpoint cannot recover it, restore from git history (the DB is checkpointed before each commit). Do **not** delete the DB without first capturing the WAL — pending writes will be lost.
+  </Accordion>
 </AccordionGroup>
 
-## `/gsd forensics`
+## IAM gate rejections
+
+The IAM (Identity-Aware Manifest) gate is the only structural guardrail Hammer ships with under the no-guardrails posture. It governs subagent dispatch, recovery verdicts, and quality-gate verdicts. The gate fails closed: missing manifests, stale signatures, or unauthorized capability grants block dispatch entirely.
+
+The policy lives in `iam-subagent-policy.ts`. The relevant contract symbol is `IAM_SUBAGENT_CONTRACT`.
+
+<AccordionGroup>
+  <Accordion title="IAM rejected subagent dispatch — capability not granted">
+    **Cause:** A subagent dispatch attempted to use a capability (file write, network call, MCP tool) that the slice's Omega manifest did not grant.
+
+    **Fix:** Identify which capability was missing in the rejection log. Either:
+    - Update the slice plan so the Omega manifest grants the capability, then re-run `/hammer plan-slice` to regenerate the manifest, OR
+    - Decompose the dispatch into a different subagent that already has the capability granted.
+
+    **Do NOT** edit `iam-subagent-policy.ts` to suppress the check. The IAM gate is the only structural guardrail — bypassing it defeats the no-guardrails posture's safety story.
+  </Accordion>
+
+  <Accordion title="IAM rejected — stale or missing Omega manifest">
+    **Cause:** The Omega manifest for the current phase is missing, signed for a different unit, or has a stale verification verdict. Common after manual file edits, partial recovery, or deleted artifacts.
+
+    **Fix:**
+    ```
+    /hammer doctor
+    /hammer auto
+    ```
+
+    Doctor regenerates the manifest from on-disk plan/roadmap state. Auto-mode replays the recovery verdict and re-runs the Omega synthesis. **Do NOT** delete Omega manifests by hand — recovery treats missing manifests as a fail-closed signal, not a clean slate.
+  </Accordion>
+
+  <Accordion title="IAM rejected — question round count not derived from spiral">
+    **Cause:** A discuss/research phase tried to ask questions without first calling the per-round Omega synthesis tool. Hammer never picks question counts heuristically; the per-round Omega manifest derives the count.
+
+    **Fix:** Re-dispatch the phase. The agent prompt instructs it to call the synthesis tool before each question round; if the rejection persists, the phase prompt has been edited — restore it from git or run `/hammer doctor`.
+  </Accordion>
+</AccordionGroup>
+
+## Recover-and-resume failures
+
+Hammer's recover-and-resume layer reconstructs in-flight units after crashes, provider outages, killed terminals, and `Escape`-to-pause. The recovery verdict (`RECOVERY_VERDICT`) is gated by IAM and written atomically — recovery cannot bypass the policy by suppressing the manifest write.
+
+<AccordionGroup>
+  <Accordion title="RECOVERY_VERDICT: blocker-filed">
+    **Cause:** The recovery Omega manifest determined the in-flight unit cannot be cleanly resumed — partial artifacts conflict with the task plan, the dependency chain is broken, or the previous failure is a plan-invalidating finding.
+
+    **Fix:** Open the blocker file referenced in the verdict (the path is logged: `blockerPath=.gsd/milestones/<MID>/slices/<SID>/BLOCKER.md`). Resolve the blocker by replanning the slice (`/hammer replan-slice`) or reassessing the roadmap (`/hammer reassess-roadmap`). **Do NOT** delete the blocker file to force resume — the IAM gate will reject the next dispatch.
+  </Accordion>
+
+  <Accordion title="Recovery cannot find prior tool calls on disk">
+    **Cause:** A crash happened before any artifact reached disk (e.g. immediate provider 500 on first call). There is nothing to replay.
+
+    **Fix:** Run `/hammer auto`. With no replay state, the recovery verdict will be `restart-current-unit` and a fresh dispatch will run. This is normal — recovery is not a guarantee that work survives, only a guarantee that completed work is not lost.
+  </Accordion>
+
+  <Accordion title="Headless auto-restart exhausted retry budget">
+    **Cause:** `gsd headless auto` crashed more than `--max-restarts` times in a row (default 3) with exponential backoff (5s → 10s → 30s).
+
+    **Fix:** Investigate the underlying crash via `/hammer forensics`. Once root-caused, increase `--max-restarts` only if the cause is genuinely transient (e.g. flaky provider). For deterministic crashes, increasing the retry budget will not help and will burn budget ceiling on repeated failures.
+  </Accordion>
+
+  <Accordion title="Recovery verdict is wrong — I want to skip the unit">
+    **Fix:** Use `/hammer skip <unit>` to mark the unit as skipped. This writes a recovery-aware skip record that the Omega manifest will accept on the next dispatch. **Do NOT** hand-edit `RECOVERY_VERDICT` files or delete `.gsd/auto.lock` to override the verdict — both will fail at the IAM gate or, worse, silently corrupt the audit trail.
+  </Accordion>
+</AccordionGroup>
+
+## `/hammer forensics`
 
 Full-access debugger for post-mortem analysis:
 
 ```
-/gsd forensics [optional problem description]
+/hammer forensics [optional problem description]
 ```
 
-Provides anomaly detection, unit traces, metrics analysis, doctor integration, and LLM-guided investigation.
+Provides anomaly detection, unit traces, metrics analysis, doctor integration, recovery-verdict inspection, and LLM-guided investigation. Forensics is the right entry point for any auto-mode failure that recover-and-resume cannot resolve cleanly.
 
 ## MCP client issues
 
-Use `/gsd mcp` to check MCP server status and connectivity at a glance.
+Use `/hammer mcp` to check MCP server status and connectivity at a glance.
 
 <AccordionGroup>
   <Accordion title="No configured servers">
@@ -117,11 +203,15 @@ Use `/gsd mcp` to check MCP server status and connectivity at a glance.
   </Accordion>
 
   <Accordion title="mcp_discover times out">
-    Run the configured command outside GSD to confirm the server starts. Check backend URLs and dependencies.
+    Run the configured command outside Hammer to confirm the server starts. Check backend URLs and dependencies.
   </Accordion>
 
-  <Accordion title="Local server works manually but not in GSD">
+  <Accordion title="Local server works manually but not in Hammer">
     Use absolute paths. Set required environment variables in the MCP config's `env` block.
+  </Accordion>
+
+  <Accordion title="Tool name not found — hammer_* vs gsd_*">
+    Hammer registers every MCP tool under both `hammer_*` (canonical) and `gsd_*` (legacy alias) — they dispatch to the same handler. If a tool name lookup fails, the tool itself is missing or the MCP server is on an older version. Check `/hammer mcp` and re-run `/hammer doctor`.
   </Accordion>
 </AccordionGroup>
 
@@ -134,7 +224,11 @@ rm .gsd/auto.lock
 rm .gsd/completed-units.json
 ```
 
-Then `/gsd auto` to restart from current disk state.
+Then `/hammer auto` to restart from current disk state.
+
+<Note>
+Manual reset bypasses the recover-and-resume verdict and discards any partial artifacts. Prefer `/hammer doctor` first — it preserves recoverable work.
+</Note>
 
 ### Reset routing history
 
@@ -145,14 +239,14 @@ rm .gsd/routing-history.json
 ### Full state rebuild
 
 ```
-/gsd doctor
+/hammer doctor
 ```
 
 Rebuilds `STATE.md` from plan and roadmap files on disk.
 
 ## Getting help
 
-- **GitHub Issues:** [github.com/gsd-build/GSD-2/issues](https://github.com/gsd-build/gsd-2/issues)
-- **Dashboard:** `Ctrl+Alt+G` or `/gsd status`
-- **Forensics:** `/gsd forensics`
+- **GitHub Issues:** [github.com/gsd-build/GSD-2/issues](https://github.com/gsd-build/gsd-2/issues) (the upstream repo Hammer was forked from; Hammer-specific issues should be filed there until a dedicated tracker exists)
+- **Dashboard:** `Ctrl+Alt+G` or `/hammer status`
+- **Forensics:** `/hammer forensics`
 - **Session logs:** `.gsd/activity/`

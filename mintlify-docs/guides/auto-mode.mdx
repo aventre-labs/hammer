@@ -1,9 +1,13 @@
 ---
 title: "Auto mode"
-description: "GSD's autonomous execution engine — run /gsd auto, walk away, come back to built software with clean git history."
+description: "Hammer's autonomous execution engine — run /hammer auto, walk away, come back to built software with clean git history. No phase-boundary prompts; recover-and-resume after every crash; Omega-driven phase synthesis."
 ---
 
-Auto mode is a **state machine driven by files on disk**. It reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh agent session with pre-loaded context, and lets the LLM execute. When the LLM finishes, auto mode reads disk state again and dispatches the next unit.
+<Note>
+**Hammer is a fork of GSD-2.** This page describes Hammer's auto-mode loop, which removes GSD-2's human-in-the-loop confirmation prompts and adds three Hammer-specific layers: **Omega-driven phase synthesis**, **recover-and-resume after every interruption**, and **IAM-gated subagent dispatch**. Internal-implementation surface (the `.gsd/` directory, `gsd_*` MCP tool names, `GSD_*` env vars, the `gsd` binary, `gsd-pi` npm package) keeps its legacy names for compatibility.
+</Note>
+
+Auto mode is a **state machine driven by files on disk**. It reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh agent session with pre-loaded context, and lets the LLM execute. When the LLM finishes, auto mode reads disk state again and dispatches the next unit — without pausing for confirmation.
 
 ## The loop
 
@@ -19,11 +23,53 @@ Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
 - **Reassess** — checks if the roadmap still makes sense
 - **Validate** — reconciliation gate after all slices; catches gaps before sealing the milestone
 
+Phase transitions are **automatic**. There is no "approve to continue" prompt between Plan and Execute, between task completion and the next dispatch, or between Validate and milestone seal. Steering happens through `/hammer steer`, `/hammer capture`, and `Escape`-to-pause — not through phase-boundary gates.
+
+## Omega-driven phases
+
+Each phase boundary in Hammer is synthesized through an **Omega manifest**: a structured contract that captures inputs, expected artifacts, IAM capability grants, and verification verdicts for that phase. Omega manifests are how Hammer reasons about phase identity without a human in the loop:
+
+| Manifest source | Drives |
+|-----------------|--------|
+| Per-phase Omega synthesis | Question count and content during discuss/research phases |
+| Slice-level Omega manifest | Subagent dispatch authorization for plan and execute phases |
+| Recovery Omega manifest | Recover-and-resume verdicts (`RECOVERY_VERDICT`) after crash |
+| Validation Omega manifest | Milestone-seal preconditions and gap detection |
+
+The `gsd_question_round_spiral` tool (canonical: `hammer_question_round_spiral`) generates per-round question counts during discuss phases — Hammer never picks question counts heuristically. Stale or missing Omega manifests trigger fail-closed rejection at the IAM gate; the phase will not advance until the manifest is regenerated.
+
+Hammer's **10-stage pipeline** — vision → discuss → research → plan → execute → reassess → validate → seal → triage → publish — is itself an Omega-driven phase sequence. Skipping or short-circuiting a stage requires an explicit Omega entry, not an ad-hoc decision.
+
+## Recover-and-resume
+
+Hammer assumes interruptions are normal. Crashes, provider outages, killed terminals, exhausted budget ceilings, and `Escape`-to-pause all flow through the same recovery path:
+
+<Steps>
+  <Step title="Lock-file detection">
+    `.gsd/auto.lock` records the unit currently dispatched. On the next `/hammer auto`, Hammer detects the stale lock and enters recovery instead of re-dispatching blindly.
+  </Step>
+  <Step title="Tool-call replay">
+    Hammer reconstructs the in-flight unit from tool calls that made it to disk — partial summaries, partial commits, and pending Omega manifests. Anything written atomically before the crash is treated as authoritative.
+  </Step>
+  <Step title="Recovery verdict">
+    A recovery Omega manifest synthesizes a `RECOVERY_VERDICT`: one of `resume-current-unit`, `restart-current-unit`, `advance-to-next-unit`, or `blocker-filed`. The verdict is gated by IAM — recovery cannot bypass the policy by suppressing the manifest write.
+  </Step>
+  <Step title="Resume with full context">
+    The next dispatch inlines the recovery verdict, partial artifacts, and the original task plan. The fresh context window starts oriented on what already happened, not from scratch.
+  </Step>
+</Steps>
+
+**Headless auto-restart:** When running `gsd headless auto`, crashes trigger automatic restart with exponential backoff (5s → 10s → 30s cap, default 3 attempts). Combined with recover-and-resume, this enables overnight "run until done" execution across provider outages and machine sleep.
+
+<Note>
+**Do not bypass recover-and-resume.** Deleting `.gsd/auto.lock` to force a clean start, suppressing `RECOVERY_VERDICT` writes, or hand-editing partial summaries to short-circuit replay will corrupt the audit trail. If recovery rejects something, file a blocker (`/hammer forensics`) — don't sidestep the verdict.
+</Note>
+
 ## Key properties
 
 ### Fresh session per unit
 
-Every task, research phase, and planning step gets a clean context window. The dispatch prompt includes everything needed — task plans, prior summaries, dependency context, decisions register — so the LLM starts oriented.
+Every task, research phase, and planning step gets a clean context window. The dispatch prompt includes everything needed — task plans, prior summaries, dependency context, decisions register, recovery verdicts, Omega manifests — so the LLM starts oriented without accumulated drift.
 
 ### Context pre-loading
 
@@ -35,24 +81,20 @@ Every task, research phase, and planning step gets a clean context window. The d
 | Dependency summaries | Cross-slice context |
 | Roadmap excerpt | Overall direction |
 | Decisions register | Architectural context |
+| Omega manifest | Phase contract and IAM grants |
+| Recovery verdict (when applicable) | Resume state after interruption |
 
 The amount of context inlined is controlled by your [token profile](/guides/token-optimization). Budget mode inlines minimal context; quality mode inlines everything.
 
 ### Git isolation
 
-GSD isolates milestone work using one of three modes (configured via `git.isolation` in preferences):
+Hammer isolates milestone work using one of three modes (configured via `git.isolation` in preferences):
 
 - **`none`** (default) — work happens on your current branch. No isolation overhead.
 - **`worktree`** — each milestone runs in its own git worktree. Squash-merged to main on completion.
 - **`branch`** — work happens on a `milestone/<MID>` branch in the project root. Useful for submodule-heavy repos.
 
 See [git strategy](/guides/git-strategy) for details.
-
-### Crash recovery
-
-A lock file tracks the current unit. If the session dies, the next `/gsd auto` synthesizes a recovery briefing from tool calls that made it to disk and resumes with full context.
-
-**Headless auto-restart:** When running `gsd headless auto`, crashes trigger automatic restart with exponential backoff (5s → 10s → 30s cap, default 3 attempts). Combined with crash recovery, this enables overnight "run until done" execution.
 
 ### Provider error recovery
 
@@ -62,9 +104,11 @@ A lock file tracks the current unit. If the session dies, the next `/gsd auto` s
 | Server error | 500, 502, 503, "overloaded" | Auto-resume after 30s |
 | Permanent | "unauthorized", "invalid key" | Pause indefinitely (requires manual resume) |
 
+All transient errors flow through the recover-and-resume path: the lock file is preserved, the next attempt picks up the same unit with full context.
+
 ### Stuck detection
 
-A sliding-window analysis detects stuck loops — catching cycles like A→B→A→B as well as single-unit repeats. On detection, GSD retries once with a diagnostic prompt. If it fails again, auto mode stops with the exact file it expected.
+A sliding-window analysis detects stuck loops — catching cycles like A→B→A→B as well as single-unit repeats. On detection, Hammer retries once with a diagnostic prompt. If it fails again, auto mode pauses with the exact file it expected and a recovery Omega manifest describing what was attempted.
 
 ### Timeout supervision
 
@@ -83,9 +127,11 @@ auto_supervisor:
   hard_timeout_minutes: 30
 ```
 
+Hard-timeout pauses also flow through recover-and-resume: the next `/hammer auto` reads the timeout verdict and decides whether to resume, restart, or escalate.
+
 ### Incremental memory
 
-GSD maintains a `KNOWLEDGE.md` file — an append-only register of project-specific rules, patterns, and lessons learned. The agent reads it at the start of every unit and appends when discovering recurring issues or non-obvious patterns.
+Hammer maintains a `KNOWLEDGE.md` file — an append-only register of project-specific rules, patterns, and lessons learned. The agent reads it at the start of every unit and appends when discovering recurring issues or non-obvious patterns. Cross-session knowledge is also captured into the durable memory store via `capture_thought` (single source of truth — see [knowledge governance](/guides/configuration)).
 
 ### Verification enforcement
 
@@ -97,21 +143,21 @@ verification_auto_fix: true
 verification_max_retries: 2
 ```
 
-Failures trigger auto-fix retries — the agent sees the output and attempts to fix issues before advancing.
+Failures trigger auto-fix retries — the agent sees the output and attempts to fix issues before advancing. Verification verdicts are written to the slice's Omega manifest so a downstream phase cannot silently advance past a failed gate.
 
 ### HTML reports
 
-After milestone completion, GSD auto-generates a self-contained HTML report with progress tree, dependency graph, cost/token metrics, execution timeline, and changelog.
+After milestone completion, Hammer auto-generates a self-contained HTML report with progress tree, dependency graph, cost/token metrics, execution timeline, and changelog.
 
 ```yaml
 auto_report: true    # enabled by default
 ```
 
-Generate manually with `/gsd export --html`, or for all milestones with `/gsd export --html --all`.
+Generate manually with `/hammer export --html`, or for all milestones with `/hammer export --html --all`.
 
 ### Reactive task execution
 
-When `reactive_execution: true` is set, GSD derives a dependency graph from IO annotations in task plans. Tasks that don't conflict are dispatched in parallel via subagents.
+When `reactive_execution: true` is set, Hammer derives a dependency graph from IO annotations in task plans. Tasks that don't conflict are dispatched in parallel via subagents — each subagent dispatch is gated by the IAM policy, so capabilities cannot be elevated by reactive parallelism.
 
 ```yaml
 reactive_execution: true    # disabled by default
@@ -122,21 +168,21 @@ reactive_execution: true    # disabled by default
 <Steps>
   <Step title="Start">
     ```
-    /gsd auto
+    /hammer auto
     ```
   </Step>
   <Step title="Pause">
-    Press **Escape**. The conversation is preserved. You can interact with the agent, inspect state, or resume.
+    Press **Escape**. The conversation is preserved and a recovery Omega manifest is written. You can interact with the agent, inspect state, or resume.
   </Step>
   <Step title="Resume">
     ```
-    /gsd auto
+    /hammer auto
     ```
-    Auto mode reads disk state and picks up where it left off.
+    Auto mode reads disk state, replays the recovery verdict, and picks up where it left off.
   </Step>
   <Step title="Stop">
     ```
-    /gsd stop
+    /hammer stop
     ```
     Stops auto mode gracefully. Can be run from a different terminal.
   </Step>
@@ -145,32 +191,33 @@ reactive_execution: true    # disabled by default
 ### Steer during execution
 
 ```
-/gsd steer
+/hammer steer
 ```
 
-Hard-steer plan documents without stopping the pipeline. Changes are picked up at the next phase boundary.
+Hard-steer plan documents without stopping the pipeline. Changes are picked up at the next phase boundary. Steering does **not** require pausing — auto mode reads the steered plan from disk on the next dispatch.
 
 ### Capture thoughts
 
 ```
-/gsd capture "add rate limiting to API endpoints"
+/hammer capture "add rate limiting to API endpoints"
 ```
 
 Fire-and-forget thought capture. Triaged automatically between tasks. See [captures and triage](/guides/captures-triage).
 
 ## Dashboard
 
-`Ctrl+Alt+G` or `/gsd status` shows real-time progress:
+`Ctrl+Alt+G` or `/hammer status` shows real-time progress:
 
 - Current milestone, slice, and task
 - Auto mode elapsed time and phase
 - Per-unit cost and token breakdown
 - Cost projections
 - Pending capture count
+- Latest recovery verdict (if applicable)
 
 ## Phase skipping
 
-Token profiles can skip phases to reduce cost:
+Token profiles can skip phases to reduce cost. Skipped phases still produce an Omega manifest entry (recording that the skip was intentional) so downstream phases can audit the decision:
 
 | Phase | `budget` | `balanced` | `quality` |
 |-------|----------|------------|-----------|

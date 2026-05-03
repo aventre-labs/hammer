@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "GSD",
+  "name": "Hammer",
   "logo": {
     "light": "/images/logo.svg",
     "dark": "/images/logo.svg",
@@ -98,6 +98,6 @@
     ]
   },
   "search": {
-    "prompt": "Search GSD docs..."
+    "prompt": "Search Hammer docs..."
   }
 }

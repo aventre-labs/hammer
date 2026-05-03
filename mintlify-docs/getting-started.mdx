@@ -1,7 +1,11 @@
 ---
 title: "Getting started"
-description: "Install GSD, configure your LLM provider, and run your first autonomous session."
+description: "Install Hammer, configure your LLM provider, and run your first autonomous session."
 ---
+
+<Note>
+**Hammer is a fork of GSD-2** with a different posture: no human-in-the-loop guardrails, IAM-gated subagent dispatch, recover-and-resume after every interruption, and Omega-driven phase synthesis. The CLI binary, npm package (`gsd-pi`), filesystem paths (`.gsd/`, `~/.gsd/agent/`), env vars (`GSD_*`), and SQLite tool names (`gsd_*`) keep their legacy names so existing scripts and integrations keep working. The product surface — slash commands, chat handle, docs — is Hammer.
+</Note>
 
 ## Install
 
@@ -15,7 +19,7 @@ Requires Node.js 22+ and Git.
 **`command not found: gsd`?** Your shell may not have npm's global bin directory in `$PATH`. Run `npm prefix -g` to find it, then add `$(npm prefix -g)/bin` to your PATH. See [troubleshooting](/guides/troubleshooting) for details.
 </Note>
 
-GSD checks for updates every 24 hours. Update in-session with `/gsd update`.
+Hammer checks for updates every 24 hours. Update in-session with `/hammer update` (legacy alias `/gsd update` also works).
 
 ## First launch
 
@@ -36,19 +40,19 @@ gsd config
 
 ### Set up API keys
 
-For non-Anthropic models, you may need a search API key. Run `/gsd config` to set keys globally — they're saved to `~/.gsd/agent/auth.json` and apply to all projects.
+For non-Anthropic models, you may need a search API key. Run `/hammer config` to set keys globally — they're saved to `~/.gsd/agent/auth.json` and apply to all projects.
 
 ### Set up MCP servers
 
-To connect GSD to local or external MCP servers, add project-local config in `.mcp.json` or `.gsd/mcp.json`. See [configuration](/guides/configuration) for examples. Use `/gsd mcp` to verify connectivity.
+To connect Hammer to local or external MCP servers, add project-local config in `.mcp.json` or `.gsd/mcp.json`. See [configuration](/guides/configuration) for examples. Use `/hammer mcp` to verify connectivity.
 
 ### Offline mode
 
-GSD works fully offline with local models (Ollama, vLLM, LM Studio). Configure a [custom model](/guides/custom-models) and GSD handles the rest — no internet connection required.
+Hammer works fully offline with local models (Ollama, vLLM, LM Studio). Configure a [custom model](/guides/custom-models) and Hammer handles the rest — no internet connection required.
 
 ## Choose a model
 
-GSD auto-selects a default model after login. Switch anytime:
+Hammer auto-selects a default model after login. Switch anytime:
 
 ```
 /model
@@ -56,11 +60,27 @@ GSD auto-selects a default model after login. Switch anytime:
 
 Or configure per-phase models in [preferences](/guides/configuration).
 
+## The no-guardrails posture
+
+Hammer drops the human-in-the-loop confirmation prompts that GSD-2 used between phases. The product is designed to **execute the plan it just produced** — phase boundaries, verification gates, and roadmap reassessments run without pausing for approval.
+
+The trade-off is real and deliberate:
+
+- **Faster end-to-end runs.** Auto mode advances at machine speed across research, planning, execution, validation, and milestone completion.
+- **The IAM gate is the only structural guardrail.** Subagent dispatch, recovery decisions, and quality-gate verdicts pass through the IAM (Identity-Aware Manifest) check. The IAM gate fails closed: missing manifests, stale signatures, or unauthorized capability grants block dispatch entirely.
+- **You are responsible for steering, not gating.** Use `/hammer steer`, `/hammer capture`, or pause with `Escape` to redirect work. There is no "are you sure?" prompt before a slice ships.
+
+If you want pause-points between phases, run step mode (`/hammer`) instead of auto mode (`/hammer auto`). Step mode preserves the unit-by-unit confirmation flow.
+
+<Note>
+**Do not bypass the IAM gate.** Editing `iam-subagent-policy.ts` to suppress checks, deleting Omega manifests to skip verification, or short-circuiting `RECOVERY_VERDICT` writes will defeat the only structural guardrail Hammer ships with. If a gate rejects something, fix the cause — don't disable the check.
+</Note>
+
 ## Two ways to work
 
 <Tabs>
   <Tab title="Step mode">
-    Type `/gsd` inside a session. GSD executes one unit at a time, pausing between each with a wizard showing what completed and what's next.
+    Type `/hammer` (or `/gsd`) inside a session. Hammer executes one unit at a time, pausing between each with a wizard showing what completed and what's next.
 
     - **No `.gsd/` directory** → starts a discussion to capture your project vision
     - **Milestone exists, no roadmap** → discuss or research the milestone
@@ -68,13 +88,13 @@ Or configure per-phase models in [preferences](/guides/configuration).
     - **Mid-task** → resume where you left off
   </Tab>
   <Tab title="Auto mode">
-    Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
+    Type `/hammer auto` and walk away. Hammer autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete — no phase-boundary prompts.
 
     ```
-    /gsd auto
+    /hammer auto
     ```
 
-    See [auto mode](/guides/auto-mode) for the full details.
+    See [auto mode](/guides/auto-mode) for the full details, including recover-and-resume and Omega-driven phase synthesis.
   </Tab>
 </Tabs>
 
@@ -86,23 +106,23 @@ The recommended workflow: auto mode in one terminal, steering from another.
 
 ```bash
 gsd
-/gsd auto
+/hammer auto
 ```
 
 **Terminal 2 — steer while it works:**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
-/gsd status     # check progress
-/gsd queue      # queue the next milestone
+/hammer discuss    # talk through architecture decisions
+/hammer status     # check progress
+/hammer queue      # queue the next milestone
 ```
 
 Both terminals read and write the same `.gsd/` files. Decisions in terminal 2 are picked up at the next phase boundary automatically.
 
 ## Project structure
 
-GSD organizes work into a hierarchy:
+Hammer organizes work into a hierarchy:
 
 ```
 Milestone  →  a shippable version (4-10 slices)
@@ -110,7 +130,7 @@ Milestone  →  a shippable version (4-10 slices)
     Task   →  one context-window-sized unit of work
 ```
 
-All state lives on disk in `.gsd/`:
+All state lives on disk in `.gsd/` (the directory name is preserved from GSD-2 for compatibility):
 
 <Accordion title="Directory structure">
 ```
@@ -142,7 +162,9 @@ All state lives on disk in `.gsd/`:
 gsd --continue    # or gsd -c
 ```
 
-Resumes the most recent session. To pick from all saved sessions:
+Resumes the most recent session. Hammer's recover-and-resume layer also rebuilds context from disk after crashes — see [auto mode](/guides/auto-mode) for the full recovery flow.
+
+To pick from all saved sessions:
 
 ```bash
 gsd sessions
@@ -150,13 +172,13 @@ gsd sessions
 
 ## VS Code extension
 
-GSD is also available as a VS Code extension (publisher: FluxLabs). It provides:
+Hammer is also available as a VS Code extension (publisher: FluxLabs). It provides:
 
-- **`@gsd` chat participant** — talk to the agent in VS Code Chat
+- **`@hammer` chat participant** — talk to the agent in VS Code Chat (formerly `@gsd`)
 - **Sidebar dashboard** — connection status, model info, token usage, quick actions
 - **Full command palette** — start/stop agent, switch models, export sessions
 
-The CLI (`gsd-pi`) must be installed first — the extension connects to it via RPC.
+The CLI (`gsd-pi`) must be installed first — the extension connects to it via RPC. The VS Code command namespace remains `gsd.*` (e.g. `gsd.cycleThinking`) for compatibility with existing keybindings.
 
 ## Web interface
 
@@ -168,7 +190,7 @@ A browser-based dashboard with real-time progress and multi-project support. See
 
 ## Troubleshooting
 
-### `gsd` runs `git svn dcommit` instead of GSD
+### `gsd` runs `git svn dcommit` instead of Hammer
 
 The [oh-my-zsh git plugin](https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/git) defines `alias gsd='git svn dcommit'`.
 
