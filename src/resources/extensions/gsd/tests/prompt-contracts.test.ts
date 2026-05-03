@@ -74,7 +74,8 @@ test("discuss prompt allows implementation questions when they materially matter
   const prompt = readPrompt("discuss");
   assert.match(prompt, /Lead with experience, but ask implementation when it materially matters/i);
   assert.match(prompt, /Never fabricate, simulate, or role-play user responses/i);
-  assert.match(prompt, /Ask one question round \(1-3 questions\) per turn, then stop and wait for the user's actual response/i);
+  assert.match(prompt, /Ask one question round per turn .* then stop and wait for the user's actual response/i);
+  assert.match(prompt, /gsd_question_round_spiral/);
   assert.match(prompt, /one gate, not two/i);
   assert.doesNotMatch(prompt, /Questions must be about the experience, not the implementation/i);
 });
