@@ -1,5 +1,8 @@
 # Headless & CI Mode
 
+> **Fork bridge.** Hammer is a fork of GSD-2. This page describes a surface preserved verbatim from GSD-2 — references to "GSD" in the prose below describe the same Hammer behavior. Slash commands shown as `/gsd …` are also reachable as `/hammer …` (both dispatch to the same handler). See the **Omega-Driven Phases, IAM, and No-Guardrails Posture** chapter for what Hammer adds on top.
+
+
 `gsd headless` runs GSD commands without a terminal UI — designed for CI pipelines, cron jobs, and scripted automation.
 
 ## Basic Usage

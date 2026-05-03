@@ -1,109 +1,113 @@
 # Commands
 
+> **Fork bridge.** Hammer is a fork of GSD-2. The slash command surface is **dual** — every command listed below as `/hammer …` is also available as `/gsd …` and dispatches to the same handler. The `/gsd` form is preserved verbatim so existing scripts, runbooks, and muscle memory keep working. New material in this book uses `/hammer` as the canonical form. The `gsd_*` MCP tool prefixes are also preserved as canonical (each is also exposed under a `hammer_*` alias for the same handler).
+
 ## Session Commands
 
 | Command | Description |
 |---------|-------------|
-| `/gsd` | Step mode — execute one unit at a time |
-| `/gsd auto` | Autonomous mode — research, plan, execute, commit, repeat |
-| `/gsd quick` | Quick task with GSD guarantees but no full planning |
-| `/gsd stop` | Stop auto mode gracefully |
-| `/gsd pause` | Pause auto mode (preserves state) |
-| `/gsd steer` | Modify plan documents during execution |
-| `/gsd discuss` | Discuss architecture and decisions |
-| `/gsd status` | Progress dashboard |
-| `/gsd widget` | Cycle dashboard widget: full / small / min / off |
-| `/gsd queue` | Queue and reorder future milestones |
-| `/gsd capture` | Fire-and-forget thought capture |
-| `/gsd triage` | Manually trigger capture triage |
-| `/gsd debug` | Create and inspect persistent /gsd debug sessions |
-| `/gsd debug list` | List persisted debug sessions |
-| `/gsd debug status <slug>` | Show status for one debug session slug |
-| `/gsd debug continue <slug>` | Resume an existing debug session slug |
-| `/gsd debug --diagnose` | Inspect malformed artifacts and session health (`--diagnose [<slug> | <issue text>]`) |
-| `/gsd dispatch` | Dispatch a specific phase directly |
-| `/gsd history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
-| `/gsd forensics` | Full debugger for auto-mode failures (includes worktree lifecycle telemetry) |
-| `/gsd cleanup` | Clean up state files and stale worktrees |
-| `/gsd visualize` | Open workflow visualizer |
-| `/gsd export --html` | Generate HTML report for current milestone |
-| `/gsd export --html --all` | Generate reports for all milestones |
-| `/gsd update` | Update GSD to the latest version |
-| `/gsd knowledge` | Add persistent project knowledge |
-| `/gsd fast` | Toggle service tier for supported models |
-| `/gsd rate` | Rate last unit's model tier (over/ok/under) |
-| `/gsd changelog` | Show release notes |
-| `/gsd logs` | Browse activity and debug logs |
-| `/gsd remote` | Control remote auto-mode |
-| `/gsd help` | Show all available commands |
+| `/hammer` | Step mode — execute one unit at a time |
+| `/hammer auto` | Autonomous mode — research, plan, execute, commit, repeat |
+| `/hammer quick` | Quick task with Hammer guarantees but no full planning |
+| `/hammer stop` | Stop auto mode gracefully |
+| `/hammer pause` | Pause auto mode (preserves state) |
+| `/hammer steer` | Modify plan documents during execution |
+| `/hammer discuss` | Discuss architecture and decisions |
+| `/hammer status` | Progress dashboard |
+| `/hammer widget` | Cycle dashboard widget: full / small / min / off |
+| `/hammer queue` | Queue and reorder future milestones |
+| `/hammer capture` | Fire-and-forget thought capture |
+| `/hammer triage` | Manually trigger capture triage |
+| `/hammer debug` | Create and inspect persistent `/hammer debug` sessions |
+| `/hammer debug list` | List persisted debug sessions |
+| `/hammer debug status <slug>` | Show status for one debug session slug |
+| `/hammer debug continue <slug>` | Resume an existing debug session slug |
+| `/hammer debug --diagnose` | Inspect malformed artifacts and session health (`--diagnose [<slug> | <issue text>]`) |
+| `/hammer dispatch` | Dispatch a specific phase directly |
+| `/hammer history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
+| `/hammer forensics` | Full debugger for auto-mode failures (includes worktree lifecycle telemetry) |
+| `/hammer cleanup` | Clean up state files and stale worktrees |
+| `/hammer visualize` | Open workflow visualizer |
+| `/hammer export --html` | Generate HTML report for current milestone |
+| `/hammer export --html --all` | Generate reports for all milestones |
+| `/hammer update` | Update Hammer to the latest version |
+| `/hammer knowledge` | Add persistent project knowledge |
+| `/hammer fast` | Toggle service tier for supported models |
+| `/hammer rate` | Rate last unit's model tier (over/ok/under) |
+| `/hammer changelog` | Show release notes |
+| `/hammer logs` | Browse activity and debug logs |
+| `/hammer remote` | Control remote auto-mode |
+| `/hammer help` | Show all available commands |
+
+> Every entry above is also reachable as `/gsd …` (e.g. `/gsd auto`, `/gsd status`).
 
 ## Configuration & Diagnostics
 
 | Command | Description |
 |---------|-------------|
-| `/gsd prefs` | Preferences wizard |
-| `/gsd mode` | Switch workflow mode (solo/team) |
-| `/gsd config` | Re-run provider setup wizard |
-| `/gsd keys` | API key manager |
-| `/gsd doctor` | Runtime health checks with auto-fix |
-| `/gsd inspect` | Show database diagnostics |
-| `/gsd init` | Project init wizard |
-| `/gsd setup` | Global setup status |
-| `/gsd skill-health` | Skill lifecycle dashboard |
-| `/gsd hooks` | Show configured hooks |
-| `/gsd migrate` | Migrate v1 `.planning` to `.gsd` format |
+| `/hammer prefs` | Preferences wizard |
+| `/hammer mode` | Switch workflow mode (solo/team) |
+| `/hammer config` | Re-run provider setup wizard |
+| `/hammer keys` | API key manager |
+| `/hammer doctor` | Runtime health checks with auto-fix |
+| `/hammer inspect` | Show database diagnostics |
+| `/hammer init` | Project init wizard |
+| `/hammer setup` | Global setup status |
+| `/hammer skill-health` | Skill lifecycle dashboard |
+| `/hammer hooks` | Show configured hooks |
+| `/hammer migrate` | Migrate v1 `.planning` to `.gsd` format |
 
 ## Milestone Management
 
 | Command | Description |
 |---------|-------------|
-| `/gsd new-milestone` | Create a new milestone |
-| `/gsd skip` | Prevent a unit from auto-mode dispatch |
-| `/gsd undo` | Revert last completed unit |
-| `/gsd undo-task` | Reset a specific task's completion state |
-| `/gsd reset-slice` | Reset a slice and all its tasks |
-| `/gsd park` | Park a milestone (skip without deleting) |
-| `/gsd unpark` | Reactivate a parked milestone |
+| `/hammer new-milestone` | Create a new milestone |
+| `/hammer skip` | Prevent a unit from auto-mode dispatch |
+| `/hammer undo` | Revert last completed unit |
+| `/hammer undo-task` | Reset a specific task's completion state |
+| `/hammer reset-slice` | Reset a slice and all its tasks |
+| `/hammer park` | Park a milestone (skip without deleting) |
+| `/hammer unpark` | Reactivate a parked milestone |
 
 ## Parallel Orchestration
 
 | Command | Description |
 |---------|-------------|
-| `/gsd parallel start` | Analyze and start parallel workers |
-| `/gsd parallel status` | Show worker state and progress |
-| `/gsd parallel stop [MID]` | Stop workers |
-| `/gsd parallel pause [MID]` | Pause workers |
-| `/gsd parallel resume [MID]` | Resume workers |
-| `/gsd parallel merge [MID]` | Merge completed milestones |
+| `/hammer parallel start` | Analyze and start parallel workers |
+| `/hammer parallel status` | Show worker state and progress |
+| `/hammer parallel stop [MID]` | Stop workers |
+| `/hammer parallel pause [MID]` | Pause workers |
+| `/hammer parallel resume [MID]` | Resume workers |
+| `/hammer parallel merge [MID]` | Merge completed milestones |
 
 ## Workflow Templates
 
 | Command | Description |
 |---------|-------------|
-| `/gsd start` | Start a workflow template |
-| `/gsd start resume` | Resume an in-progress workflow |
-| `/gsd templates` | List available templates |
-| `/gsd templates info <name>` | Show template details |
+| `/hammer start` | Start a workflow template |
+| `/hammer start resume` | Resume an in-progress workflow |
+| `/hammer templates` | List available templates |
+| `/hammer templates info <name>` | Show template details |
 
 ## Custom Workflows
 
 | Command | Description |
 |---------|-------------|
-| `/gsd workflow new` | Create a workflow definition |
-| `/gsd workflow run <name>` | Start a workflow run |
-| `/gsd workflow list` | List workflow runs |
-| `/gsd workflow validate <name>` | Validate a workflow YAML |
-| `/gsd workflow pause` | Pause workflow auto-mode |
-| `/gsd workflow resume` | Resume paused workflow |
+| `/hammer workflow new` | Create a workflow definition |
+| `/hammer workflow run <name>` | Start a workflow run |
+| `/hammer workflow list` | List workflow runs |
+| `/hammer workflow validate <name>` | Validate a workflow YAML |
+| `/hammer workflow pause` | Pause workflow auto-mode |
+| `/hammer workflow resume` | Resume paused workflow |
 
 ## Extensions
 
 | Command | Description |
 |---------|-------------|
-| `/gsd extensions list` | List all extensions |
-| `/gsd extensions enable <id>` | Enable an extension |
-| `/gsd extensions disable <id>` | Disable an extension |
-| `/gsd extensions info <id>` | Show extension details |
+| `/hammer extensions list` | List all extensions |
+| `/hammer extensions enable <id>` | Enable an extension |
+| `/hammer extensions disable <id>` | Disable an extension |
+| `/hammer extensions info <id>` | Show extension details |
 
 ## GitHub Sync
 
@@ -127,7 +131,18 @@
 ## In-Session Update
 
 ```
-/gsd update
+/hammer update
 ```
 
-Checks npm for a newer version and installs it without leaving the session.
+Checks npm for a newer version of the `gsd-pi` package (the npm name is preserved verbatim from GSD-2 — see the fork bridge note above) and installs it without leaving the session.
+
+## MCP Tool Aliases
+
+The MCP server exposes every workflow tool under both prefixes — `gsd_*` (canonical, preserved from GSD-2) and `hammer_*` (alias). Both names dispatch to the same handler. Examples:
+
+| Canonical | Alias | Purpose |
+|-----------|-------|---------|
+| `gsd_complete_task` | `hammer_complete_task` | Mark a task complete and render its summary |
+| `gsd_plan_slice` | `hammer_plan_slice` | Plan a slice |
+| `gsd_canonical_spiral` | `hammer_canonical_spiral` | Run the 10-stage Omega Protocol |
+| `gsd_journal_query` | `hammer_journal_query` | Query the event journal |

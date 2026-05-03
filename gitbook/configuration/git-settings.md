@@ -1,5 +1,8 @@
 # Git & Worktrees
 
+> **Fork bridge.** Hammer is a fork of GSD-2. This page describes a surface preserved verbatim from GSD-2 — references to "GSD" in the prose below describe the same Hammer behavior. Slash commands shown as `/gsd …` are also reachable as `/hammer …` (both dispatch to the same handler). See the **Omega-Driven Phases, IAM, and No-Guardrails Posture** chapter for what Hammer adds on top.
+
+
 GSD uses git for milestone isolation and sequential commits. The strategy is fully automated — you don't need to manage branches manually.
 
 ## Isolation Modes

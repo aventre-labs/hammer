@@ -1,6 +1,6 @@
 # Table of contents
 
-* [What is GSD?](README.md)
+* [What is Hammer?](README.md)
 
 ## Getting Started
 
@@ -10,9 +10,10 @@
 
 ## Core Concepts
 
-* [How GSD Organizes Work](core-concepts/project-structure.md)
+* [How Hammer Organizes Work](core-concepts/project-structure.md)
 * [Step Mode](core-concepts/step-mode.md)
 * [Auto Mode](core-concepts/auto-mode.md)
+* [Omega-Driven Phases, IAM, and No-Guardrails Posture](core-concepts/omega-phases.md)
 
 ## Configuration
 

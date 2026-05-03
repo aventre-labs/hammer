@@ -1,5 +1,8 @@
 # Provider Setup
 
+> **Fork bridge.** Hammer is a fork of GSD-2. This page describes a surface preserved verbatim from GSD-2 — references to "GSD" in the prose below describe the same Hammer behavior. Slash commands shown as `/gsd …` are also reachable as `/hammer …` (both dispatch to the same handler). See the **Omega-Driven Phases, IAM, and No-Guardrails Posture** chapter for what Hammer adds on top.
+
+
 Step-by-step setup instructions for every LLM provider GSD supports. If you ran the onboarding wizard (`gsd config`) and picked a provider, you may already be configured — check with `/model` inside a session.
 
 ## Quick Reference

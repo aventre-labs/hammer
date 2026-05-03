@@ -1,5 +1,8 @@
 # Token Optimization
 
+> **Fork bridge.** Hammer is a fork of GSD-2. This page describes a surface preserved verbatim from GSD-2 — references to "GSD" in the prose below describe the same Hammer behavior. Slash commands shown as `/gsd …` are also reachable as `/hammer …` (both dispatch to the same handler). See the **Omega-Driven Phases, IAM, and No-Guardrails Posture** chapter for what Hammer adds on top.
+
+
 GSD's token optimization system can reduce token usage by 40-60% without sacrificing output quality. It has three pillars: **token profiles**, **context compression**, and **complexity-based task routing**.
 
 ## Token Profiles

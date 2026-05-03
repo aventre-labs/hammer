@@ -1,5 +1,8 @@
 # Step Mode
 
+> **Fork bridge.** Hammer is a fork of GSD-2. This page describes a surface preserved verbatim from GSD-2 — references to "GSD" in the prose below describe the same Hammer behavior. Slash commands shown as `/gsd …` are also reachable as `/hammer …` (both dispatch to the same handler). See the **Omega-Driven Phases, IAM, and No-Guardrails Posture** chapter for what Hammer adds on top.
+
+
 Step mode is GSD's interactive, one-step-at-a-time workflow. You stay in the loop, reviewing output between each step.
 
 ## Starting Step Mode

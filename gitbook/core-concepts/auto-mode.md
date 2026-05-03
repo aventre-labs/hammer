@@ -1,14 +1,18 @@
 # Auto Mode
 
-Auto mode is GSD's autonomous execution engine. Run `/gsd auto`, walk away, come back to built software with clean git history.
+> **Fork bridge.** Hammer is a fork of GSD-2. Auto mode keeps the same dispatch loop and `.gsd/STATE.md` contract, but every dispatched unit runs inside an **Omega-driven phase** with **IAM (Integrated Awareness Model)** gating. The slash command is dual: `/hammer auto` and `/gsd auto` dispatch to the same handler. See [Omega-Driven Phases, IAM, and No-Guardrails Posture](omega-phases.md) for the structural details.
+
+Auto mode is Hammer's autonomous execution engine. Run `/hammer auto` (or `/gsd auto`), walk away, come back to built software with clean git history.
 
 ## Starting Auto Mode
 
 ```
-/gsd auto
+/hammer auto
 ```
 
-GSD reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh AI session with all relevant context, and lets the AI execute. When it finishes, GSD reads disk state again and dispatches the next unit. This continues until the milestone is complete.
+Hammer reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh AI session with all relevant context, and lets the AI execute. When it finishes, Hammer reads disk state again and dispatches the next unit. This continues until the milestone is complete.
+
+Every dispatched unit is bound to an Omega-driven phase from the canonical 10-stage Omega Protocol. The phase manifest is written before the unit runs and consumed by downstream phases as part of their dispatch context.
 
 ## The Execution Loop
 
@@ -35,7 +39,7 @@ Press **Escape**. The conversation is preserved. You can interact with the agent
 ### Resume
 
 ```
-/gsd auto
+/hammer auto
 ```
 
 Auto mode reads disk state and picks up where it left off.
@@ -43,7 +47,7 @@ Auto mode reads disk state and picks up where it left off.
 ### Stop
 
 ```
-/gsd stop
+/hammer stop
 ```
 
 Stops auto mode gracefully. Can be run from a different terminal.
@@ -51,7 +55,7 @@ Stops auto mode gracefully. Can be run from a different terminal.
 ### Steer
 
 ```
-/gsd steer
+/hammer steer
 ```
 
 Modify plan documents during execution without stopping. Changes are picked up at the next phase boundary.
@@ -59,7 +63,7 @@ Modify plan documents during execution without stopping. Changes are picked up a
 ### Capture Thoughts
 
 ```
-/gsd capture "add rate limiting to API endpoints"
+/hammer capture "add rate limiting to API endpoints"
 ```
 
 Fire-and-forget thought capture. Captures are triaged automatically between tasks without pausing execution. See [Captures & Triage](../features/captures.md).
@@ -70,13 +74,25 @@ Every task gets a clean AI context window. No accumulated garbage, no quality de
 
 ## Runtime Tool Policy
 
-Every auto-mode unit declares a `ToolsPolicy` in its `UnitContextManifest`, and GSD enforces it before tool calls run. Execution units use `all` mode and can edit project files, run shell commands, and dispatch subagents. Planning and discussion units use `planning` mode: read tools are allowed, writes are limited to `.gsd/`, bash must be read-only, and subagent dispatch is blocked. Documentation units use `docs` mode, which also allows writes to the manifest's documentation globs such as `docs/**`, top-level `README*.md`, `CHANGELOG.md`, and top-level `*.md`.
+Every auto-mode unit declares a `ToolsPolicy` in its `UnitContextManifest`, and Hammer enforces it before tool calls run. Execution units use `all` mode and can edit project files, run shell commands, and dispatch subagents. Planning and discussion units use `planning` mode: read tools are allowed, writes are limited to `.gsd/`, bash must be read-only, and subagent dispatch is blocked. Documentation units use `docs` mode, which also allows writes to the manifest's documentation globs such as `docs/**`, top-level `README*.md`, `CHANGELOG.md`, and top-level `*.md`.
 
 Policy violations return a hard block, so unsafe writes, unsafe bash, and subagent dispatch are stopped at runtime rather than handled as model instructions.
 
+## IAM Subagent Gate
+
+In addition to the per-unit `ToolsPolicy`, Hammer wraps every subagent dispatch in the **IAM (Integrated Awareness Model)** gate. The gate is enforced by `iam-subagent-policy.ts` and the `IAM_SUBAGENT_CONTRACT` constant — those are the canonical investigation pointers when a dispatch is rejected.
+
+The gate fires before any subagent runs and rejects with a hard policy block (no warning, no soft prompt) if:
+
+- the dispatching phase has no Omega manifest on disk, or
+- the manifest is stale relative to the current dispatch context, or
+- the contract signature is missing or does not match `IAM_SUBAGENT_CONTRACT`.
+
+Per Hammer's no-guardrails posture, the IAM gate is the only structural guardrail in the dispatch path. There is **no** `--no-iam` flag and no environment variable that disables it. The fix for a wrong rejection is to update the manifest writer or the contract — never to bypass the check. See [Omega-Driven Phases, IAM, and No-Guardrails Posture](omega-phases.md) for the full architectural context.
+
 ## Git Isolation
 
-GSD isolates milestone work using one of three modes:
+Hammer isolates milestone work using one of three modes:
 
 | Mode | How It Works | Best For |
 |------|-------------|----------|
@@ -86,15 +102,17 @@ GSD isolates milestone work using one of three modes:
 
 In worktree mode, all commits are squash-merged to main as one clean commit when the milestone completes. See [Git & Worktrees](../configuration/git-settings.md).
 
-## Crash Recovery
+## Recover-and-Resume (Crash Recovery)
 
-If a session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
+Hammer's recover-and-resume cycle is one of the four Hammer-specific structural commitments (alongside Omega-driven phases, IAM integration, and the no-guardrails posture). It exists so an interrupted auto-mode session can resume **without losing provenance** — not merely "pick back up where the model left off", but reconstruct the full context including the prior phase's Omega manifest and any partial tool-call evidence on disk.
 
-In headless mode (`gsd headless auto`), crashes trigger automatic restart with exponential backoff (5s → 10s → 30s, up to 3 attempts). Combined with crash recovery, this enables true overnight "fire and forget" execution.
+If a session dies, the next `/hammer auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, writes a `RECOVERY_VERDICT` so the recovery itself is auditable, and resumes with full context. The `RECOVERY_VERDICT` write is gated by IAM — recover-and-resume cannot launder away a prior failure by quietly omitting the verdict record.
+
+In headless mode (`gsd headless auto`), crashes trigger automatic restart with exponential backoff (5s → 10s → 30s, up to 3 attempts). Combined with the recover-and-resume cycle, this enables true overnight "fire and forget" execution.
 
 ## Provider Error Recovery
 
-GSD handles provider errors automatically:
+Hammer handles provider errors automatically:
 
 | Error Type | Examples | What Happens |
 |-----------|----------|-------------|
@@ -149,7 +167,9 @@ Auto mode pauses before each slice, showing the plan for your approval before bu
 
 ## Stuck Detection
 
-GSD uses sliding-window analysis to detect stuck loops — not just "same unit dispatched twice" but also cycles like A→B→A→B. On detection, GSD retries once with a diagnostic prompt. If it fails again, auto mode stops with details so you can intervene.
+Hammer uses sliding-window analysis to detect stuck loops — not just "same unit dispatched twice" but also cycles like A→B→A→B. On detection, Hammer retries once with a diagnostic prompt. If it fails again, auto mode stops with details so you can intervene.
+
+This is the **only** auto-stop heuristic in auto mode — consistent with the no-guardrails posture, Hammer does not insert soft warnings, "are you sure?" prompts, or coaching nags between phases.
 
 ## Cost Tracking
 
@@ -157,7 +177,7 @@ Every unit's token usage and cost is captured, broken down by phase, slice, and 
 
 ## Dashboard
 
-`Ctrl+Alt+G` or `/gsd status` shows real-time progress:
+`Ctrl+Alt+G` or `/hammer status` (alias `/gsd status`) shows real-time progress:
 
 - Current milestone, slice, and task
 - Auto mode elapsed time and phase
@@ -169,28 +189,28 @@ Every unit's token usage and cost is captured, broken down by phase, slice, and 
 
 ## HTML Reports
 
-After a milestone completes, GSD generates a self-contained HTML report in `.gsd/reports/` with project summary, progress tree, dependency graph, cost metrics, timeline, and changelog. Generate manually with:
+After a milestone completes, Hammer generates a self-contained HTML report in `.gsd/reports/` with project summary, progress tree, dependency graph, cost metrics, timeline, and changelog. Generate manually with:
 
 ```
-/gsd export --html
-/gsd export --html --all    # all milestones
+/hammer export --html
+/hammer export --html --all    # all milestones
 ```
 
 ## Diagnostic Tools
 
-If auto mode has issues, GSD provides two diagnostic tools:
+If auto mode has issues, Hammer provides two diagnostic tools:
 
-- **`/gsd doctor`** — validates `.gsd/` integrity, checks referential consistency, fixes structural issues
-- **`/gsd forensics`** — full post-mortem debugger with anomaly detection, unit traces, metrics analysis, worktree lifecycle telemetry, and AI-guided investigation
+- **`/hammer doctor`** — validates `.gsd/` integrity, checks referential consistency, fixes structural issues
+- **`/hammer forensics`** — full post-mortem debugger with anomaly detection, unit traces, metrics analysis, worktree lifecycle telemetry, and AI-guided investigation
 
 ```
-/gsd doctor
-/gsd forensics [optional problem description]
+/hammer doctor
+/hammer forensics [optional problem description]
 ```
 
 ### Worktree Telemetry in Forensics Reports
 
-`/gsd forensics` includes a **Worktree Telemetry** section that summarizes the auto-mode worktree lifecycle across recorded sessions:
+`/hammer forensics` includes a **Worktree Telemetry** section that summarizes the auto-mode worktree lifecycle across recorded sessions:
 
 - **Created / Merged / Conflicts** — counts of worktree creation and merge-back events, plus merge-conflict occurrences.
 - **Orphans detected** — milestones whose branch or worktree directory was stranded (e.g. after an interrupted session). Broken out by reason (in-progress-unmerged, complete-unmerged).
