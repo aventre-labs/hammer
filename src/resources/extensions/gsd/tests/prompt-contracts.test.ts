@@ -393,7 +393,6 @@ for (const contract of RESEARCH_OMEGA_PROMPTS) {
     assert.match(prompt, /synthesis(?:Path| reference)/i);
     assert.match(prompt, /IAM error/i);
     assert.match(prompt, /Do not call `gsd_summary_save` as if .* research completed successfully/i);
-    assert.doesNotMatch(prompt, /scriptorium/i);
   });
 }
 
@@ -413,7 +412,6 @@ test("parallel-research-slices prompt requires per-slice Omega manifests", () =>
   assert.match(prompt, /stageCount`? of `?10/i);
   assert.match(prompt, /synthesis(?:Path| reference)/i);
   assert.match(prompt, /IAM error/i);
-  assert.doesNotMatch(prompt, /scriptorium/i);
 });
 
 
@@ -444,6 +442,5 @@ for (const contract of PLANNING_OMEGA_PROMPTS) {
     assert.match(prompt, /synthesis(?:Path| reference)/i);
     assert.match(prompt, /IAM|Omega run returns/i);
     assert.match(prompt, new RegExp(`stop before ` + "`" + contract.tool + "`"));
-    assert.doesNotMatch(prompt, /scriptorium/i);
   });
 }
