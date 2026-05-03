@@ -1,8 +1,10 @@
-# Contributing to GSD-2
+# Contributing to Hammer
 
-We're glad you're here. GSD-2 is an open project and contributions are welcome across the entire codebase. We hold a high bar for what gets merged — not to be gatekeepers, but because every change ships to real users and stability matters.
+We're glad you're here. Hammer is an open project and contributions are welcome across the entire codebase. We hold a high bar for what gets merged — not to be gatekeepers, but because every change ships to real users and stability matters.
 
-Read [VISION.md](VISION.md) before contributing. It defines what GSD-2 is, what it isn't, and what we won't accept.
+Hammer is forked from GSD-2; the product identity is Hammer, but several internal-implementation surfaces (`gsd-pi` npm package, `.gsd/` filesystem paths, `gsd_*` DB-backed tool names) are preserved verbatim during the rebrand window. New code uses Hammer identity; do not mass-rename internal surfaces in a contribution unless the change is the rebrand itself.
+
+Read [VISION.md](VISION.md) before contributing. It defines what Hammer is, what it isn't, and the no-guardrails posture we won't compromise on. The IAM contributor expectations below describe the same posture from a code-review angle.
 
 ## Before you start
 
@@ -13,7 +15,16 @@ Read [VISION.md](VISION.md) before contributing. It defines what GSD-2 is, what 
 
 ### First-time contributors
 
-We are not a fan of drive-by first-time contributions. If this is your first PR to GSD-2, you **must** open an issue first describing the problem or feature, wait for a maintainer response, and link the issue in your PR. First-time PRs that show up with no prior issue will be closed without review. This is not optional — it exists because triaging unsolicited code from unknown contributors is more expensive than the contribution is worth.
+We are not a fan of drive-by first-time contributions. If this is your first PR to Hammer, you **must** open an issue first describing the problem or feature, wait for a maintainer response, and link the issue in your PR. First-time PRs that show up with no prior issue will be closed without review. This is not optional — it exists because triaging unsolicited code from unknown contributors is more expensive than the contribution is worth.
+
+### IAM contributor expectations
+
+Hammer's auto-mode loop fails closed when subagent output is malformed or missing the `IAM_SUBAGENT_CONTRACT` envelope (parsed at `src/runtime/iam/iam-subagent-policy.ts`). This is structural, not advisory. As a contributor, that means:
+
+- **Don't soft-fail in IAM-adjacent code paths.** If a marker check would catch malformed output, the right behavior is to surface a structured failure, not to swallow it and continue. Contributions that introduce silent fallbacks in `src/runtime/iam/*`, the Omega per-stage artifact persistence path, or the recover-and-resume loop will be sent back.
+- **Preserve the no-guardrails posture.** Do not add confirm-before-write, permission prompts, or human-in-the-loop dialogs to the default auto-mode path. Optional opt-in flags are fine if they default off. See VISION.md for the rationale.
+- **Test the failure paths.** When you touch IAM, Omega, or recovery code, the unit/integration test must exercise the fail-closed branch — a test that only covers the happy path is incomplete in those subsystems.
+- **Touch internal-implementation surfaces deliberately.** `gsd-pi`, `.gsd/`, `gsd_*` tool names, and the `gsd-workflow` MCP server identifier are preserved as a deliberate compatibility bridge. Don't rename them as a side effect of unrelated work.
 
 Once you have one merged PR, this requirement no longer applies to you.
 
@@ -54,9 +65,9 @@ git fetch origin
 git rebase origin/main
 ```
 
-## Working with GSD (team workflow)
+## Working with Hammer (team workflow)
 
-GSD uses worktree-based isolation for multi-developer work. If you're contributing with GSD running, enable team mode in your project preferences:
+Hammer uses worktree-based isolation for multi-developer work. If you're contributing with Hammer running, enable team mode in your project preferences:
 
 ```yaml
 # .gsd/PREFERENCES.md
@@ -140,19 +151,20 @@ Before writing code, understand these principles:
 - **Extension-first.** Can this be an extension instead of a core change? If yes, build it as an extension.
 - **Simplicity wins.** Don't add abstractions, helpers, or utilities for one-time operations. Don't design for hypothetical future requirements.
 - **Tests are the contract.** Changed behavior? The test suite tells you what you broke.
+- **Fail closed in IAM/Omega/recovery code.** See "IAM contributor expectations" above — these subsystems must not soft-fail.
 
 See [VISION.md](VISION.md) for the full list of what we won't accept.
 
 ## Extension contributions
 
-GSD is extension-first. If your feature can be an extension, build it as an extension. See [docs/extension-sdk/](docs/extension-sdk/) for the authoritative guide.
+Hammer is extension-first. If your feature can be an extension, build it as an extension. See [docs/extension-sdk/](docs/extension-sdk/) for the authoritative guide.
 
 ### Extension tiers
 
-| Tier | Ships with GSD | Can be disabled | Review bar |
-|------|---------------|-----------------|------------|
-| **core** | Yes | No | RFC required. Reserved for foundational systems (GSD workflow, built-in tools). |
-| **bundled** | Yes | Yes | Standard PR review. Default for new features shipped with GSD. |
+| Tier | Ships with Hammer | Can be disabled | Review bar |
+|------|------------------|-----------------|------------|
+| **core** | Yes | No | RFC required. Reserved for foundational systems (Hammer workflow, built-in tools). |
+| **bundled** | Yes | Yes | Standard PR review. Default for new features shipped with Hammer. |
 | **community** | No | Yes | User-installed. No review needed — lives in `~/.gsd/agent/extensions/` or `.gsd/extensions/`. |
 
 ### Required for bundled extension PRs
@@ -165,7 +177,7 @@ GSD is extension-first. If your feature can be an extension, build it as an exte
 
 ### Promoting community → bundled
 
-If you've built a community extension that should ship with GSD:
+If you've built a community extension that should ship with Hammer:
 
 1. Open an issue describing the extension and why it should be bundled.
 2. Move the source into `src/resources/extensions/<name>/`.
@@ -184,7 +196,7 @@ The codebase is organized into these areas. All are open to contributions:
 | Agent core        | `packages/pi-agent-core`        | Agent orchestration — RFC required for changes |
 | Coding agent      | `packages/pi-coding-agent`      | The main coding agent                          |
 | MCP server        | `packages/mcp-server`           | Project state tools and MCP protocol           |
-| GSD extension     | `src/resources/extensions/gsd/` | GSD workflow — RFC required for auto-mode      |
+| Hammer extension  | `src/resources/extensions/gsd/` | Hammer workflow (preserved internal path) — RFC required for auto-mode |
 | Other extensions  | `src/resources/extensions/`     | Browser, search, voice, MCP client, etc.       |
 | Native engine     | `native/`                       | Rust N-API modules (grep, git, AST, etc.)      |
 | VS Code extension | `vscode-extension/`             | Chat participant, sidebar, RPC integration     |

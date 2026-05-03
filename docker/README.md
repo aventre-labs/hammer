@@ -1,6 +1,8 @@
-# GSD Docker Sandbox
+# Hammer Docker Sandbox
 
-Run GSD auto mode inside an isolated Docker sandbox so it cannot touch your host filesystem, SSH keys, or other projects.
+Run Hammer auto mode inside an isolated Docker sandbox so it cannot touch your host filesystem, SSH keys, or other projects.
+
+> Hammer is forked from GSD-2. The container name (`gsd-sandbox`), entrypoint user (`gsd`), env file path (`docker/.env`), bind-mount targets, and CLI binary name (`gsd`) are preserved as internal-implementation surface during the rebrand window. The product identity in user-facing prose is Hammer.
 
 ## Prerequisites
 
@@ -36,7 +38,7 @@ docker sandbox create --template ./docker --name gsd-sandbox
 # Shell into the sandbox
 docker sandbox exec -it gsd-sandbox bash
 
-# Inside the sandbox, run GSD
+# Inside the sandbox, run Hammer
 gsd auto "implement the feature described in issue #42"
 ```
 
@@ -55,7 +57,7 @@ docker compose -f docker/docker-compose.yaml up -d
 # 3. Shell into the container
 docker exec -it gsd-sandbox bash
 
-# 4. Run GSD inside the container
+# 4. Run Hammer inside the container
 gsd auto "implement the feature described in issue #42"
 ```
 
@@ -84,7 +86,7 @@ No hardcoded `user:` directive in compose — the entrypoint starts as root, rem
 
 ## Two-Terminal Workflow
 
-GSD's recommended workflow uses two terminals — one for auto mode, one for interactive discussion:
+Hammer's recommended workflow uses two terminals — one for auto mode, one for interactive discussion:
 
 ```bash
 # Terminal 1: auto mode
@@ -110,7 +112,7 @@ Copy `docker/.env.example` to `docker/.env` and fill in your keys. The `.env` fi
 
 ## Network Allowlisting
 
-If you restrict outbound network access in your sandbox, GSD needs these endpoints:
+If you restrict outbound network access in your sandbox, Hammer needs these endpoints:
 
 | Purpose | Endpoints |
 |---------|-----------|
@@ -121,7 +123,7 @@ If you restrict outbound network access in your sandbox, GSD needs these endpoin
 
 ## Customizing the Image
 
-Build with a specific GSD version:
+Build with a specific Hammer version (the build arg name `GSD_VERSION` is preserved as internal-implementation surface):
 
 ```bash
 docker compose -f docker/docker-compose.yaml build --build-arg GSD_VERSION=2.51.0
@@ -141,4 +143,4 @@ docker compose -f docker/docker-compose.yaml down -v
 
 - **macOS/Windows only**: Docker Sandboxes require Docker Desktop 4.58+. Linux sandbox support is experimental.
 - **Environment parity**: The sandbox runs Ubuntu (Debian). macOS-only dependencies may not work inside the sandbox.
-- **Named agent registration**: Docker Desktop's built-in named agents (claude, codex, etc.) are registered by Docker itself. Third-party tools cannot register new named agents. GSD uses the generic shell sandbox type with a custom template instead.
+- **Named agent registration**: Docker Desktop's built-in named agents (claude, codex, etc.) are registered by Docker itself. Third-party tools cannot register new named agents. Hammer uses the generic shell sandbox type with a custom template instead.

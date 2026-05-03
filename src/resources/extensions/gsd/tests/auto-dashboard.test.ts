@@ -220,6 +220,35 @@ test("auto progress widget renders RTK savings under the footer stats line", () 
   assert.match(dashboardSource, /lines\.push\(rightAlign\("", theme\.fg\("dim", cachedRtkLabel\), width\)\);/);
 });
 
+// ─── render error boundary ──────────────────────────────────────────────────
+//
+// A render-time exception used to escape into process.nextTick → the global
+// uncaughtException guard → process.exit(1). The TUI would visibly disappear
+// right after the first dashboard frame. The render method must wrap its body
+// in a try/catch so a single bad frame is logged and the cached frame is
+// reused — the dashboard widget must never crash the host process.
+test("auto progress widget render method wraps body in try/catch", () => {
+  // The exported render closure must be a try/return-renderInner shape so any
+  // synchronous throw is contained.
+  assert.match(
+    dashboardSource,
+    /render\(width: number\): string\[\]\s*\{\s*try\s*\{\s*return renderInner\(width\);\s*\}\s*catch/,
+    "render() must delegate to renderInner inside a try/catch",
+  );
+  // On failure, return cachedLines ?? [] — never propagate the throw.
+  assert.match(
+    dashboardSource,
+    /return cachedLines \?\? \[\];/,
+    "render() catch branch must fall back to cachedLines on failure",
+  );
+  // The catch must log the failure so the underlying issue stays diagnosable.
+  assert.match(
+    dashboardSource,
+    /progress widget render failed:/,
+    "render() must surface failures via logWarning",
+  );
+});
+
 test("last commit refresh backs off cleanly when base path is not a git repo", (t) => {
   const dir = makeTempDir("non-git");
   mkdirSync(dir, { recursive: true });

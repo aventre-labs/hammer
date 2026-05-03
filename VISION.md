@@ -1,10 +1,26 @@
 # Vision
 
-GSD-2 is the orchestration layer between you and AI coding agents. It handles planning, execution, verification, and shipping so you can focus on what to build, not how to wrangle the tools.
+Hammer is the orchestration layer between an experienced operator and an AI coding agent. It handles planning, execution, verification, and shipping so you can focus on what to build, not on how to wrangle the tools.
+
+Hammer is forked from GSD-2. The product identity, slash commands, and audience framing are Hammer; the underlying npm package (`gsd-pi`), state-bridge filesystem paths (`.gsd/`), and DB-backed tool names (`gsd_*` aliased alongside `hammer_*`) are preserved as internal-implementation surface during the rebrand window.
 
 ## Who it's for
 
-Anyone who codes with AI agents — solo developers shipping faster, open-source maintainers handling scale, vibe coders who think in outcomes. GSD adapts to skill level and workflow.
+Operators who already code with AI agents every day, find permission prompts and confirm-before-edit dialogs slowing them down, and accept the responsibility that comes with autonomous execution. Hammer adapts to skill level and workflow but its default disposition is **go**, not **ask**.
+
+## No-guardrails posture
+
+This is the central product distinction. Hammer is intentionally **unsafe-mode by default**: there is no confirm-before-edit, no permission prompt on file writes, no human checkpoint between research, plan, execute, verify, and commit phases. Auto-mode advances on its own and trusts the operator to have set the project up correctly.
+
+The only structural guardrail is the recover-and-resume loop's **3-strike cap**: if recovery itself fails three times in a row, auto-mode pauses and surfaces the structured `RECOVERY_VERDICT` trailer for human inspection rather than spinning forever. Everything else — file writes, shell commands, git operations, dependency installs — runs without prompting.
+
+This posture is deliberate, not an oversight. It exists because:
+
+- The audience is operators who already know how to evaluate AI-generated changes and want throughput, not training wheels.
+- Permission gates create cadence drag that compounds over a long milestone; removing them is the largest single-axis throughput win available.
+- The structural guardrails Hammer **does** keep — IAM fail-closed envelopes, Omega per-stage artifact persistence, 3-strike recovery cap, structured verification — are durable and machine-readable, not human-in-the-loop dialogs.
+
+If you want guarded edits with confirm-before-write and explicit ask-on-tool-call, run Claude Code directly. Hammer is an opinionated alternative for users who already evaluated that tradeoff and chose throughput.
 
 ## Principles
 
@@ -16,7 +32,9 @@ Anyone who codes with AI agents — solo developers shipping faster, open-source
 
 **Ship fast, fix fast.** Get it out, iterate quickly, don't let perfect be the enemy of good. Every release should work, but we'd rather ship and patch than delay and accumulate.
 
-**Provider-agnostic.** GSD works with any LLM provider. No architectural decisions should privilege one provider over another.
+**Provider-agnostic.** Hammer works with any LLM provider. No architectural decisions should privilege one provider over another.
+
+**Fail closed at the chokepoint.** Where IAM, Omega, or recovery semantics would otherwise drift silently, Hammer fails closed and surfaces a structured marker for inspection. Soft-failing or "best effort continue" is not acceptable in those paths — recovery and policy decisions must be auditable.
 
 ## What we won't accept
 
@@ -32,6 +50,8 @@ These save everyone time. Don't open PRs for:
 
 - **Heavy orchestration layers.** Don't duplicate what the agent infrastructure already provides. Build on top of it, don't wrap it.
 
-## Relationship to GSD-1
+- **Re-introducing permission prompts.** Hammer's no-guardrails posture is the product, not a missing feature. PRs that add confirm-before-edit, ask-on-tool-call, or other interactive guardrails to the default path will be closed. Optional opt-in flags are fine if they default off; structural enforcement (IAM markers, Omega artifacts, recovery cap) is the right place to invest defensive work.
 
-GSD-2 is the future. GSD-1 continues to serve its community but GSD-2 is where active development, new features, and architectural investment happen. The goal is to eventually migrate GSD-1 users to GSD-2.
+## Relationship to GSD-1 and GSD-2
+
+GSD-1 is the original prompt-framework version. GSD-2 was the standalone-CLI rewrite on the Pi SDK. Hammer is forked from GSD-2 and is where active development, new features, and architectural investment now happen. GSD-2 itself continues to serve its community; Hammer's audience is the subset of GSD-2 users who want IAM integration, recover-and-resume guarantees, Omega-driven phase artifacts, and the no-guardrails posture as defaults rather than opt-ins.

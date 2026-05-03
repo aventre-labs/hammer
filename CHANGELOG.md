@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Starting in this release the product is named Hammer, forked from GSD-2.
+
 ## [2.78.1] - 2026-04-25
 
 ### Fixed

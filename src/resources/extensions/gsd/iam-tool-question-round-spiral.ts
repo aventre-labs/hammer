@@ -23,7 +23,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@gsd/pi-coding-agent";
 
 import { buildOmegaExecutor } from "./bootstrap/iam-tools.js";
 import {
@@ -109,7 +109,7 @@ function toolResponse(result: RunQuestionRoundSpiralResult) {
 export function registerQuestionRoundSpiralTool(pi: ExtensionAPI): void {
   const ctx = pi as unknown as ExtensionContext;
 
-  const toolDef = {
+  const toolDef: ToolDefinition<typeof questionRoundSpiralParameters, unknown> = {
     name: "gsd_question_round_spiral",
     label: "Discuss Question-Round Omega Spiral",
     description:

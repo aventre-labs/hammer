@@ -471,19 +471,71 @@ export function _buildImportCandidates(relativePath: string): string[] {
   return candidates;
 }
 
+/** @internal — exported for testing only */
+export interface ImportAttempt {
+  candidate: string;
+  code: string | undefined;
+  message: string;
+}
+
+/**
+ * @internal — exported for testing only.
+ *
+ * Format an aggregated error from a set of failed import attempts. If any
+ * attempt failed with a non-MODULE_NOT_FOUND error (i.e. a real load failure
+ * such as a syntax error or transitive import failure), surface that as the
+ * primary cause — otherwise the user sees only the *last* candidate's
+ * "Cannot find module" message, which is misleading when an earlier candidate
+ * actually exists on disk and failed for a different reason. See bug filing
+ * around dynamic-tools.js iter-1 dispatch failure (May 2026).
+ */
+export function _formatImportFailure(
+  relativePath: string,
+  attempts: ImportAttempt[],
+): Error {
+  if (attempts.length === 0) {
+    return new Error(`importLocalModule(${relativePath}): no candidates to try.`);
+  }
+
+  const realFailure = attempts.find(
+    (a) => a.code !== "ERR_MODULE_NOT_FOUND" && a.code !== "MODULE_NOT_FOUND",
+  );
+  if (realFailure) {
+    const summary = attempts
+      .map((a) => `  - ${a.candidate} (${a.code ?? "no-code"}): ${a.message}`)
+      .join("\n");
+    return new Error(
+      `importLocalModule(${relativePath}): candidate failed to load. ` +
+      `Most likely cause: ${realFailure.message}\nAll attempts:\n${summary}`,
+    );
+  }
+
+  const last = attempts[attempts.length - 1];
+  const summary = attempts.map((a) => `  - ${a.candidate}`).join("\n");
+  return new Error(
+    `importLocalModule(${relativePath}): no candidate resolved. ${last.message}\nTried:\n${summary}`,
+  );
+}
+
 async function importLocalModule<T>(relativePath: string): Promise<T> {
   const candidates = _buildImportCandidates(relativePath)
     .map((p) => new URL(p, import.meta.url).href);
 
-  let lastErr: unknown;
+  const attempts: ImportAttempt[] = [];
   for (const candidate of candidates) {
     try {
       return await import(candidate) as T;
     } catch (err) {
-      lastErr = err;
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: unknown }).code ?? "")
+          : "";
+      const message = err instanceof Error ? err.message : String(err);
+      attempts.push({ candidate, code: code || undefined, message });
     }
   }
-  throw lastErr;
+
+  throw _formatImportFailure(relativePath, attempts);
 }
 
 function getWorkflowExecutorModuleCandidates(env: NodeJS.ProcessEnv = process.env): string[] {

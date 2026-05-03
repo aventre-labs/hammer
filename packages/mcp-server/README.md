@@ -1,12 +1,14 @@
 # @gsd-build/mcp-server
 
-MCP server exposing GSD orchestration tools for Claude Code, Cursor, and other MCP-compatible clients.
+MCP server exposing Hammer orchestration tools for Claude Code, Cursor, and other MCP-compatible clients.
 
-Start GSD auto-mode sessions, poll progress, resolve blockers, and retrieve results — all through the [Model Context Protocol](https://modelcontextprotocol.io/).
+> Hammer is forked from GSD-2. The npm package name (`@gsd-build/mcp-server`), binary name (`gsd-mcp-server`), tool prefix (`gsd_*`), and `GSD_*` environment variables are preserved as internal-implementation surface during the rebrand window. The product identity in user-facing prose is Hammer.
+
+Start Hammer auto-mode sessions, poll progress, resolve blockers, and retrieve results — all through the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 This package now exposes two tool surfaces:
 
-- session/read tools for starting and inspecting GSD sessions
+- session/read tools for starting and inspecting Hammer sessions
 - MCP-native interactive tools for structured user input
 - headless-safe workflow tools for planning, completion, validation, reassessment, metadata persistence, and journal reads
 
@@ -109,17 +111,17 @@ The workflow MCP surface includes:
 - `gsd_milestone_status`
 - `gsd_journal_query`
 
-These tools use the same GSD workflow handlers as the native in-process tool path wherever a shared handler exists.
+These tools use the same Hammer workflow handlers as the native in-process tool path wherever a shared handler exists. The `gsd_*` tool names are preserved as the internal contract; `hammer_*` aliases are exposed alongside them so MCP clients can target either surface.
 
 ### Interactive tools
 
-The packaged server exposes `ask_user_questions` through MCP form elicitation. This keeps the existing GSD answer payload shape while allowing Claude Code CLI and other elicitation-capable clients to surface structured user choices.
+The packaged server exposes `ask_user_questions` through MCP form elicitation. This keeps the existing Hammer answer payload shape while allowing Claude Code CLI and other elicitation-capable clients to surface structured user choices.
 
 The packaged server also exposes `secure_env_collect` through MCP form elicitation. Secret values are written directly to the selected destination and are not included in tool output. For dotenv writes, `envFilePath` must resolve inside the validated project directory; parent traversal and symlink escapes are rejected.
 
 Current support boundary:
 
-- when running inside the GSD monorepo checkout, the MCP server auto-discovers the shared workflow executor module
+- when running inside the Hammer monorepo checkout, the MCP server auto-discovers the shared workflow executor module
 - outside the monorepo, set `GSD_WORKFLOW_EXECUTORS_MODULE` to an importable `workflow-tool-executors` module path if you want the mutation tools enabled
 - `ask_user_questions` and `secure_env_collect` require an MCP client that supports form elicitation
 - session/read tools do not depend on this bridge
@@ -128,12 +130,12 @@ If the executor bridge cannot be loaded, workflow mutation calls will fail with 
 
 ### `gsd_execute`
 
-Start a GSD auto-mode session for a project directory.
+Start a Hammer auto-mode session for a project directory.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `projectDir` | `string` | ✅ | Absolute path to the project directory |
-| `command` | `string` | | Command to send (default: `"/gsd auto"`) |
+| `command` | `string` | | Command to send (default: `"/hammer auto"`) |
 | `model` | `string` | | Model ID override |
 | `bare` | `boolean` | | Run in bare mode (skip user config) |
 
@@ -141,7 +143,7 @@ Start a GSD auto-mode session for a project directory.
 
 ### `gsd_status`
 
-Poll the current status of a running GSD session.
+Poll the current status of a running Hammer session.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -195,7 +197,7 @@ Cancel a running session. Aborts the current operation and stops the agent proce
 
 ### `gsd_query`
 
-Query GSD project state from the filesystem without an active session. Returns STATE.md, PROJECT.md, requirements, and milestone listing.
+Query Hammer project state from the filesystem without an active session. Returns STATE.md, PROJECT.md, requirements, and milestone listing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -231,10 +233,10 @@ Resolve a pending blocker in a session by sending a response to the blocked UI r
 
 | Variable | Description |
 |----------|-------------|
-| `GSD_CLI_PATH` | Absolute path to the GSD CLI binary. If not set, the server resolves `gsd` via `which`. |
-| `GSD_WORKFLOW_EXECUTORS_MODULE` | Optional absolute path or `file:` URL for the shared GSD workflow executor module used by workflow mutation tools. |
+| `GSD_CLI_PATH` | Absolute path to the Hammer CLI binary. If not set, the server resolves `gsd` via `which`. (Variable name preserved as internal-implementation surface.) |
+| `GSD_WORKFLOW_EXECUTORS_MODULE` | Optional absolute path or `file:` URL for the shared Hammer workflow executor module used by workflow mutation tools. |
 
-The server also hydrates supported model-provider and tool credentials from `~/.gsd/agent/auth.json` on startup. Keys saved through `/gsd config` or `/gsd keys` become available to the MCP server process automatically, and any explicitly-set environment variable still wins.
+The server also hydrates supported model-provider and tool credentials from `~/.gsd/agent/auth.json` on startup. Keys saved through `/hammer config` or `/hammer keys` become available to the MCP server process automatically, and any explicitly-set environment variable still wins.
 
 ## Architecture
 
@@ -248,14 +250,15 @@ The server also hydrates supported model-provider and tool credentials from `~/.
                                    │  @gsd-build/rpc-client │
                                    │       │          │
                                    │       ▼          │
-                                   │  GSD CLI (child  │
-                                   │  process via RPC)│
+                                   │  Hammer CLI      │
+                                   │  (child process  │
+                                   │  via RPC)        │
                                    └──────────────────┘
 ```
 
 - **@gsd-build/mcp-server** — MCP protocol adapter. Translates MCP tool calls into SessionManager operations.
 - **SessionManager** — Manages RpcClient lifecycle. One session per project directory. Tracks events in a ring buffer (last 50), detects blockers, accumulates cost.
-- **@gsd-build/rpc-client** — Low-level RPC client that spawns and communicates with the GSD CLI process via JSON-RPC over stdio.
+- **@gsd-build/rpc-client** — Low-level RPC client that spawns and communicates with the Hammer CLI process via JSON-RPC over stdio.
 
 ## License
 

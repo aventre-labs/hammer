@@ -1,8 +1,10 @@
-# GSD-2 Extension SDK
+# Hammer Extension SDK
 
-// GSD-2 Extension SDK — Entry point and overview for extension development
+// Hammer Extension SDK — Entry point and overview for extension development
 
-The authoritative guide for building GSD-2 extensions. All extension contributors must follow this SDK. Extensions add tools, commands, event hooks, UI components, and custom behaviors to GSD-2 without modifying core code.
+The authoritative guide for building Hammer extensions. All extension contributors must follow this SDK. Extensions add tools, commands, event hooks, UI components, and custom behaviors to Hammer without modifying core code.
+
+> Hammer is forked from GSD-2. The npm package names (`@gsd/pi-coding-agent`, `@gsd/pi-ai`, `@gsd/pi-tui`), filesystem paths (`~/.gsd/agent/extensions/`, `.gsd/extensions/`, `src/resources/extensions/`), CLI binary (`gsd`), and `ExtensionAPI` surface are preserved as internal-implementation surface during the rebrand window. The product identity in user-facing prose is Hammer.
 
 ---
 
@@ -31,7 +33,7 @@ mkdir -p ~/.gsd/agent/extensions/my-extension
   "id": "my-extension",
   "name": "My Extension",
   "version": "1.0.0",
-  "description": "A minimal GSD-2 extension",
+  "description": "A minimal Hammer extension",
   "tier": "community",
   "requires": { "platform": ">=2.29.0" },
   "provides": {
@@ -65,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 
 ### 4. Test it
 
-Reload extensions in a running session with `/reload`, or launch GSD with a direct path:
+Reload extensions in a running session with `/reload`, or launch Hammer with a direct path:
 
 ```
 gsd -e ~/.gsd/agent/extensions/my-extension
@@ -103,8 +105,8 @@ The entry point must be `index.ts` and must use a default export that receives `
 
 | Location | Path | Scope |
 |----------|------|-------|
-| Global | `~/.gsd/agent/extensions/` | Available in all GSD sessions |
+| Global | `~/.gsd/agent/extensions/` | Available in all Hammer sessions |
 | Project-local | `.gsd/extensions/` | Available only in the current project |
-| Bundled | `src/resources/extensions/` | Ships with GSD-2 (core extensions) |
+| Bundled | `src/resources/extensions/` | Ships with Hammer (core extensions) |
 
 Extensions are discovered at startup. Global and project-local extensions load alongside bundled ones. See [Manifest Spec](manifest-spec.md) for how load order and tiers work.

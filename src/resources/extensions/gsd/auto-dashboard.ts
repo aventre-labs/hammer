@@ -647,6 +647,33 @@ export function updateProgressWidget(
 
     return {
       render(width: number): string[] {
+        try {
+          return renderInner(width);
+        } catch (err) {
+          // A render-time exception used to escape into process.nextTick and
+          // trip the global uncaughtException handler, which calls
+          // process.exit(1) — the TUI would die immediately after the first
+          // dashboard frame. Containing the failure to a single dropped frame
+          // is strictly safer: keep the cached frame visible while the
+          // underlying issue is logged for diagnosis.
+          logWarning(
+            "dashboard",
+            `progress widget render failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`,
+          );
+          return cachedLines ?? [];
+        }
+      },
+      invalidate() {
+        cachedLines = undefined;
+        cachedWidth = undefined;
+      },
+      dispose() {
+        clearInterval(pulseTimer);
+        if (progressRefreshTimer) clearInterval(progressRefreshTimer);
+      },
+    };
+
+    function renderInner(width: number): string[] {
         if (cachedLines && cachedWidth === width) return cachedLines;
 
         // While newSession() is in-flight, session state is mid-mutation.
@@ -987,16 +1014,7 @@ export function updateProgressWidget(
         cachedLines = lines;
         cachedWidth = width;
         return lines;
-      },
-      invalidate() {
-        cachedLines = undefined;
-        cachedWidth = undefined;
-      },
-      dispose() {
-        clearInterval(pulseTimer);
-        if (progressRefreshTimer) clearInterval(progressRefreshTimer);
-      },
-    };
+    }
   });
 }
 

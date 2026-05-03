@@ -1,29 +1,53 @@
 <div align="center">
 
-# GSD 2
+# Hammer
 
-**The evolution of [Get Shit Done](https://github.com/gsd-build/get-shit-done) — now a real coding agent.**
+**A coding agent forked from GSD-2 — autonomous by default, IAM-integrated, recover-and-resume, Omega-driven.**
 
 [![npm version](https://img.shields.io/npm/v/gsd-pi?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/gsd-pi)
 [![npm downloads](https://img.shields.io/npm/dm/gsd-pi?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/gsd-pi)
-[![GitHub stars](https://img.shields.io/github/stars/gsd-build/GSD-2?style=for-the-badge&logo=github&color=181717)](https://github.com/gsd-build/GSD-2)
-[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/nKXTsAcmbT)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![$GSD Token](https://img.shields.io/badge/$GSD-Dexscreener-1C1C1C?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgZmlsbD0iIzAwRkYwMCIvPjwvc3ZnPg==&logoColor=00FF00)](https://dexscreener.com/solana/dwudwjvan7bzkw9zwlbyv6kspdlvhwzrqy6ebk8xzxkv)
 
-The original GSD went viral as a prompt framework for Claude Code. It worked, but it was fighting the tool — injecting prompts through slash commands, hoping the LLM would follow instructions, with no actual control over context windows, sessions, or execution.
+Hammer is a fork of GSD-2 for experienced operators who want autonomous coding execution without permission prompts. The CLI binary, slash commands, configuration paths, and product identity are Hammer; the underlying npm package name (`gsd-pi`), state-bridge filesystem paths (`.gsd/`), and DB-backed tool names (`gsd_*` aliased alongside `hammer_*`) are preserved as internal-implementation surface during the rebrand window so existing checkouts keep working.
 
-This version is different. GSD is now a standalone CLI built on the [Pi SDK](https://github.com/badlogic/pi-mono), which gives it direct TypeScript access to the agent harness itself. That means GSD can actually _do_ what v1 could only _ask_ the LLM to do: clear context between tasks, inject exactly the right files at dispatch time, manage git branches, track cost and tokens, detect stuck loops, recover from crashes, and auto-advance through an entire milestone without human intervention.
+What Hammer adds on top of the GSD-2 base:
+
+- **IAM integration** — every subagent output is parsed against an `IAM_SUBAGENT_CONTRACT` envelope; the loop fails closed if markers are missing or malformed.
+- **No-guardrails posture** — auto-mode runs without confirm-before-edit, permission prompts, or human checkpoints between phases. Built for operators who already know that and wanted out.
+- **Recover-and-resume** — every phase emits durable artifacts; on crash or restart, auto-mode reconstructs a recovery briefing and resumes. A 3-strike cap stops infinite recovery spirals.
+- **Omega-driven phases** — planning runs through a 10-stage canonical spiral (URUZ → JERA); each stage persists per-stage and aggregate artifacts so recovery can read intent back out.
 
 One command. Walk away. Come back to a built project with clean git history.
 
 <pre><code>npm install -g gsd-pi@latest</code></pre>
 
-> GSD now provisions a managed [RTK](https://github.com/rtk-ai/rtk) binary on supported macOS, Linux, and Windows installs to compress shell-command output in `bash`, `async_bash`, `bg_shell`, and verification flows. GSD forces `RTK_TELEMETRY_DISABLED=1` for all managed invocations. Set `GSD_RTK_DISABLED=1` to disable the integration.
+> Hammer provisions a managed [RTK](https://github.com/rtk-ai/rtk) binary on supported macOS, Linux, and Windows installs to compress shell-command output in `bash`, `async_bash`, `bg_shell`, and verification flows. Hammer forces `RTK_TELEMETRY_DISABLED=1` for all managed invocations. Set `GSD_RTK_DISABLED=1` to disable the integration.
 
 > **📋 NOTICE: New to Node on Mac?** If you installed Node.js via Homebrew, you may be running a development release instead of LTS. **[Read this guide](./docs/user-docs/node-lts-macos.md)** to pin Node 24 LTS and avoid compatibility issues.
 
 </div>
+
+---
+
+## What's New in Hammer
+
+Hammer ships four Hammer-specific surfaces on top of the GSD-2 base. Each is a deliberate product distinction — read these before running `/hammer auto` if you've come from upstream GSD or from Claude Code defaults.
+
+### IAM integration
+
+Hammer's auto-mode loop classifies every subagent output as policy-gated. The `IAM_SUBAGENT_CONTRACT` envelope (parsed at `src/runtime/iam/iam-subagent-policy.ts`, with phase-envelope, completion-evidence, gate-runner reclassification, and audit-fail-closed surfaces under `src/runtime/iam/*`) fails closed at the marker chokepoint: if a sub-step terminates with malformed or missing markers, the loop refuses to advance — no silent drift, no "good enough" output absorbed into downstream context. Operator implication: a sub-step that "looks done" but didn't emit the structured marker pauses auto-mode for inspection rather than poisoning the next phase. See [docs/user-docs/troubleshooting.md](./docs/user-docs/troubleshooting.md) for the structured remediation shape Hammer surfaces when the envelope check fails.
+
+### No-guardrails posture (who this is for)
+
+Hammer is intentionally "unsafe-mode by default." There is **no** confirm-before-edit, **no** permission prompt on file writes, and **no** human checkpoint between phases. Auto-mode advances research → plan → execute → verify → commit without asking. This is a deliberate distinction vs. Claude Code defaults: Hammer's audience is operators who already know what `/permissions` does, found it slowing them down, and wanted a tool whose default is "go." The 3-strike recover-and-resume cap is the only structural guardrail; everything else is trust-the-operator. If you want guarded edits with confirm-before-write and explicit ask-on-tool-call, run Claude Code directly — Hammer is an opinionated alternative, not a friendlier one.
+
+### Recover-and-resume (auto-mode behavior)
+
+Every phase emits durable artifacts. When auto-mode crashes, restarts, or is killed mid-flight, the next `/hammer auto` reads `.hammer/auto-MID.lock`, the per-stage Omega artifacts, and the `.hammer/exec/<session>.stdout` records to synthesize a recovery briefing — completed tool calls, pre-loaded context, slice scope. The recovery loop has a **3-strike cap**: if recovery itself fails three times in a row (parsed via the `RECOVERY_VERDICT` trailer and counted in `consecutiveRecoveryFailures`), auto-mode pauses and surfaces the structured verdict for human inspection rather than spinning forever. Resume picks up at the exact unit boundary where the crash happened, with full context replayed, so a long milestone survives terminal closes, OS reboots, and provider outages without losing place. If your project still has a legacy `.gsd/` or `.planning/` layout, run `/hammer migrate` first to lift state into `.hammer/` so resume can find it.
+
+### Omega-driven phases (every phase emits artifacts)
+
+Hammer's planning machine runs through the **10-stage canonical Omega spiral**: URUZ (intent restatement), BERKANO (current state), MANNAZ (stakeholder/reader perspective), THURISAZ (risks), EHWAZ (mechanism), KENAZ (creative options), SOWILO/NAUTHIZ (constraints), DAGAZ/GEBO (trade-offs), ALGIZ (verification protections), JERA (handoff/boundary). The exact order is defined by `OMEGA_STAGES` in `src/runtime/omega/*`. Every stage emits a per-stage artifact and the loop refuses to advance if the artifact cannot be persisted — there is no abbreviation or skip-on-trivial path (per requirements R031/R037). This is what makes recover-and-resume load-bearing: recovery reads the per-stage and aggregate Omega artifacts to reconstruct intent before resuming. If you've used GSD-2's planning loop before, this is the same loop with structural artifact-persistence enforcement and explicit stage names you can audit in the activity log.
 
 ---
 
@@ -33,7 +57,7 @@ One command. Walk away. Come back to a built project with clean git history.
 
 - **Slice-cadence worktree collapse (#4765)** — new `git.collapse_cadence: "milestone" | "slice"` preference. With `slice`, each validated slice squash-merges to main immediately, shrinking the orphan window from milestone-size to slice-size. Pair with `git.milestone_resquash: true` to collapse per-slice commits into one milestone commit at completion.
 - **Worktree telemetry (#4764)** — new journal events (`worktree-created`, `worktree-merged`, `worktree-orphaned`, `auto-exit`, `canonical-root-redirect`, `slice-merged`, `milestone-resquash`) and a `summarizeWorktreeTelemetry` aggregator that reports orphan breakdowns, merge durations, conflict counts, exit reasons, and unmerged-exit metrics.
-- **`/gsd forensics` worktree section** — surfaces the telemetry above with two new anomalies: `worktree-orphan` and `worktree-unmerged-exit`.
+- **`/hammer forensics` worktree section** — surfaces the telemetry above with two new anomalies: `worktree-orphan` and `worktree-unmerged-exit`.
 - **Worktree-aware canonical milestone root (#4761)** — `resolveCanonicalMilestoneRoot` routes validators and cross-session readers through the live worktree, so milestone validation no longer silently reads stale project-root state.
 - **Bootstrap orphan audit (#4762)** — in-progress milestones with commits ahead of main no longer get skipped; the audit emits a warning with commit count and worktree location so interrupted auto-runs are visible.
 
@@ -95,15 +119,15 @@ See the full [Changelog](./CHANGELOG.md) for details on every release.
 <summary>v2.75 highlights</summary>
 
 - **Knowledge graph system** — structured knowledge graph built from project artifacts
-- **`/gsd extract-learnings`** — extracts decisions, lessons, patterns, and surprises into `LEARNINGS.md`
+- **`/hammer extract-learnings`** — extracts decisions, lessons, patterns, and surprises into `LEARNINGS.md`
 - **Unified Orchestration Kernel (UOK)** — now the default execution path with plan-v2 compile gates and reactive/parallel scheduling
-- **GSD Extension API** — third-party extensions loadable from `.gsd/extensions/` (#3338)
+- **Hammer Extension API** — third-party extensions loadable from `.gsd/extensions/` (#3338)
 - **v1 command parity** — 12 missing commands added, closing the migration gap
 - **Chat frame redesign** — unified styling for compaction notices, tool cards, and chat frame with timestamps and model headers
 - **Single-writer DB invariant** — engine database enforces single-writer to prevent corruption
 - **MCP worktree routing** — tool writes routed to active worktree; worktree paths accepted in project root guard
 - **Alibaba DashScope** — added as a standalone provider (#3891)
-- **Persistent language preference** — `/gsd language`
+- **Persistent language preference** — `/hammer language`
 
 </details>
 
@@ -116,7 +140,7 @@ See the full [Changelog](./CHANGELOG.md) for details on every release.
 - **False milestone merge prevention** — auto-mode no longer falsely merges after a `complete-milestone` failure (#4175)
 - **Premature auto-stop fix** — prevents auto-mode from stopping early on blocked phase + missing reassessment
 - **Inline tool call rendering** — assistant tool calls render inline with text instead of grouped at the end
-- **Custom model preservation** — custom model selection preserved on `/gsd auto` bootstrap (#4122)
+- **Custom model preservation** — custom model selection preserved on `/hammer auto` bootstrap (#4122)
 
 </details>
 
@@ -129,7 +153,7 @@ See the full [Changelog](./CHANGELOG.md) for details on every release.
 - **Ollama cloud auth** — cloud auth support and real context window resolution via `/api/show` (#4017)
 - **DB corruption prevention** — direct writes to `gsd.db` blocked via hooks (#3674)
 - **Circular dependency cleanup** — 3 circular dependencies broken in extension modules (#3730)
-- **Subagent permissions** — GSD subagents default to `bypassPermissions` with safe built-ins pre-authorized
+- **Subagent permissions** — Hammer subagents default to `bypassPermissions` with safe built-ins pre-authorized
 - **Security hardening** — auth middleware activated, shutdown/update routes hardened (#4023)
 - **Stale slice reconciliation** — stale slice rows reconciled and STATE.md rebuilt before DB close (#3658)
 - **Subagent model preference** — `subagent_model` preference wired through to dispatch prompt builders
@@ -140,7 +164,7 @@ See the full [Changelog](./CHANGELOG.md) for details on every release.
 <details>
 <summary>v2.72 highlights</summary>
 
-- **8 specialist subagents** — new specialist subagents and slim pro agents with GSD phase guard to prevent conflicts
+- **8 specialist subagents** — new specialist subagents and slim pro agents with Hammer phase guard to prevent conflicts
 - **Model selection hardening** — unconfigured models blocked from selection, provider readiness required, session override honored
 - **Auto-mode resilience** — credential cooldown recovery with bounded retry budget, fire-and-forget auto start, scoped forensics
 - **TUI overhaul** — overlays, keyboard shortcuts, and notification flows redesigned for consistency
@@ -212,7 +236,7 @@ Full documentation is in the [`docs/`](./docs/) directory:
 - **[Dynamic Model Routing](./docs/user-docs/dynamic-model-routing.md)** — complexity-based model selection and budget pressure
 - **[Web Interface](./docs/user-docs/web-interface.md)** — browser-based project management and real-time progress
 - **[Migration from v1](./docs/user-docs/migration.md)** — `.planning` → `.gsd` migration
-- **[Docker Sandbox](./docker/README.md)** — run GSD auto mode in an isolated Docker container
+- **[Docker Sandbox](./docker/README.md)** — run Hammer auto mode in an isolated Docker container
 
 ### Developer Docs
 
@@ -259,10 +283,10 @@ If you have projects with `.planning` directories from the original Get Shit Don
 
 ```bash
 # From within the project directory
-/gsd migrate
+/hammer migrate
 
 # Or specify a path
-/gsd migrate ~/projects/my-old-project
+/hammer migrate ~/projects/my-old-project
 ```
 
 The migration tool:
@@ -280,7 +304,7 @@ Supports format variations including milestone-sectioned roadmaps with `<details
 
 ## How It Works
 
-GSD structures work into a hierarchy:
+Hammer structures work into a hierarchy:
 
 ```
 Milestone  →  a shippable version (4-10 slices)
@@ -302,12 +326,12 @@ Plan (with integrated research) → Execute (per task) → Complete → Reassess
 
 **Plan** scouts the codebase, researches relevant docs, and decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded — then runs configured verification commands (lint, test, etc.) with auto-fix retries. **Complete** writes the summary, UAT script, marks the roadmap, and commits with meaningful messages derived from task summaries. **Reassess** checks if the roadmap still makes sense given what was learned. **Validate Milestone** runs a reconciliation gate after all slices complete — comparing roadmap success criteria against actual results before sealing the milestone.
 
-### `/gsd auto` — The Main Event
+### `/hammer auto` — The Main Event
 
-This is what makes GSD different. Run it, walk away, come back to built software.
+This is what makes Hammer different. Run it, walk away, come back to built software.
 
 ```
-/gsd auto
+/hammer auto
 ```
 
 Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh agent session, injects a focused prompt with all relevant context pre-inlined, and lets the LLM execute. When the LLM finishes, auto mode reads disk state again and dispatches the next unit.
@@ -320,11 +344,11 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 3. **Git isolation** — When `git.isolation` is set to `worktree` or `branch`, each milestone runs on its own `milestone/<MID>` branch (in a worktree or in-place). All slice work commits sequentially — no branch switching, no merge conflicts. When the milestone completes, it's squash-merged to main as one clean commit. The default is `none` (work on the current branch), configurable via preferences.
 
-4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context. Parallel orchestrator state is persisted to disk with PID liveness detection, so multi-worker sessions survive crashes too. In headless mode, crashes trigger automatic restart with exponential backoff (default 3 attempts).
+4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/hammer auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context. Parallel orchestrator state is persisted to disk with PID liveness detection, so multi-worker sessions survive crashes too. In headless mode, crashes trigger automatic restart with exponential backoff (default 3 attempts).
 
 5. **Provider error recovery** — Transient provider errors (rate limits, 500/503 server errors, overloaded) auto-resume after a delay. Permanent errors (auth, billing) pause for manual review. The model fallback chain retries transient network errors before switching models.
 
-6. **Stuck and artifact detection** — A sliding-window detector identifies repeated dispatch patterns (including multi-unit cycles). Missing expected artifacts use a separate bounded path: GSD retries artifact verification up to 3 times with failure context, then pauses auto mode with the missing artifact error instead of looping indefinitely.
+6. **Stuck and artifact detection** — A sliding-window detector identifies repeated dispatch patterns (including multi-unit cycles). Missing expected artifacts use a separate bounded path: Hammer retries artifact verification up to 3 times with failure context, then pauses auto mode with the missing artifact error instead of looping indefinitely.
 
 7. **Timeout supervision** — Soft timeout warns the LLM to wrap up. Idle watchdog detects stalls. Hard timeout pauses auto mode. Recovery steering nudges the LLM to finish durable output before giving up.
 
@@ -336,18 +360,18 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 11. **Milestone validation** — After all slices complete, a `validate-milestone` gate compares roadmap success criteria against actual results before sealing the milestone.
 
-12. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/gsd auto` to resume from disk state.
+12. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/hammer auto` to resume from disk state.
 
-### `/gsd` and `/gsd next` — Step Mode
+### `/hammer` and `/hammer next` — Step Mode
 
-By default, `/gsd` runs in **step mode**: the same state machine as auto mode, but it pauses between units with a wizard showing what completed and what's next. You advance one step at a time, review the output, and continue when ready.
+By default, `/hammer` runs in **step mode**: the same state machine as auto mode, but it pauses between units with a wizard showing what completed and what's next. You advance one step at a time, review the output, and continue when ready.
 
 - **No `.gsd/` directory** → Start a new project. Discussion flow captures your vision, constraints, and preferences.
 - **Milestone exists, no roadmap** → Discuss or research the milestone.
 - **Roadmap exists, slices pending** → Plan the next slice, execute one task, or switch to auto.
 - **Mid-task** → Resume from where you left off.
 
-`/gsd next` is an explicit alias for step mode. You can switch from step → auto mid-session via the wizard.
+`/hammer next` is an explicit alias for step mode. You can switch from step → auto mid-session via the wizard.
 
 Step mode is the on-ramp. Auto mode is the highway.
 
@@ -372,7 +396,7 @@ gsd
 
 Select from 20+ providers — Anthropic, OpenAI, Google, OpenRouter, GitHub Copilot, and more. If you have a Claude Max or Copilot subscription, the OAuth flow handles everything. Otherwise, paste your API key when prompted.
 
-GSD auto-selects a default model after login. To switch models later:
+Hammer auto-selects a default model after login. To switch models later:
 
 ```bash
 /model
@@ -386,11 +410,11 @@ Open a terminal in your project and run:
 gsd
 ```
 
-GSD opens an interactive agent session. From there, you have two ways to work:
+Hammer opens an interactive agent session. From there, you have two ways to work:
 
-**`/gsd` — step mode.** Type `/gsd` and GSD executes one unit of work at a time, pausing between each with a wizard showing what completed and what's next. Same state machine as auto mode, but you stay in the loop. No project yet? It starts the discussion flow. Roadmap exists? It plans or executes the next step.
+**`/hammer` — step mode.** Type `/hammer` and Hammer executes one unit of work at a time, pausing between each with a wizard showing what completed and what's next. Same state machine as auto mode, but you stay in the loop. No project yet? It starts the discussion flow. Roadmap exists? It plans or executes the next step.
 
-**`/gsd auto` — autonomous mode.** Type `/gsd auto` and walk away. GSD researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete. Fresh context window per task. No babysitting.
+**`/hammer auto` — autonomous mode.** Type `/hammer auto` and walk away. Hammer researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete. Fresh context window per task. No babysitting.
 
 ### Two terminals, one project
 
@@ -400,23 +424,23 @@ The real workflow: run auto mode in one terminal, steer from another.
 
 ```bash
 gsd
-/gsd auto
+/hammer auto
 ```
 
 **Terminal 2 — steer while it works**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
-/gsd status     # check progress
-/gsd queue      # queue the next milestone
+/hammer discuss    # talk through architecture decisions
+/hammer status     # check progress
+/hammer queue      # queue the next milestone
 ```
 
 Both terminals read and write the same `.gsd/` files on disk. Your decisions in terminal 2 are picked up automatically at the next phase boundary — no need to stop auto mode.
 
 ### Headless mode — CI and scripts
 
-`gsd headless` runs any `/gsd` command without a TUI. Designed for CI pipelines, cron jobs, and scripted automation.
+`gsd headless` runs any `/hammer` command without a TUI. Designed for CI pipelines, cron jobs, and scripted automation.
 
 ```bash
 # Run auto mode in CI
@@ -437,51 +461,51 @@ gsd headless dispatch plan
 
 Headless auto-responds to interactive prompts, detects completion, and exits with structured codes: `0` complete, `1` error/timeout, `2` blocked. Auto-restarts on crash with exponential backoff. Use `gsd headless query` for instant, machine-readable state inspection — returns phase, next dispatch preview, and parallel worker costs as a single JSON object without spawning an LLM session. Pair with [remote questions](./docs/user-docs/remote-questions.md) to route decisions to Slack or Discord when human input is needed.
 
-**Multi-session orchestration** — headless mode supports file-based IPC in `.gsd/parallel/` for coordinating multiple GSD workers across milestones. Build orchestrators that spawn, monitor, and budget-cap a fleet of GSD workers.
+**Multi-session orchestration** — headless mode supports file-based IPC in `.gsd/parallel/` for coordinating multiple Hammer workers across milestones. Build orchestrators that spawn, monitor, and budget-cap a fleet of Hammer workers.
 
 ### First launch
 
-On first run, GSD launches a branded setup wizard that walks you through LLM provider selection (OAuth or API key), then optional tool API keys (Brave Search, Context7, Jina, Slack, Discord). Every step is skippable — press Enter to skip any. If you have an existing Pi installation, your provider credentials (LLM and tool keys) are imported automatically. Run `gsd config` anytime to re-run the wizard.
+On first run, Hammer launches a branded setup wizard that walks you through LLM provider selection (OAuth or API key), then optional tool API keys (Brave Search, Context7, Jina, Slack, Discord). Every step is skippable — press Enter to skip any. If you have an existing Pi installation, your provider credentials (LLM and tool keys) are imported automatically. Run `gsd config` anytime to re-run the wizard.
 
 ### Commands
 
 | Command                 | What it does                                                                  |
 | ----------------------- | ----------------------------------------------------------------------------- |
-| `/gsd`                  | Step mode — executes one unit at a time, pauses between each                  |
-| `/gsd next`             | Explicit step mode (same as bare `/gsd`)                                      |
-| `/gsd auto`             | Autonomous mode — researches, plans, executes, commits, repeats               |
-| `/gsd quick`            | Execute a quick task with GSD guarantees, skip planning overhead              |
-| `/gsd stop`             | Stop auto mode gracefully                                                     |
-| `/gsd steer`            | Hard-steer plan documents during execution                                    |
-| `/gsd discuss`          | Discuss architecture and decisions (works alongside auto mode)                |
-| `/gsd rethink`          | Conversational project reorganization                                         |
-| `/gsd mcp`              | MCP server status and connectivity                                            |
-| `/gsd status`           | Progress dashboard                                                            |
-| `/gsd queue`            | Queue future milestones (safe during auto mode)                               |
-| `/gsd prefs`            | Model selection, timeouts, budget ceiling                                     |
-| `/gsd migrate`          | Migrate a v1 `.planning` directory to `.gsd` format                           |
-| `/gsd help`             | Categorized command reference for all GSD subcommands                         |
-| `/gsd mode`             | Switch workflow mode (solo/team) with coordinated defaults                    |
-| `/gsd workflow`         | Unified workflow plugins — list, run `<name>`, install, info, validate        |
-| `/gsd start <template>` | Launch a bundled or custom workflow template (bugfix, release, etc.)          |
-| `/gsd forensics`        | Full-access GSD debugger for auto-mode failure investigation                  |
-| `/gsd cleanup`          | Archive phase directories from completed milestones                           |
-| `/gsd doctor`           | Runtime health checks — issues surface across widget, visualizer, and reports |
-| `/gsd keys`             | API key manager — list, add, remove, test, rotate, doctor                     |
-| `/gsd logs`             | Browse activity, debug, and metrics logs                                      |
-| `/gsd export --html`    | Generate HTML report for current or completed milestone                       |
+| `/hammer`                  | Step mode — executes one unit at a time, pauses between each                  |
+| `/hammer next`             | Explicit step mode (same as bare `/hammer`)                                      |
+| `/hammer auto`             | Autonomous mode — researches, plans, executes, commits, repeats               |
+| `/hammer quick`            | Execute a quick task with Hammer guarantees, skip planning overhead           |
+| `/hammer stop`             | Stop auto mode gracefully                                                     |
+| `/hammer steer`            | Hard-steer plan documents during execution                                    |
+| `/hammer discuss`          | Discuss architecture and decisions (works alongside auto mode)                |
+| `/hammer rethink`          | Conversational project reorganization                                         |
+| `/hammer mcp`              | MCP server status and connectivity                                            |
+| `/hammer status`           | Progress dashboard                                                            |
+| `/hammer queue`            | Queue future milestones (safe during auto mode)                               |
+| `/hammer prefs`            | Model selection, timeouts, budget ceiling                                     |
+| `/hammer migrate`          | Migrate a v1 `.planning` directory to `.gsd` format                           |
+| `/hammer help`             | Categorized command reference for all Hammer subcommands                      |
+| `/hammer mode`             | Switch workflow mode (solo/team) with coordinated defaults                    |
+| `/hammer workflow`         | Unified workflow plugins — list, run `<name>`, install, info, validate        |
+| `/hammer start <template>` | Launch a bundled or custom workflow template (bugfix, release, etc.)          |
+| `/hammer forensics`        | Full-access Hammer debugger for auto-mode failure investigation               |
+| `/hammer cleanup`          | Archive phase directories from completed milestones                           |
+| `/hammer doctor`           | Runtime health checks — issues surface across widget, visualizer, and reports |
+| `/hammer keys`             | API key manager — list, add, remove, test, rotate, doctor                     |
+| `/hammer logs`             | Browse activity, debug, and metrics logs                                      |
+| `/hammer export --html`    | Generate HTML report for current or completed milestone                       |
 | `/worktree` (`/wt`)     | Git worktree lifecycle — create, switch, merge, remove                        |
 | `/voice`                | Toggle real-time speech-to-text (macOS, Linux)                                |
 | `/exit`                 | Graceful shutdown — saves session state before exiting                        |
-| `/kill`                 | Kill GSD process immediately                                                  |
+| `/kill`                 | Kill Hammer process immediately                                               |
 | `/clear`                | Start a new session (alias for `/new`)                                        |
 | `Ctrl+Alt+G`            | Toggle dashboard overlay                                                      |
 | `Ctrl+Alt+V`            | Toggle voice transcription                                                    |
 | `Ctrl+Alt+B`            | Show background shell processes                                               |
 | `Alt+V`                 | Paste clipboard image (macOS)                                                 |
 | `gsd config`            | Re-run the setup wizard (LLM provider + tool keys)                            |
-| `gsd update`            | Update GSD to the latest version                                              |
-| `gsd headless [cmd]`    | Run `/gsd` commands without TUI (CI, cron, scripts)                           |
+| `gsd update`            | Update Hammer to the latest version                                           |
+| `gsd headless [cmd]`    | Run `/hammer` commands without TUI (CI, cron, scripts)                           |
 | `gsd headless query`    | Instant JSON snapshot — state, next dispatch, costs (no LLM)                  |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory                      |
 | `gsd --worktree` (`-w`) | Launch an isolated worktree session for the active milestone                  |
@@ -489,7 +513,7 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 
 ---
 
-## What GSD Manages For You
+## What Hammer Manages For You
 
 ### Context Engineering
 
@@ -541,7 +565,7 @@ The verification ladder: static checks → command execution → behavioral test
 
 ### Dashboard
 
-`Ctrl+Alt+G` or `/gsd status` opens a real-time overlay showing:
+`Ctrl+Alt+G` or `/hammer status` opens a real-time overlay showing:
 
 - Current milestone, slice, and task progress
 - Auto mode elapsed time and phase
@@ -551,12 +575,12 @@ The verification ladder: static checks → command execution → behavioral test
 
 ### HTML Reports
 
-After a milestone completes, GSD auto-generates a self-contained HTML report in `.gsd/reports/`. Each report includes project summary, progress tree, slice dependency graph (SVG DAG), cost/token metrics with bar charts, execution timeline, changelog, and knowledge base sections. No external dependencies — all CSS and JS are inlined, printable to PDF from any browser.
+After a milestone completes, Hammer auto-generates a self-contained HTML report in `.gsd/reports/`. Each report includes project summary, progress tree, slice dependency graph (SVG DAG), cost/token metrics with bar charts, execution timeline, changelog, and knowledge base sections. No external dependencies — all CSS and JS are inlined, printable to PDF from any browser.
 
 An auto-generated `index.html` shows all reports with progression metrics across milestones.
 
 - **Automatic** — generated after milestone completion (configurable via `auto_report` preference)
-- **Manual** — run `/gsd export --html` anytime
+- **Manual** — run `/hammer export --html` anytime
 
 ---
 
@@ -564,7 +588,7 @@ An auto-generated `index.html` shows all reports with progression metrics across
 
 ### Preferences
 
-GSD preferences live in `~/.gsd/PREFERENCES.md` (global) or `.gsd/PREFERENCES.md` (project). Manage with `/gsd prefs`.
+Hammer preferences live in `~/.gsd/PREFERENCES.md` (global) or `.gsd/PREFERENCES.md` (project). Manage with `/hammer prefs`.
 
 ```yaml
 ---
@@ -597,7 +621,7 @@ auto_report: true
 | Setting                           | What it controls                                                                                      |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `models.*`                        | Per-phase model selection — string for a single model, or `{model, fallbacks}` for automatic failover |
-| `skill_discovery`                 | `auto` / `suggest` / `off` — how GSD finds and applies skills                                         |
+| `skill_discovery`                 | `auto` / `suggest` / `off` — how Hammer finds and applies skills                                      |
 | `auto_supervisor.*`               | Timeout thresholds for auto mode supervision                                                          |
 | `budget_ceiling`                  | USD ceiling — auto mode pauses when reached                                                           |
 | `uat_dispatch`                    | Enable automatic UAT runs after slice completion                                                      |
@@ -606,7 +630,7 @@ auto_report: true
 | `skill_staleness_days`            | Skills unused for N days get deprioritized (default: 60, 0 = disabled)                                |
 | `unique_milestone_ids`            | Uses unique milestone names to avoid clashes when working in teams of people                          |
 | `git.isolation`                   | `none` (default), `worktree`, or `branch` — enable worktree or branch isolation for milestone work    |
-| `git.manage_gitignore`            | Set `false` to prevent GSD from modifying `.gitignore`                                                |
+| `git.manage_gitignore`            | Set `false` to prevent Hammer from modifying `.gitignore`                                             |
 | `verification_commands`           | Array of shell commands to run after task execution (e.g., `["npm run lint", "npm run test"]`)        |
 | `verification_auto_fix`           | Auto-retry on verification failures (default: true)                                                   |
 | `verification_max_retries`        | Max retries for verification failures (default: 2)                                                    |
@@ -621,11 +645,11 @@ Place an `AGENTS.md` file in any directory to provide persistent behavioral guid
 
 ### Debug Mode
 
-Start GSD with `gsd --debug` to enable structured JSONL diagnostic logging. Debug logs capture dispatch decisions, state transitions, and timing data for troubleshooting auto-mode issues.
+Start Hammer with `gsd --debug` to enable structured JSONL diagnostic logging. Debug logs capture dispatch decisions, state transitions, and timing data for troubleshooting auto-mode issues.
 
 ### Token Optimization
 
-GSD includes a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model tier selection, phase skipping, and context compression:
+Hammer includes a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model tier selection, phase skipping, and context compression:
 
 ```yaml
 token_profile: budget # or balanced (default), quality
@@ -645,7 +669,7 @@ See the full [Token Optimization Guide](./docs/user-docs/token-optimization.md) 
 
 ### Bundled Tools
 
-GSD ships with 24 extensions, all loaded automatically:
+Hammer ships with 24 extensions, all loaded automatically:
 
 | Extension              | What it provides                                                                                                                                                                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -695,7 +719,7 @@ The best practice for working in teams is to ensure unique milestone names acros
 ### Suggested .gitignore setup
 
 ```bash
-# ── GSD: Runtime / Ephemeral (per-developer, per-session) ──────────────────
+# ── Hammer: Runtime / Ephemeral (per-developer, per-session) ───────────────
 # Crash detection sentinel — PID lock, written per auto-mode session
 .gsd/auto.lock
 # Auto-mode dispatch tracker — prevents re-running completed units (includes archived per-milestone files)
@@ -722,7 +746,7 @@ The best practice for working in teams is to ensure unique milestone names acros
 .gsd/doctor-history.jsonl
 # Workflow event log — structured event stream
 .gsd/event-log.jsonl
-# Generated HTML reports (regenerable via /gsd export --html)
+# Generated HTML reports (regenerable via /hammer export --html)
 .gsd/reports/
 # Session-specific interrupted-work markers
 .gsd/milestones/**/continue.md
@@ -749,14 +773,14 @@ Milestone names will now be generated with a 6 char random string appended e.g. 
 1. Ensure you are not in the middle of any milestones (clean state)
 2. Update the `.gsd/` related entries in your `.gitignore` to follow the `Suggested .gitignore setup` section under `Working in teams` (ensure you are no longer blanket ignoring the whole `.gsd/` directory)
 3. Update your `.gsd/PREFERENCES.md` file within the repo as per section `Unique Milestone Names`
-4. If you want to update all your existing milestones use this prompt in GSD: `I have turned on unique milestone ids, please update all old milestone ids to use this new format e.g. M001-abc123 where abc123 is a random 6 char lowercase alpha numeric string. Update all references in all .gsd file contents, file names and directory names. Validate your work once done to ensure referential integrity.`
+4. If you want to update all your existing milestones use this prompt in Hammer: `I have turned on unique milestone ids, please update all old milestone ids to use this new format e.g. M001-abc123 where abc123 is a random 6 char lowercase alpha numeric string. Update all references in all .gsd file contents, file names and directory names. Validate your work once done to ensure referential integrity.`
 5. Commit to git
 
 ---
 
 ## Architecture
 
-GSD is a TypeScript application that embeds the Pi coding agent SDK.
+Hammer is a TypeScript application that embeds the Pi coding agent SDK.
 
 ```
 gsd (CLI binary)
@@ -801,7 +825,7 @@ Optional:
 
 ## Use Any Model
 
-GSD isn't locked to one provider. It runs on the [Pi SDK](https://github.com/badlogic/pi-mono), which supports **20+ model providers** out of the box. Use different models for different phases — Opus for planning, Sonnet for execution, a fast model for research.
+Hammer isn't locked to one provider. It runs on the [Pi SDK](https://github.com/badlogic/pi-mono), which supports **20+ model providers** out of the box. Use different models for different phases — Opus for planning, Sonnet for execution, a fast model for research.
 
 ### Built-in Providers
 
@@ -817,15 +841,15 @@ If you have a **Claude Max**, **Codex**, or **GitHub Copilot** subscription, you
 > - **Claude Max** — Anthropic's ToS may not explicitly permit OAuth use outside Claude's own applications.
 > - **GitHub Copilot** — Usage outside GitHub's own tools may be restricted by your subscription terms.
 >
-> GSD supports API key authentication for all providers as the safe alternative. **We strongly recommend using API keys over OAuth for Google Gemini.**
+> Hammer supports API key authentication for all providers as the safe alternative. **We strongly recommend using API keys over OAuth for Google Gemini.**
 
 ### OpenRouter
 
-[OpenRouter](https://openrouter.ai) gives you access to hundreds of models through a single API key. Use it to run GSD with Llama, DeepSeek, Qwen, or anything else OpenRouter supports.
+[OpenRouter](https://openrouter.ai) gives you access to hundreds of models through a single API key. Use it to run Hammer with Llama, DeepSeek, Qwen, or anything else OpenRouter supports.
 
 ### Per-Phase Model Selection
 
-In your preferences (`/gsd prefs`), assign different models to different phases:
+In your preferences (`/hammer prefs`), assign different models to different phases:
 
 ```yaml
 models:
@@ -838,7 +862,7 @@ models:
   completion: claude-sonnet-4-6
 ```
 
-Use expensive models where quality matters (planning, complex execution) and cheaper/faster models where speed matters (research, simple completions). Each phase accepts a simple model string or an object with `model` and `fallbacks` — if the primary model fails (provider outage, rate limit, credit exhaustion), GSD automatically tries the next fallback. GSD tracks cost per-model so you can see exactly where your budget goes.
+Use expensive models where quality matters (planning, complex execution) and cheaper/faster models where speed matters (research, simple completions). Each phase accepts a simple model string or an object with `model` and `fallbacks` — if the primary model fails (provider outage, rate limit, credit exhaustion), Hammer automatically tries the next fallback. Hammer tracks cost per-model so you can see exactly where your budget goes.
 
 ---
 

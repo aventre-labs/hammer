@@ -347,6 +347,25 @@ function isInsideGsdWorktree(p: string): boolean {
   return false;
 }
 
+// Track which legacy .gsd paths have already been announced, so repeated
+// gsdRoot() calls (e.g. the dashboard's 15s refresh timer) do not spew the
+// notice into the active TUI viewport on every probe — that interleaves with
+// terminal control sequences and corrupts the rendered frame.
+const _legacyGsdNoticeEmitted = new Set<string>();
+
+function emitLegacyGsdNoticeOnce(legacyGsdLocal: string): void {
+  if (_legacyGsdNoticeEmitted.has(legacyGsdLocal)) return;
+  _legacyGsdNoticeEmitted.add(legacyGsdLocal);
+  // Suppress entirely while a TTY-attached TUI is rendering, since stderr
+  // shares the terminal stream with the dashboard. Operators can still see
+  // the notice in non-TTY contexts (CI, pipes) where it cannot corrupt UI.
+  if (process.stderr.isTTY && process.stdout.isTTY) return;
+  process.stderr.write(
+    `[hammer] Legacy .gsd state detected at ${legacyGsdLocal}; ` +
+    `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
+  );
+}
+
 function probeGsdRoot(rawBasePath: string): string {
   // 1. Fast path — check for canonical Hammer state directory first
   const hammerLocal = join(rawBasePath, ".hammer");
@@ -357,10 +376,7 @@ function probeGsdRoot(rawBasePath: string): string {
   //     — state-namespace-bridge
   const legacyGsdLocal = join(rawBasePath, ".gsd");
   if (existsSync(legacyGsdLocal)) {
-    process.stderr.write(
-      `[hammer] Legacy .gsd state detected at ${legacyGsdLocal}; ` +
-      `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
-    );
+    emitLegacyGsdNoticeOnce(legacyGsdLocal);
     return legacyGsdLocal;
   }
 
@@ -398,10 +414,7 @@ function probeGsdRoot(rawBasePath: string): string {
 
     const legacyGsdCandidate = join(gitRoot, ".gsd");
     if (existsSync(legacyGsdCandidate)) {
-      process.stderr.write(
-        `[hammer] Legacy .gsd state detected at ${legacyGsdCandidate}; ` +
-        `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
-      );
+      emitLegacyGsdNoticeOnce(legacyGsdCandidate);
       return legacyGsdCandidate;
     }
   }
@@ -416,10 +429,7 @@ function probeGsdRoot(rawBasePath: string): string {
 
       const legacyGsdCand = join(cur, ".gsd");
       if (existsSync(legacyGsdCand)) {
-        process.stderr.write(
-          `[hammer] Legacy .gsd state detected at ${legacyGsdCand}; ` +
-          `canonical path is .hammer — state-namespace-bridge compatibility rule applied.\n`
-        );
+        emitLegacyGsdNoticeOnce(legacyGsdCand);
         return legacyGsdCand;
       }
 
