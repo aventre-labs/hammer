@@ -66,7 +66,7 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
     id: "identity-contract-self-reference",
     category: "internal-implementation-path",
     description: "The identity contract and scanner map may name legacy GSD spellings so they can be detected and classified.",
-    pathPattern: String.raw`(?:^|/)src/hammer-identity/(?:index|compatibility)\.ts$|(?:^|/)scripts/check-hammer-identity\.mjs$|(?:^|/)src/tests/hammer-[^/]+\.test\.ts$`,
+    pathPattern: String.raw`(?:^|/)src/hammer-identity/(?:index|compatibility)\.ts$|(?:^|/)scripts/check-hammer-identity\.mjs$|(?:^|/)src/tests/hammer-[^/]+\.test\.ts$|(?:^|/)src/hammer-identity/__tests__/[^/]+\.test\.ts$`,
     linePattern: LEGACY_TOKEN_PATTERN,
     rationale:
       "The scanner cannot guard against old names unless the contract enumerates them. This allowance is constrained to the contract, scanner, and their tests.",
