@@ -1,4 +1,6 @@
 # 并行 Milestone 编排
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 在隔离的 git worktrees 中同时运行多个 milestones。每个 milestone 都拥有自己的 worker 进程、自己的分支和自己的上下文窗口；同时还会有一个 coordinator 跟踪进度、执行预算限制并保持整体同步。
 

@@ -1,4 +1,6 @@
 # Provider 设置指南
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 这是一份覆盖 GSD 所有受支持 LLM providers 的分步配置指南。如果你已经运行过 onboarding 向导（`gsd config`）并选择了 provider，很可能已经配置完成，可以在会话中用 `/model` 检查。
 

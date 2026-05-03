@@ -1,4 +1,6 @@
 # Directory Safeguards Plan
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 ## Problem
 GSD had zero protection against being launched from dangerous directories like `$HOME`, `/`, `/usr`, `/etc`, etc. Running `gsd init` from these locations would create `.gsd/` and write planning files into system directories.

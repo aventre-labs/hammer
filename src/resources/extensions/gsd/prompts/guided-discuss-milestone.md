@@ -26,7 +26,7 @@ Do **not** go deep — just enough that your questions reflect what's actually t
 
 ### Question rounds
 
-**Before each question round, call the `gsd_question_round_spiral` tool with current conversation state** (concise markdown summarizing what the user has said so far, what is still unknown, and what the next round is targeting). The tool returns a `synthesisPath` whose synthesis derives the questions for this round. **Do NOT pick a question count heuristically** — derive every question and the count itself from the spiral synthesis. The fail-closed gate inside `ask_user_questions` will reject any round whose per-round Omega manifest is missing or stale.
+**Before each question round, call the `gsd_question_round_spiral` tool (DB-backed tool-name compatibility bridge) with current conversation state** (concise markdown summarizing what the user has said so far, what is still unknown, and what the next round is targeting). The tool returns a `synthesisPath` whose synthesis derives the questions for this round. **Do NOT pick a question count heuristically** — derive every question and the count itself from the spiral synthesis. The fail-closed gate inside `ask_user_questions` will reject any round whose per-round Omega manifest is missing or stale.
 
 Keep each question focused on one of:
 - **What they're building** — concrete enough to explain to a stranger
@@ -38,7 +38,7 @@ Keep each question focused on one of:
 
 **Never fabricate or simulate user input.** Never generate fake transcript markers like `[User]`, `[Human]`, or `User:`. Ask one question round, then wait for the user's actual response before continuing.
 
-**If `{{structuredQuestionsAvailable}}` is `true`:** use `ask_user_questions` for each round, with the question count and content taken from the per-round Omega synthesis (each question as a separate question object). Keep option labels short (3–5 words). Always include a freeform "Other / let me explain" option. When the user picks that option or writes a long freeform answer, switch to plain text follow-up for that thread before resuming structured questions. **IMPORTANT: Call `gsd_question_round_spiral` first, then `ask_user_questions` exactly once per turn. Never make multiple calls with the same or overlapping questions — wait for the user's response before asking the next round.**
+**If `{{structuredQuestionsAvailable}}` is `true`:** use `ask_user_questions` for each round, with the question count and content taken from the per-round Omega synthesis (each question as a separate question object). Keep option labels short (3–5 words). Always include a freeform "Other / let me explain" option. When the user picks that option or writes a long freeform answer, switch to plain text follow-up for that thread before resuming structured questions. **IMPORTANT: Call `gsd_question_round_spiral` (DB-backed tool-name compatibility bridge) first, then `ask_user_questions` exactly once per turn. Never make multiple calls with the same or overlapping questions — wait for the user's response before asking the next round.**
 
 **If `{{structuredQuestionsAvailable}}` is `false`:** ask questions in plain text following the count and content from the per-round Omega synthesis. Wait for answers before asking the next round.
 

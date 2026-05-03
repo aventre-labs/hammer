@@ -1,4 +1,6 @@
 # 技能
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 技能（Skills）是当当前 task 匹配时由 GSD 加载的专用指令集。它们为 LLM 提供领域化指导，例如编码模式、框架惯用法、测试策略和工具使用方式。
 

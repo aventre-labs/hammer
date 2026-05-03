@@ -51,7 +51,7 @@ appear on its own line and be the final structured directive in your output:
 
 ```
 RECOVERY_VERDICT: fix-applied; summary=<≤200 char one-liner>
-RECOVERY_VERDICT: blocker-filed; blockerPath=.gsd/milestones/<MID>/slices/<SID>/BLOCKER.md
+RECOVERY_VERDICT: blocker-filed; blockerPath=.hammer/milestones/<MID>/slices/<SID>/BLOCKER.md
 RECOVERY_VERDICT: give-up; reason=<≤200 char one-liner>
 ```
 

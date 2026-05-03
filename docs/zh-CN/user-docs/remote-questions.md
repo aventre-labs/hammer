@@ -1,4 +1,6 @@
 # 远程提问
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 在无头自动模式下运行时，远程提问允许 GSD 通过 Slack、Discord 或 Telegram 请求用户输入。当 GSD 遇到需要人工判断的决策点时，它会把问题发到你配置好的频道，并轮询等待响应。
 

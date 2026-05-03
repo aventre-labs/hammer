@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 2000" width="2000" height="2000">
+  <!-- HAMMER FORK BRIDGE: This SVG ships with the Hammer documentation channel. Hammer is a fork of GSD-2 with explicit IAM, no-guardrails posture, recover-and-resume, and Omega-driven phases; the GSD spellings rendered inside this image are preserved verbatim as the historical product visual under the rebrand-window rule. -->
+
   <defs>
     <style>
       .logo { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace; fill: #7dcfff; }

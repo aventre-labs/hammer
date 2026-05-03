@@ -19,6 +19,16 @@ export interface HammerIdentityCompatibilityRule {
   readonly rationale: string;
   readonly allowedUntil: string;
   readonly examples: readonly string[];
+  /**
+   * Optional regex pattern that must match the FILE BODY (not just the matched line)
+   * for this rule to claim a finding. When set, the scanner reads the surrounding
+   * file content and rejects the rule match if the marker is absent — letting the
+   * line fall through to subsequent rules or unclassified-visible-gsd.
+   *
+   * Used by S08 T06 to graduate doc-rebrand rules from "absorb everything" to
+   * "absorb only when the file actually carries Hammer identity (\\bHammer\\b)".
+   */
+  readonly requiresFileMarker?: string;
 }
 
 export const HAMMER_LEGACY_COMPATIBILITY_CATEGORIES = {
@@ -385,13 +395,14 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
   {
     id: "docs-and-readme-downstream",
     category: "downstream-follow-up",
-    description: "User-facing documentation files (README.md, docs/, gitbook/, mintlify-docs/, docs/zh-CN/) contain GSD product names, /gsd commands, and .gsd paths in documentation that is downstream work tracked separately from S01.",
+    description: "User-facing documentation files (README.md, docs/, gitbook/, mintlify-docs/, docs/zh-CN/) contain GSD product names, /gsd commands, and .gsd paths alongside the canonical Hammer identity. Post-S08 graduation: the rule only absorbs these files when the file body actually mentions Hammer; files that regress to GSD-only language fall through to unclassified-visible-gsd so the scanner fails closed.",
     pathPattern: String.raw`(?:^|/)(?:README\.md|docs/|gitbook/|mintlify-docs/|\.plans/)`,
     linePattern: LEGACY_TOKEN_PATTERN,
+    requiresFileMarker: String.raw`\bHammer\b`,
     rationale:
-      "User-facing documentation must be updated as a coordinated docs migration to avoid breaking existing links and indexed content. The S01 slice focuses on source code identity; documentation identity migration is downstream.",
-    allowedUntil: "Remove when user documentation is updated to Hammer identity.",
-    examples: ["GSD has solid API key infrastructure"] as const,
+      "User-facing documentation must carry Hammer identity. After S08 the four channels (docs/, docs/zh-CN/, gitbook/, mintlify-docs/) plus README.md were rewritten with explicit Hammer prose, fork-bridge notes, and Hammer-specific subsections. Graduation flips this rule from blanket downstream tolerance to a fail-closed gate: legacy GSD spellings remain classified ONLY in files that demonstrate Hammer identity. Doc regressions to pre-rebrand language now fail the scanner.",
+    allowedUntil: "Permanent enforcement: rule absorbs classified-and-acceptable references only when \\bHammer\\b is present in the file body.",
+    examples: ["GSD has solid API key infrastructure (in a file that elsewhere documents Hammer)"] as const,
   },
   {
     id: "github-workflows-and-ci",
@@ -758,13 +769,14 @@ export const HAMMER_LEGACY_COMPATIBILITY_RULES = [
   {
     id: "contributing-and-meta-docs",
     category: "downstream-follow-up",
-    description: "Project meta-documentation (CONTRIBUTING.md, VISION.md, SECURITY.md, and similar root-level docs) that reference GSD product identity are downstream documentation migration work.",
+    description: "Project meta-documentation (CONTRIBUTING.md, VISION.md, SECURITY.md, and similar root-level docs) that reference GSD product identity. Post-S08 graduation: the rule only absorbs these files when the file body actually mentions Hammer — meta-docs that regress to GSD-only language fall through to unclassified-visible-gsd.",
     pathPattern: String.raw`(?:^|/)(?:CONTRIBUTING|VISION|SECURITY|ROADMAP|LICENSE|ARCHITECTURE|ONBOARDING)(?:\.md)?$`,
     linePattern: LEGACY_TOKEN_PATTERN,
+    requiresFileMarker: String.raw`\bHammer\b`,
     rationale:
-      "Root-level project meta-docs require coordinated external communication when updated since they are linked from GitHub, documentation sites, and blog posts. They are downstream from S01 source identity work.",
-    allowedUntil: "Remove when meta-documentation is migrated to Hammer identity.",
-    examples: ["For project guidelines, see VISION.md"] as const,
+      "Root-level meta-docs (VISION, CONTRIBUTING) were rewritten under S08 T01 with explicit fork-bridge notes and Hammer identity. Graduation flips this from blanket downstream tolerance to a fail-closed gate: legacy GSD spellings are accepted only inside files that establish Hammer identity. Meta-doc regressions to pre-rebrand language now fail the scanner.",
+    allowedUntil: "Permanent enforcement: rule absorbs classified-and-acceptable references only when \\bHammer\\b is present in the file body.",
+    examples: ["For project guidelines, see VISION.md (rebranded to Hammer)"] as const,
   },
   {
     id: "packages-pi-core-internal",

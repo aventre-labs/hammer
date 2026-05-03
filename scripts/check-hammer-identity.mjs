@@ -34,6 +34,10 @@ function compileRule(rule) {
     ...rule,
     pathRe: new RegExp(rule.pathPattern, "u"),
     lineRe: new RegExp(rule.linePattern, "u"),
+    // S08 T06: optional file-body marker. When set, the rule only fires if the
+    // file body matches this regex — letting files that lack the marker fall
+    // through to subsequent rules or unclassified-visible-gsd.
+    markerRe: rule.requiresFileMarker ? new RegExp(rule.requiresFileMarker, "u") : null,
   };
 }
 
@@ -79,9 +83,21 @@ export function getTrackedFiles(root = process.cwd()) {
   return filterScannableTrackedFiles(output.toString("utf8").split("\0").filter(Boolean));
 }
 
-export function classifyHammerIdentityLine(filePath, line, rules) {
+export function classifyHammerIdentityLine(filePath, line, rules, fileText) {
   const normalized = normalizePath(filePath);
-  return rules.find((rule) => rule.pathRe.test(normalized) && rule.lineRe.test(line)) ?? null;
+  return rules.find((rule) => {
+    if (!rule.pathRe.test(normalized)) return false;
+    if (!rule.lineRe.test(line)) return false;
+    // S08 T06 graduation: a rule with requiresFileMarker only fires when the file
+    // body matches the marker. If fileText is unavailable (caller didn't supply
+    // it), treat the marker as absent — graduation must fail closed so the
+    // scanner cannot over-classify files that may have regressed.
+    if (rule.markerRe) {
+      if (typeof fileText !== "string") return false;
+      if (!rule.markerRe.test(fileText)) return false;
+    }
+    return true;
+  }) ?? null;
 }
 
 export function scanText(filePath, text, rules) {
@@ -95,7 +111,7 @@ export function scanText(filePath, text, rules) {
     const matches = [...line.matchAll(GSD_IDENTITY_TOKEN_RE)];
     if (matches.length === 0) continue;
 
-    const rule = classifyHammerIdentityLine(normalized, line, rules);
+    const rule = classifyHammerIdentityLine(normalized, line, rules, text);
     const firstMatch = matches[0];
     findings.push({
       filePath: normalized,

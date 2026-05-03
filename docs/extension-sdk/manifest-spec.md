@@ -1,4 +1,6 @@
 # Extension Manifest Spec
+<!-- HAMMER FORK BRIDGE: This file is part of Hammer's documentation surface. Hammer is a fork of GSD-2 that adds explicit IAM-gated subagent dispatch, a no-guardrails posture, recover-and-resume on session crash, and Omega-driven discuss/research/plan/execute/refine phases. Legacy `/gsd` commands, `gsd_*` tool names, `.gsd/` state paths, and `GSD_*` env vars remain accepted as internal-implementation/state-bridge surface so existing installations keep working — see CHANGELOG.md and VISION.md for the full fork-relationship note. -->
+
 
 
 Every directory-based extension can include an `extension-manifest.json` file at its root. The manifest declares what the extension provides, what it depends on, and which tier it belongs to. The registry uses manifests to control enable/disable state, enforce load order, and validate compatibility.
