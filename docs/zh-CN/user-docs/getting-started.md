@@ -1,6 +1,10 @@
-# GSD 快速开始
+# Hammer 快速开始
 
-GSD 是一个 AI 编程代理，负责规划、执行、验证和交付，让你可以把注意力放在“要构建什么”上。本指南会带你完成 macOS、Windows 和 Linux 的安装，并启动你的第一个会话。
+Hammer 是一个 AI 编程代理，负责规划、执行、验证和交付，让你可以把注意力放在“要构建什么”上。它是 [GSD-2](https://github.com/gsd-build/GSD-2) 的一个 fork，刻意采用了不同的姿态：**没有权限提示、没有“编辑前确认”、阶段之间没有人工 checkpoint**。recover-and-resume 循环（3 次连续失败上限、`RECOVERY_VERDICT` 解析）是仅有的结构性护栏。本指南会带你完成 macOS、Windows 和 Linux 的安装，并启动你的第一个会话。
+
+> **目标用户。** Hammer 面向有经验的操作者：他们希望自主执行，并且把文件系统、shell 和 git 视为可以低成本 fork 或回滚的对象。如果你想要一个会在编辑前暂停确认的编程代理，那你需要的是另一个工具。安装前请阅读下方的 [No-Guardrails 姿态](#no-guardrails-姿态)。
+
+> **内部实现说明。** CLI 二进制仍是 `gsd`，npm 包名仍是 `gsd-pi`，项目状态仍位于 `.gsd/` 之下（运行时产物在 `.hammer/`）。文件系统路径、环境变量（`GSD_*`）以及工具名（`gsd_*` / `hammer_*` 别名）都从 GSD-2 fork 点开始原样保留——只有面向用户的散文、slash 命令（原 `/gsd …`，现 `/hammer …`）以及聊天 handle（原 `@gsd`，现 `@hammer`）做了 rebrand。
 
 ---
 
@@ -41,7 +45,7 @@ node --version   # 应输出 v22.x 或更高
 git --version    # 应输出 2.20+
 ```
 
-**第 4 步：安装 GSD：**
+**第 4 步：安装 Hammer：**
 
 ```bash
 npm install -g gsd-pi
@@ -66,7 +70,7 @@ source ~/.zshrc
 
 所有 20+ provider 的完整配置方式请见 [提供商设置指南](./providers.md)。
 
-**第 6 步：启动 GSD：**
+**第 6 步：启动 Hammer：**
 
 ```bash
 cd ~/my-project   # 进入任意项目目录
@@ -113,7 +117,7 @@ node --version   # 应输出 v22.x 或更高
 git --version    # 应输出 2.20+
 ```
 
-**第 4 步：安装 GSD：**
+**第 4 步：安装 Hammer：**
 
 ```powershell
 npm install -g gsd-pi
@@ -137,7 +141,7 @@ gsd config
 
 所有 20+ provider 的完整配置方式请见 [提供商设置指南](./providers.md)。
 
-**第 6 步：启动 GSD：**
+**第 6 步：启动 Hammer：**
 
 ```powershell
 cd C:\Users\you\my-project   # 进入任意项目目录
@@ -217,7 +221,7 @@ node --version   # 应输出 v22.x 或更高
 git --version    # 应输出 2.20+
 ```
 
-**第 3 步：安装 GSD：**
+**第 3 步：安装 Hammer：**
 
 ```bash
 npm install -g gsd-pi
@@ -242,7 +246,7 @@ source ~/.bashrc
 
 所有 20+ provider 的完整配置方式请见 [提供商设置指南](./providers.md)。
 
-**第 5 步：启动 GSD：**
+**第 5 步：启动 Hammer：**
 
 ```bash
 cd ~/my-project   # 进入任意项目目录
@@ -272,11 +276,11 @@ gsd --version     # 输出已安装版本
 
 > **下载链接：** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
-如果你不想在宿主机安装 Node.js，可以在隔离沙箱中运行 GSD。
+如果你不想在宿主机安装 Node.js，可以在隔离沙箱中运行 Hammer。
 
 **第 1 步：安装 Docker Desktop**（要求 4.58+）。
 
-**第 2 步：克隆 GSD 仓库：**
+**第 2 步：克隆 Hammer fork 仓库：**
 
 ```bash
 git clone https://github.com/gsd-build/gsd-2.git
@@ -290,7 +294,7 @@ docker sandbox create --template . --name gsd-sandbox
 docker sandbox exec -it gsd-sandbox bash
 ```
 
-**第 4 步：设置 API key 并运行 GSD：**
+**第 4 步：设置 API key 并运行 Hammer：**
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -305,7 +309,7 @@ gsd auto "implement the feature described in issue #42"
 
 ### 选择模型
 
-完成 provider 设置后，GSD 会自动选择一个默认模型。你可以在会话中随时切换：
+完成 provider 设置后，Hammer 会自动选择一个默认模型。你可以在会话中随时切换：
 
 ```
 /model
@@ -317,9 +321,9 @@ gsd auto "implement the feature described in issue #42"
 
 ## 两种工作方式
 
-### 步骤模式 — `/gsd`
+### 步骤模式 — `/hammer`
 
-在会话内输入 `/gsd`。GSD 会一次执行一个工作单元，并在每一步之间暂停，通过向导展示刚完成了什么、下一步是什么。
+在会话内输入 `/hammer`。Hammer 会一次执行一个工作单元，并在每一步之间暂停，通过向导展示刚完成了什么、下一步是什么。
 
 - **没有 `.gsd/` 目录**：启动讨论流程，先收集你的项目愿景
 - **已有 milestone，但没有 roadmap**：讨论或研究该 milestone
@@ -328,15 +332,43 @@ gsd auto "implement the feature described in issue #42"
 
 步骤模式会让你始终留在回路中，在每一步之间查看和确认输出。
 
-### 自动模式 — `/gsd auto`
+### 自动模式 — `/hammer auto`
 
-输入 `/gsd auto` 后就可以离开。GSD 会自主完成 research、planning、execution、verification、commit，并持续推进每个 slice，直到 milestone 完成。
+输入 `/hammer auto` 后就可以离开。Hammer 会自主完成 research、planning、execution、verification、commit，并持续推进每个 slice，直到 milestone 完成。
 
 ```
-/gsd auto
+/hammer auto
 ```
 
 完整细节请见 [自动模式](./auto-mode.md)。
+
+---
+
+## No-Guardrails 姿态
+
+Hammer 故意采用 **默认 unsafe-mode**，面向有经验的操作者。在你对一棵在乎的代码树运行 `/hammer auto` 之前，请先读这一节。
+
+**“no-guardrails”在实践中意味着什么：**
+
+- **没有“编辑前确认”。** 文件写入不弹权限提示。
+- **没有 shell 命令审批门。** `bash`、`async_bash`、`bg_shell` 调用直接执行。
+- **没有逐阶段的人工 checkpoint。** 自动模式会在 research → plan → execute → complete → reassess 之间持续推进，除非你显式在 preferences 中打开 `require_slice_discussion: true`，否则不会因为审查而暂停。
+- **破坏性操作之前没有“你确定吗？”。** `git reset`、`rm -rf`、依赖安装会在 agent 决定执行时直接执行。
+
+**这是有意为之的产品差异。** Hammer 是 [GSD-2](https://github.com/gsd-build/GSD-2) 的 fork，并刻意移除了权限提示这一表面。操作者应当把文件系统、shell 和 git 视为可低成本 fork 或回滚的对象——这是“能在长时间自主 milestone 中走开”的代价。如果你想要会在编辑前暂停的代理，那不是 Hammer；“重新引入权限提示”是 Hammer 的非目标。
+
+**仅有的结构性护栏。** recover-and-resume 循环带有 **3 次连续失败上限**：如果恢复本身在一行内连续失败 3 次（通过 `RECOVERY_VERDICT` trailer 解析、在 `.hammer/auto-MID.lock` 中的 `consecutiveRecoveryFailures` 计数），自动模式会暂停并把结构化 verdict 暴露给人工审查，而不是无限旋转。在操作者与一连串 agent 编辑之间，没有任何其他内置 checkpoint。
+
+**IAM fail-closed 契约。** 子 agent 派发会通过一个 `IAM_SUBAGENT_CONTRACT` 信封返回，marker 收口在 `iam-subagent-policy.ts`。如果一个子步骤以缺失或畸形的 marker 终止，循环会拒绝推进——“静默推进”在结构上是不可能的。结构化的 remediation 形态见 [故障排查 → IAM 集成](./troubleshooting.md#iam-集成)。
+
+**自动模式启动前的推荐操作者配置：**
+
+1. **使用 git 隔离。** Hammer 默认 `git.isolation: worktree`，自动模式 commit 落在 `.gsd/worktrees/<MID>/` 的 `milestone/<MID>` 分支上，而不是直接落在你当前的工作分支。除非你完全理解权衡，否则保留这个默认值。
+2. **设置 `budget_ceiling`。** 在走开之前限制一次会话的总 USD 上限。
+3. **如果你不信任输入，把它放进沙箱跑。** `docker/` 下的 Docker sandbox 会以 `gsd-sandbox` 容器运行 Hammer，宿主文件系统可达性受限。
+4. **盯一下 activity stream。** `Ctrl+Alt+G` 或 `/hammer status` 会显示当前工作单元、recovery 上限状态以及最近一次子 agent 返回的 IAM verdict trailer。
+
+如果上述四个属性中的任何一项对当前项目不可接受，请不要在该项目上启用自动模式。
 
 ---
 
@@ -348,23 +380,23 @@ gsd auto "implement the feature described in issue #42"
 
 ```bash
 gsd
-/gsd auto
+/hammer auto
 ```
 
 **终端 2：在它工作时进行引导**
 
 ```bash
 gsd
-/gsd discuss    # 讨论架构决策
-/gsd status     # 查看进度
-/gsd queue      # 排队下一个 milestone
+/hammer discuss    # 讨论架构决策
+/hammer status     # 查看进度
+/hammer queue      # 排队下一个 milestone
 ```
 
 两个终端都会读写同一套 `.gsd/` 文件。你在终端 2 里做出的决策，会在下一个阶段边界被自动拾取。
 
 ---
 
-## GSD 如何组织工作
+## Hammer 如何组织工作
 
 ```
 Milestone  →  一个可交付版本（4-10 个 slice）
@@ -396,19 +428,19 @@ Milestone  →  一个可交付版本（4-10 个 slice）
 
 ## VS Code 扩展
 
-GSD 也提供 VS Code 扩展。你可以从扩展市场安装（publisher: FluxLabs），或者在 VS Code 扩展面板中直接搜索 “GSD”：
+Hammer 也提供 VS Code 扩展。你可以从扩展市场安装（publisher: FluxLabs），或者在 VS Code 扩展面板中直接搜索 “Hammer”：
 
-- **`@gsd` 聊天参与者**：在 VS Code Chat 中直接与 agent 对话
-- **侧边栏仪表板**：显示连接状态、模型信息、Token 使用量
+- **`@hammer` 聊天参与者**：在 VS Code Chat 中直接与 agent 对话
+- **侧边栏仪表板**：显示连接状态、模型信息、Token 使用量、IAM verdict、recover-and-resume 上限状态
 - **完整命令面板**：启动 / 停止 agent、切换模型、导出会话
 
-CLI（`gsd-pi`）需要先安装好，扩展会通过 RPC 与其连接。
+CLI（`gsd-pi`）需要先安装好，扩展会通过 RPC 与其连接。npm 包名、二进制名以及 VS Code 设置前缀（`gsd.*`）按 rebrand 窗口范围规则原样保留 GSD 标识。
 
 ---
 
 ## Web 界面
 
-GSD 也提供一个基于浏览器的可视化项目管理界面：
+Hammer 也提供一个基于浏览器的可视化项目管理界面：
 
 ```bash
 gsd --web
@@ -434,9 +466,9 @@ gsd sessions
 
 ---
 
-## 更新 GSD
+## 更新 Hammer
 
-GSD 每 24 小时检查一次更新，并在启动时提示。你也可以手动更新：
+Hammer 每 24 小时检查一次更新，并在启动时提示。你也可以手动更新：
 
 ```bash
 npm update -g gsd-pi
@@ -445,7 +477,7 @@ npm update -g gsd-pi
 或者在会话中执行：
 
 ```
-/gsd update
+/hammer update
 ```
 
 ---

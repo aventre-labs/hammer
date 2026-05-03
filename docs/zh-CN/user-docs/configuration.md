@@ -1,20 +1,22 @@
 # 配置
 
-GSD 偏好设置保存在 `~/.gsd/PREFERENCES.md`（全局）或 `.gsd/PREFERENCES.md`（项目级）中。可以通过 `/gsd prefs` 进行交互式管理。
+Hammer 偏好设置保存在 `~/.gsd/PREFERENCES.md`（全局）或 `.gsd/PREFERENCES.md`（项目级）中。可以通过 `/hammer prefs` 进行交互式管理。
 
-## `/gsd prefs` 命令
+> **内部实现路径保留。** 偏好文件路径（`~/.gsd/`、`.gsd/PREFERENCES.md`）、auth 文件（`~/.gsd/agent/auth.json`）以及所有 `GSD_*` 环境变量都是文件系统标识符，按 rebrand 窗口范围规则原样保留 GSD 标识。只有面向用户的散文、slash 命令（`/hammer …`）和聊天 handle（`@hammer`）做了 rebrand。
+
+## `/hammer prefs` 命令
 
 | 命令 | 说明 |
 |------|------|
-| `/gsd prefs` | 打开全局偏好设置向导（默认） |
-| `/gsd prefs global` | 全局偏好设置交互向导（`~/.gsd/PREFERENCES.md`） |
-| `/gsd prefs project` | 项目偏好设置交互向导（`.gsd/PREFERENCES.md`） |
-| `/gsd prefs status` | 显示当前偏好文件、合并后的值以及 skill 解析状态 |
-| `/gsd prefs wizard` | `/gsd prefs global` 的别名 |
-| `/gsd prefs setup` | `/gsd prefs wizard` 的别名；若偏好文件不存在会自动创建 |
-| `/gsd prefs import-claude` | 将 Claude marketplace plugins 和 skills 以命名空间化的 GSD 组件形式导入 |
-| `/gsd prefs import-claude global` | 导入到全局作用域 |
-| `/gsd prefs import-claude project` | 导入到项目作用域 |
+| `/hammer prefs` | 打开全局偏好设置向导（默认） |
+| `/hammer prefs global` | 全局偏好设置交互向导（`~/.gsd/PREFERENCES.md`） |
+| `/hammer prefs project` | 项目偏好设置交互向导（`.gsd/PREFERENCES.md`） |
+| `/hammer prefs status` | 显示当前偏好文件、合并后的值以及 skill 解析状态 |
+| `/hammer prefs wizard` | `/hammer prefs global` 的别名 |
+| `/hammer prefs setup` | `/hammer prefs wizard` 的别名；若偏好文件不存在会自动创建 |
+| `/hammer prefs import-claude` | 将 Claude marketplace plugins 和 skills 以命名空间化的 Hammer 组件形式导入 |
+| `/hammer prefs import-claude global` | 导入到全局作用域 |
+| `/hammer prefs import-claude project` | 导入到项目作用域 |
 
 ## 偏好文件格式
 
@@ -52,12 +54,12 @@ token_profile: balanced
 - **对象字段**（`models`、`git`、`auto_supervisor`）：浅合并，项目级按 key 覆盖
 
 <a id="global-api-keys-gsd-config"></a>
-## 全局 API Keys（`/gsd config`）
+## 全局 API Keys（`/hammer config`）
 
-工具 API keys 会全局保存在 `~/.gsd/agent/auth.json` 中，并自动应用到所有项目。只需用 `/gsd config` 配置一次，无需在每个项目里维护 `.env`。
+工具 API keys 会全局保存在 `~/.gsd/agent/auth.json` 中，并自动应用到所有项目。只需用 `/hammer config` 配置一次，无需在每个项目里维护 `.env`。
 
 ```bash
-/gsd config
+/hammer config
 ```
 
 这会打开一个交互式向导，显示哪些 key 已配置、哪些仍缺失。你可以选择一个工具并输入相应的 key。
@@ -72,7 +74,7 @@ token_profile: balanced
 
 ### 工作方式
 
-1. `/gsd config` 会把 keys 保存到 `~/.gsd/agent/auth.json`
+1. `/hammer config` 会把 keys 保存到 `~/.gsd/agent/auth.json`
 2. 每次会话启动时，`loadToolApiKeys()` 都会读取该文件并设置环境变量
 3. 这些 keys 对所有项目生效，无需单独配置
 4. 环境变量（例如 `export BRAVE_API_KEY=...`）优先级高于保存下来的 keys
@@ -80,11 +82,11 @@ token_profile: balanced
 
 ## MCP Servers
 
-GSD 可以连接配置在项目文件中的外部 MCP servers。这适合接入本地工具、内部 API、自托管服务，或者那些未作为 GSD 原生扩展内置的集成。
+Hammer 可以连接配置在项目文件中的外部 MCP servers。这适合接入本地工具、内部 API、自托管服务，或者那些未作为 Hammer 原生扩展内置的集成。
 
 ### 配置文件位置
 
-GSD 会从以下项目本地路径读取 MCP client 配置：
+Hammer 会从以下项目本地路径读取 MCP client 配置：
 
 - `.mcp.json`
 - `.gsd/mcp.json`
@@ -132,7 +134,7 @@ GSD 会从以下项目本地路径读取 MCP client 配置：
 
 ### 验证一个 server
 
-添加配置后，可以在 GSD 会话中这样验证：
+添加配置后，可以在 Hammer 会话中这样验证：
 
 ```text
 mcp_servers
@@ -142,7 +144,7 @@ mcp_call(server="my-server", tool="<tool_name>", args={...})
 
 推荐验证顺序：
 
-1. `mcp_servers`：确认 GSD 能看到配置文件并正确解析 server 条目
+1. `mcp_servers`：确认 Hammer 能看到配置文件并正确解析 server 条目
 2. `mcp_discover`：确认 server 进程能启动，并能响应 `tools/list`
 3. `mcp_call`：确认至少有一个真实 tool 可以成功调用
 
@@ -150,7 +152,7 @@ mcp_call(server="my-server", tool="<tool_name>", args={...})
 
 - 尽量为本地可执行文件和脚本使用绝对路径
 - 对于 `stdio` servers，优先在 MCP 配置里显式设置需要的环境变量，而不是依赖交互式 shell profile
-- GSD 和 `gsd-mcp-server` 都会自动加载保存在 `~/.gsd/agent/auth.json` 中的 model / tool keys，因此 MCP 配置可以安全地通过 `${ENV_VAR}` 占位符引用这些值，而不必提交原始凭据
+- Hammer 和 `gsd-mcp-server` 都会自动加载保存在 `~/.gsd/agent/auth.json` 中的 model / tool keys，因此 MCP 配置可以安全地通过 `${ENV_VAR}` 占位符引用这些值，而不必提交原始凭据
 - 如果某个 server 是团队共享且适合提交到仓库，通常更适合放在 `.mcp.json`
 - 如果某个 server 依赖本机路径、个人服务或本地 secrets，更适合放在 `.gsd/mcp.json`
 
@@ -195,7 +197,7 @@ models:
 
 你可以在 `~/.gsd/agent/models.json` 里定义自定义 models 和 providers。这允许你添加默认注册表里没有的 models，适合自托管 endpoints（Ollama、vLLM、LM Studio）、微调模型、代理，或者刚发布的新 provider。
 
-GSD 读取 `models.json` 的顺序如下：
+Hammer 读取 `models.json` 的顺序如下：
 
 1. `~/.gsd/agent/models.json`：主位置（GSD）
 2. `~/.pi/agent/models.json`：回退位置（Pi）
@@ -235,11 +237,11 @@ models:
     provider: bedrock    # 可选：固定到某个 provider
 ```
 
-当某个 model 切换失败（provider 不可用、被限流、额度耗尽）时，GSD 会自动尝试 `fallbacks` 列表中的下一个 model。
+当某个 model 切换失败（provider 不可用、被限流、额度耗尽）时，Hammer 会自动尝试 `fallbacks` 列表中的下一个 model。
 
 ### Community Provider Extensions
 
-对于 GSD 未内置的 providers，社区扩展可以添加完整 provider 支持，包括正确的 model 定义、thinking format 配置以及交互式 API key 设置。
+对于 Hammer 未内置的 providers，社区扩展可以添加完整 provider 支持，包括正确的 model 定义、thinking format 配置以及交互式 API key 设置。
 
 | 扩展 | Provider | Models | 安装命令 |
 |------|----------|--------|----------|
@@ -278,7 +280,7 @@ phases:
 
 ### `skill_discovery`
 
-控制 GSD 在自动模式中如何发现并应用 skills。
+控制 Hammer 在自动模式中如何发现并应用 skills。
 
 | 值 | 行为 |
 |----|------|
@@ -425,7 +427,7 @@ git:
   merge_strategy: squash      # worktree 分支合并方式："squash" 或 "merge"
   isolation: worktree         # git isolation："worktree"、"branch" 或 "none"
   commit_docs: true           # 是否把 .gsd/ 产物提交到 git（设为 false 时仅保留本地）
-  manage_gitignore: true      # 设为 false 时，GSD 不再修改 .gitignore
+  manage_gitignore: true      # 设为 false 时，Hammer 不再修改 .gitignore
   worktree_post_create: .gsd/hooks/post-worktree-create  # worktree 创建后执行的脚本
   auto_pr: false              # milestone 完成时自动创建 PR（要求 push_branches）
   pr_target_branch: develop   # 自动创建 PR 的目标分支（默认：main branch）
@@ -443,7 +445,7 @@ git:
 | `merge_strategy` | string | `"squash"` | worktree 分支合并方式：`"squash"`（合并为单个提交）或 `"merge"`（保留单独提交） |
 | `isolation` | string | `"worktree"` | 自动模式隔离方式：`"worktree"`（独立目录）、`"branch"`（直接在项目根目录工作，适合子模块多的仓库）、`"none"`（无隔离，直接提交到当前分支） |
 | `commit_docs` | boolean | `true` | 是否把 `.gsd/` planning 产物提交到 git。设为 `false` 则仅保留本地 |
-| `manage_gitignore` | boolean | `true` | 设为 `false` 后，GSD 将完全不修改 `.gitignore`，不会添加基础规则，也不会做自愈 |
+| `manage_gitignore` | boolean | `true` | 设为 `false` 后，Hammer 将完全不修改 `.gitignore`，不会添加基础规则，也不会做自愈 |
 | `worktree_post_create` | string | （无） | worktree 创建后执行的脚本。环境变量中会传入 `SOURCE_DIR` 和 `WORKTREE_DIR` |
 | `auto_pr` | boolean | `false` | milestone 完成时自动创建 pull request。要求 `auto_push: true` 且已安装认证 `gh` CLI |
 | `pr_target_branch` | string | （main branch） | 自动创建 PR 的目标分支，例如 `develop`、`qa`。未设置时默认回退到 `main_branch` |
@@ -472,7 +474,7 @@ cp "$SOURCE_DIR/.env.local" "$WORKTREE_DIR/.env.local" 2>/dev/null || true
 ln -sf "$SOURCE_DIR/assets" "$WORKTREE_DIR/assets"
 ```
 
-路径既可以是绝对路径，也可以相对项目根目录。脚本有 30 秒超时限制。失败不会中断流程，GSD 会记录告警后继续。
+路径既可以是绝对路径，也可以相对项目根目录。脚本有 30 秒超时限制。失败不会中断流程，Hammer 会记录告警后继续。
 
 <a id="gitauto_pr"></a>
 #### `git.auto_pr`
@@ -493,16 +495,16 @@ git:
 
 **工作方式：**
 
-1. milestone 完成后，GSD 先把 worktree squash merge 回主分支
+1. milestone 完成后，Hammer 先把 worktree squash merge 回主分支
 2. 如果 `auto_push: true`，把主分支推送到远程
 3. 把 milestone 分支推送到远程
 4. 通过 `gh pr create` 从 milestone 分支向 `pr_target_branch` 创建 PR
 
-如果没有设置 `pr_target_branch`，PR 会默认指向 `main_branch`（或者自动检测出的主分支）。PR 创建失败不会中断流程，GSD 会记录日志后继续。
+如果没有设置 `pr_target_branch`，PR 会默认指向 `main_branch`（或者自动检测出的主分支）。PR 创建失败不会中断流程，Hammer 会记录日志后继续。
 
 ### `github`（v2.39）
 
-GitHub 同步配置。启用后，GSD 会自动把 milestones、slices 和 tasks 同步到 GitHub Issues、PRs 和 Milestones。
+GitHub 同步配置。启用后，Hammer 会自动把 milestones、slices 和 tasks 同步到 GitHub Issues、PRs 和 Milestones。
 
 ```yaml
 github:
@@ -532,7 +534,7 @@ github:
 
 ### `notifications`
 
-控制 GSD 在自动模式中发出哪些通知：
+控制 Hammer 在自动模式中发出哪些通知：
 
 ```yaml
 notifications:
@@ -544,7 +546,7 @@ notifications:
   on_attention: true          # 需要人工介入时通知
 ```
 
-**macOS 通知方式：** GSD 会优先使用 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier)，不可用时回退到 `osascript`。建议安装 `terminal-notifier`，获得更稳定的通知体验：
+**macOS 通知方式：** Hammer 会优先使用 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier)，不可用时回退到 `osascript`。建议安装 `terminal-notifier`，获得更稳定的通知体验：
 
 ```bash
 brew install terminal-notifier
@@ -662,7 +664,7 @@ custom_instructions:
   - "Prefer functional patterns over classes"
 ```
 
-如果是项目特有知识（模式、坑点、经验），请优先放到 `.gsd/KNOWLEDGE.md` 中，因为它会自动注入每个 agent prompt。你也可以通过 `/gsd knowledge rule|pattern|lesson <description>` 添加。
+如果是项目特有知识（模式、坑点、经验），请优先放到 `.gsd/KNOWLEDGE.md` 中，因为它会自动注入每个 agent prompt。你也可以通过 `/hammer knowledge rule|pattern|lesson <description>` 添加。
 
 ### `RUNTIME.md`：运行时上下文（v2.39）
 
@@ -721,7 +723,7 @@ context_management:
 
 ### `service_tier`（v2.42）
 
-OpenAI 支持模型的 service tier 偏好。可通过 `/gsd fast` 切换。
+OpenAI 支持模型的 service tier 偏好。可通过 `/hammer fast` 切换。
 
 | 值 | 行为 |
 |----|------|
@@ -735,7 +737,7 @@ service_tier: priority
 
 ### `forensics_dedup`（v2.43）
 
-可选启用：在 `/gsd forensics` 提交 issue 之前，先搜索现有 issues 和 PRs。会额外消耗一些 AI tokens。
+可选启用：在 `/hammer forensics` 提交 issue 之前，先搜索现有 issues 和 PRs。会额外消耗一些 AI tokens。
 
 ```yaml
 forensics_dedup: true    # 默认：false
@@ -836,7 +838,7 @@ notifications:
 auto_visualize: true
 
 # Service tier
-service_tier: priority         # "priority" or "flex" (for /gsd fast)
+service_tier: priority         # "priority" or "flex" (for /hammer fast)
 
 # Diagnostics
 forensics_dedup: true          # deduplicate before filing forensics issues
